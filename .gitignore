@@ -1,0 +1,13 @@
+models/
+*.gguf
+*.npz
+# Unity
+Library/
+Temp/
+Obj/
+Logs/
+UserSettings/
+*.csproj
+*.sln
+# build
+build/
