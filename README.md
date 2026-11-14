@@ -7,7 +7,7 @@ on Vulkan), so there is no cloud, no credits and no subscription. A local MCP se
 client, act as the director. It plans multi-shot sequences, generates each clip, checks the result and regenerates
 bad takes.
 
-Website and demo videos: **https://unity-anim.shahwaiz.dev**
+Website and demo videos: **https://promptimate.shahwaiz.dev**
 
 **Status:** v0.1.0 preview. It works end to end on the developer's machine, but it has only been tested on one
 AMD GPU under Windows. Expect rough edges.

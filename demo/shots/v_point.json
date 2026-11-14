@@ -22,14 +22,14 @@
   {
    "id": "hero",
    "model": "Assets/Characters/Mixamo/Ch34_nonPBR.fbx",
-   "clip": "Assets/Clips/point_v2.kimodo",
+   "clip": "Assets/Clips/point_v3.kimodo",
    "pos": [
     0,
     0,
     0
    ],
    "yaw": 0,
-   "timeOffset": 1.5,
+   "timeOffset": 0.3,
    "height": 1.75,
    "loop": false
   }
