@@ -41,8 +41,7 @@ their licenses. By downloading them you agree to:
 License and Acceptable Use Policy. Promptimate does not use, download or support the research-only SMPL-X Kimodo
 checkpoint.
 
-Check each license yourself before using generated animation commercially. See
-[`docs/07-licensing-risks.md`](docs/07-licensing-risks.md) for background (a research snapshot, not legal advice).
+Check each license yourself before using generated animation commercially.
 
 ## Python dependencies (installed by pip, not redistributed)
 
