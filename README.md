@@ -1,27 +1,145 @@
-# Unity Text-to-Anim (working title)
+# Promptimate
 
-Local, free, GPU-powered **text-to-animation for Unity**. It is the Unity counterpart of Unreal Engine 5.9's
-experimental *AnimGenOffline* plugin.
+> Promptimate was developed under the working title "Text-to-Anim". Older notes in `docs/` still use that name.
 
-- Generates humanoid `AnimationClip`s from text prompts, plus optional constraints (keyframe poses, root paths,
-  hand/foot targets).
-- Runs fully on the user's machine via [kimodo.cpp](https://github.com/localai-org/kimodo.cpp), a GGML port of
-  NVIDIA Kimodo. It uses Vulkan, so it works on AMD, NVIDIA and Intel cards, with no Python, cloud or subscription.
-- Exposes its tools over a local **MCP server**, so a user's own Claude Code or Claude Desktop can direct
-  multi-shot sequences that fit the scene. Claude plans the shots and Kimodo generates the motion.
+**Free, local text-to-animation for Unity.** Type a sentence such as *"a person walks forward and waves with their
+right hand"* and get a standard Humanoid `AnimationClip` that plays on any humanoid rig, Mixamo characters included.
+Generation runs entirely on your own GPU with NVIDIA's Kimodo motion model (through [kimodo.cpp](https://github.com/localai-org/kimodo.cpp)
+on Vulkan), so there is no cloud, no credits and no subscription. A local MCP server lets Claude Code, or any other MCP
+client, act as the director. It plans multi-shot sequences, generates each clip, checks the result and regenerates
+bad takes.
 
-**Status:** research done (Nov 2026). Nothing is built yet. The next step is the spike in
-[`docs/05-spike-plan.md`](docs/05-spike-plan.md), run on the GPU host (RX 6600 XT, 8 GB).
+Website and demo videos: **https://unity-anim.shahwaiz.dev**
 
-## Docs
+**Status:** v0.1.0 preview. It works end to end on the developer's machine, but it has only been tested on one
+AMD GPU under Windows. Expect rough edges.
+
+## Requirements
+
+- Windows 10/11 (x64)
+- Unity 6 (6000.0 or newer)
+- A GPU with a Vulkan driver and about **8 GB VRAM** (AMD, NVIDIA or Intel in principle; only AMD has been tested)
+- 16 GB system RAM
+- Python 3.10+ (used for the MCP server)
+- About 7 GB of free disk space for the models
+- Optional: [Claude Code](https://claude.com/claude-code) or another MCP client
+
+## Quick start
+
+```powershell
+git clone https://github.com/shahwaizse/promptimate.git
+cd promptimate
+.\setup.ps1
+```
+
+`setup.ps1` checks your GPU and Vulkan runtime, installs the prebuilt kimodo.cpp engine from GitHub Releases into
+`engine/`, creates a Python `.venv`, asks you to accept the model licenses, downloads the models (about 6 GB, from
+Hugging Face) into `models/`, and prints the next steps. Everything stays inside the clone folder.
+
+1. **Add the Unity package.** In Unity 6, open *Window > Package Manager > + > Add package from disk...* and select
+   `unity/com.promptimate.unity/package.json`.
+2. **Connect Claude Code** (use the paths that `setup.ps1` printed):
+   ```powershell
+   claude mcp add kimodo-motion -e KIMODO_TEXT_QUANT=q4_k_m -e UNITY_PROJECT="C:\path\to\YourUnityProject" -- "C:\path\to\promptimate\.venv\Scripts\python.exe" "C:\path\to\promptimate\mcp_server\server.py"
+   ```
+   For Claude Desktop or another client, add an MCP server with the same command, args and env. There is a template
+   in [`.mcp.json.example`](.mcp.json.example).
+3. **Ask for motion,** for example *"make three clips for a guard: patrol walk, hears a noise and looks around, spots a
+   friend and waves"*. The clips appear in `Assets/Promptimate/Generated/` and import as Humanoid animation clips.
+
+## How it works
+
+```
+ You ──> Claude (your own client) ──MCP──> Promptimate server ──> kimodo.cpp (Vulkan, your GPU)
+                                               │
+                                               ├─ .kimodo file ──> Unity ScriptedImporter ──> Humanoid AnimationClip
+                                               └─ automatic checks (Python + headless Unity)
+```
+
+- **Claude directs.** It turns your request into shots and writes each prompt in the style of motion-capture
+  captions. It looks at a preview contact sheet and the check results, and regenerates when a take is wrong.
+  Promptimate never signs in to Claude itself. You connect your own client to the local MCP server.
+- **kimodo.cpp generates locally.** A resident `kmd-generate --server` worker keeps the Kimodo SOMA motion model and
+  the Llama 3-based text encoder loaded on the GPU between requests. It unloads after 10 minutes idle.
+- **Importer.** Each result is written as a `.kimodo` file (JSON) into your Unity project. The `com.promptimate.unity`
+  `ScriptedImporter` builds the SOMA rest rig and a Humanoid Avatar, samples it with `HumanPoseHandler`, and outputs a
+  Humanoid `AnimationClip` (muscles plus root motion) that retargets onto any humanoid.
+- **Automatic validation.** Every clip gets fast Python checks (facing, foot contact, toes, travel compared with
+  facing) and a headless Unity bake. The bake compares the clip with independent forward-kinematics reference
+  positions, replays it on the SOMA avatar, retargets it onto a differently proportioned rig, and checks facing,
+  left/right and feet. Negative controls (`unity_validate.py --self-test`) confirm that deliberately broken
+  conversions fail. GLB and BVH exports are also written to `output/`.
+
+## MCP tools
+
+The server id is `kimodo-motion`.
+
+| Tool | What it does |
+|---|---|
+| `generate_motion(segments[{prompt, seconds}], name?, seed, steps=30, transition_frames=5, unity_check=true)` | Generates a clip from one or more blended text segments. Returns stats, a preview image, file paths and the check results. |
+| `validate_in_unity(names?, self_test)` | Re-runs headless Unity validation. With `self_test` it also runs the negative controls. |
+| `list_motions(limit)` | Lists earlier results. |
+| `get_motion_preview(name)` | Returns the metadata and preview image of an earlier result. |
+| `worker_status(warm_up)` | Shows whether the GPU worker is loaded, or loads it now. |
+
+See [`mcp_server/README.md`](mcp_server/README.md) for environment variables and details.
+
+## Limitations
+
+- **Body only.** There are no fingers and no facial animation. The SOMA model outputs a 30-joint body skeleton.
+- **No positional constraints yet.** You can't specify keyframe poses, root paths or hand and foot targets, because
+  kimodo.cpp doesn't expose them. Input is text plus multi-segment prompts.
+- **Prompt-following is imperfect.** For example, "stops" may keep drifting forward. Regenerate with another seed or
+  reword the prompt. Claude does this automatically when the checks or the preview show a problem.
+- **Speed:** about **20 s per 5 s clip** once warm (30 diffusion steps), measured on an AMD RX 6600 XT (8 GB). The first
+  request also loads the models, which takes 1 to 2 minutes from an HDD.
+- **Only tested on AMD / Windows.** NVIDIA and Intel should work through Vulkan but haven't been tested.
+- The model licenses are separate from this code. Check them before you use output commercially (see below).
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `unity/com.promptimate.unity/` | Unity editor package: `.kimodo` importer, validator, batch-validation entry point |
+| `unity/PromptimateSandbox/` | Minimal Unity 6 project that references the package (default drop target) |
+| `unity/DemoStudio/` | Editor scripts used to render the demo videos (characters not included) |
+| `mcp_server/` | The MCP server, kimodo.cpp worker, motion utilities and headless Unity validation |
+| `scripts/` | Model download and engine packaging |
+| `setup.ps1` | One-command Windows setup |
+| `demo/` | Tooling used to make the launch videos (renders and music not included) |
+| `spike/` | Measurement and smoke-test scripts from the feasibility spike |
+| `docs/` | Research notes and spike results |
+
+## Research notes
 
 | File | Contents |
 |---|---|
+| [`docs/spike-results.md`](docs/spike-results.md) | Measured results on the RX 6600 XT: speed, quality, validation |
 | [`docs/01-landscape.md`](docs/01-landscape.md) | What prompted this, existing UE and Unity tools, where the gap is |
 | [`docs/02-model.md`](docs/02-model.md) | Kimodo and kimodo.cpp: models, sizes, constraints, outputs |
 | [`docs/03-hardware.md`](docs/03-hardware.md) | VRAM budget, fitting on 8 GB, AMD/Vulkan notes |
 | [`docs/04-architecture.md`](docs/04-architecture.md) | Proposed plugin architecture |
+| [`docs/05-spike-plan.md`](docs/05-spike-plan.md) | The feasibility spike plan |
 | [`docs/06-claude-integration.md`](docs/06-claude-integration.md) | Why not "use a Claude sub" directly, and the MCP design |
 | [`docs/07-licensing-risks.md`](docs/07-licensing-risks.md) | Model licenses, distribution, open questions |
-| [`docs/05-spike-plan.md`](docs/05-spike-plan.md) | **Start here:** the first concrete tasks |
-| [`AGENTS.md`](AGENTS.md) | Handoff notes for the agent picking this up |
+
+These notes are a snapshot from November 2026 and use the old working title.
+
+## Credits
+
+- **NVIDIA Kimodo**: the SOMA text-to-motion diffusion model.
+- **[kimodo.cpp](https://github.com/localai-org/kimodo.cpp)** from the LocalAI project: the GGML/Vulkan port that
+  makes local generation possible, plus the GGUF conversions on Hugging Face.
+- **Meta Llama 3**: the LLM2Vec text encoder is built with Meta Llama 3.
+- **[ggml](https://github.com/ggml-org/ggml)**: the tensor library and Vulkan backend.
+
+## License
+
+Promptimate's code is released under the [MIT License](LICENSE). Third-party components and the model licenses are
+listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The models aren't included. You download them during
+setup under the NVIDIA Open Model License (Kimodo SOMA) and the Meta Llama 3 Community License (text encoder).
+
+## Disclaimer
+
+Promptimate is an independent project. It is not affiliated with, endorsed by or sponsored by NVIDIA, Unity
+Technologies, Anthropic, Meta or Adobe. All trademarks belong to their respective owners.
