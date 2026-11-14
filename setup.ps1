@@ -12,7 +12,7 @@ param(
   [switch]$AcceptLicenses,
   [switch]$SkipModels,
   [string]$EngineZip = '',
-  [string]$EngineUrl = 'https://github.com/shahwaizse/promptimate/releases/latest/download/kimodo-engine-win64-vulkan.zip'
+  [string]$EngineUrl = 'https://github.com/shahwaizse/promptimate/releases/download/v0.1.0/kimodo-engine-win64-vulkan.zip'
 )
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
