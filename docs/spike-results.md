@@ -1,7 +1,5 @@
 # Spike results (GPU host, 2026-11-14)
 
-> **Renamed (2026-11-14):** the product is now **Promptimate**. Paths below are as measured at the time: `unity/com.local.text-to-anim` is now `unity/com.promptimate.unity` (namespace `Promptimate.Editor`), `unity/TextToAnimSandbox` is now `unity/PromptimateSandbox`, and the drop folder `Assets/TextToAnim/Generated` is now `Assets/Promptimate/Generated`. Headless batch mode does work now (see `mcp_server/unity_validate.py`).
-
 ## Step 0: Environment
 | | |
 |---|---|
@@ -51,9 +49,9 @@ D: redirects used: `HF_HOME=D:\hf-cache`, `PIP_CACHE_DIR=D:\pip-cache`, `TEMP/TM
   `list_motions`, `get_motion_preview` and `worker_status`. It keeps one resident `kmd-generate --server` worker and
   returns stats and a preview PNG (so Claude can judge the result), plus GLB/BVH exports. It also drops a `.kimodo` file
   into the Unity project.
-- `unity/com.local.text-to-anim`: a `ScriptedImporter` for `.kimodo` that builds a SOMA rest rig and a Humanoid
+- `unity/com.promptimate.unity`: a `ScriptedImporter` for `.kimodo` that builds a SOMA rest rig and a Humanoid
   Avatar, samples `HumanPoseHandler`, and outputs a Humanoid `AnimationClip` (muscles plus RootT/RootQ).
-- `unity/TextToAnimSandbox`: a minimal Unity 6 project that references the package.
+- `unity/PromptimateSandbox`: a minimal Unity 6 project that references the package.
 - Gotcha: on Windows, subprocesses started from an MCP stdio server must use `stdin=DEVNULL` or they hang.
 
 ## Step 3: Unity Humanoid clip: **PASS** (user-confirmed once, now verified automatically)

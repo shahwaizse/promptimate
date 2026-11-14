@@ -32,5 +32,5 @@ Unity Editor (C#)                          Worker process (native)
 7. **MCP server.** See 06-claude-integration.md.
 
 ## Package layout (proposal)
-`com.<org>.text-to-anim`: `Editor/` (UI, Timeline, MCP), `Runtime/` (minimal; clips are plain assets),
+`com.promptimate.unity`: `Editor/` (UI, Timeline, MCP), `Runtime/` (minimal; clips are plain assets),
 `Native~/` (worker binaries per platform). Editor-only at first; runtime generation is out of scope for v1.

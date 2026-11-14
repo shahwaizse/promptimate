@@ -3,13 +3,13 @@
 You're on the **GPU host machine** (AMD RX 6600 XT, 8 GB VRAM, RDNA2, gfx1032, Windows). There is no CUDA, so use Vulkan.
 
 ## Current state (2026-11-14)
-- The product is now called **Promptimate** (it was the "Text-to-Anim" working title). The MVP is built and works end
+- The product is **Promptimate**. The MVP is built and works end
   to end. See `README.md` for the user-facing overview and `docs/spike-results.md` for measurements.
 - Code map:
   - `unity/com.promptimate.unity/`: Unity package (`Promptimate.Editor` asmdef/namespace). Contains the `.kimodo`
     ScriptedImporter, `KimodoValidator`, and the headless entry point `Promptimate.Editor.BatchValidate.Run`.
   - `unity/PromptimateSandbox/`: default `UNITY_PROJECT`. Clips are dropped into `Assets/Promptimate/Generated/`
-    (gitignored). `unity/TextToAnimSandbox/` is the gitignored pre-rename copy, kept only because it may be open locally.
+    (gitignored). `unity/TextToAnimSandbox/` is an old local sandbox (gitignored); delete it once Unity has it closed.
   - `unity/DemoStudio/`: demo rendering scripts. Characters (Mixamo/Kenney) and clips are local only and never committed.
   - `mcp_server/`: FastMCP server, id **`kimodo-motion`**. Don't rename the id or the tools, because they appear in
     published videos and on the website. `unity_validate.py` runs the headless checks.

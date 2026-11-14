@@ -32,7 +32,7 @@ Files live in `D:/unity-text-to-anim/demo/shared/footage/`.
   at the preview and redoes bad takes. Uses the person's own Claude plan; the plugin never touches credentials.
 - Setup: `.\setup.ps1` (engine + models ~6 GB after accepting licenses) → add the Unity package → `claude mcp add kimodo-motion …`.
 - Limits (don't hide them if asked; don't show weak cases): no fingers/face, no exact targeting yet, prompt-following imperfect.
-- Product name: **Promptimate** (formerly the placeholder "Text-to-Anim"). Keep it in ONE variable.
+- Product name: **Promptimate**. Keep it in ONE variable.
 
 ## Do not
 - Claim dancing, NVIDIA/Intel tests, speed numbers other than the one above, "mocap quality", or anything unlisted.

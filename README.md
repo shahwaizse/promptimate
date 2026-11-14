@@ -1,7 +1,5 @@
 # Promptimate
 
-> Promptimate was developed under the working title "Text-to-Anim". Older notes in `docs/` still use that name.
-
 **Free, local text-to-animation for Unity.** Type a sentence such as *"a person walks forward and waves with their
 right hand"* and get a standard Humanoid `AnimationClip` that plays on any humanoid rig, Mixamo characters included.
 Generation runs entirely on your own GPU with NVIDIA's Kimodo motion model (through [kimodo.cpp](https://github.com/localai-org/kimodo.cpp)
@@ -123,7 +121,7 @@ See [`mcp_server/README.md`](mcp_server/README.md) for environment variables and
 | [`docs/06-claude-integration.md`](docs/06-claude-integration.md) | Why not "use a Claude sub" directly, and the MCP design |
 | [`docs/07-licensing-risks.md`](docs/07-licensing-risks.md) | Model licenses, distribution, open questions |
 
-These notes are a snapshot from November 2026 and use the old working title.
+These notes are a snapshot from November 2026.
 
 ## Credits
 
