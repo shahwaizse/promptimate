@@ -16,7 +16,8 @@ AMD GPU under Windows. Expect rough edges.
 
 - Windows 10/11 (x64)
 - Unity 6 (6000.0 or newer)
-- A GPU with a Vulkan driver and about **8 GB VRAM** (AMD, NVIDIA or Intel in principle; only AMD has been tested)
+- A GPU with a Vulkan driver and about **8 GB VRAM** (AMD, NVIDIA or Intel in principle; only AMD has been tested).
+  The models stay loaded between requests (about 6 GB) and unload after 10 minutes idle.
 - 16 GB system RAM
 - Python 3.10+ (used for the MCP server)
 - About 7 GB of free disk space for the models
@@ -41,32 +42,11 @@ Hugging Face) into `models/`, and prints the next steps. Everything stays inside
    claude mcp add kimodo-motion -e KIMODO_TEXT_QUANT=q4_k_m -e UNITY_PROJECT="C:\path\to\YourUnityProject" -- "C:\path\to\promptimate\.venv\Scripts\python.exe" "C:\path\to\promptimate\mcp_server\server.py"
    ```
    For Claude Desktop or another client, add an MCP server with the same command, args and env. There is a template
-   in [`.mcp.json.example`](.mcp.json.example).
+   in [`.mcp.json.example`](.mcp.json.example). Promptimate never signs in to Claude: it's a local server your own
+   client connects to.
 3. **Ask for motion,** for example *"make three clips for a guard: patrol walk, hears a noise and looks around, spots a
-   friend and waves"*. The clips appear in `Assets/Promptimate/Generated/` and import as Humanoid animation clips.
-
-## How it works
-
-```
- You ──> Claude (your own client) ──MCP──> Promptimate server ──> kimodo.cpp (Vulkan, your GPU)
-                                               │
-                                               ├─ .kimodo file ──> Unity ScriptedImporter ──> Humanoid AnimationClip
-                                               └─ automatic checks (Python + headless Unity)
-```
-
-- **Claude directs.** It turns your request into shots and writes each prompt in the style of motion-capture
-  captions. It looks at a preview contact sheet and the check results, and regenerates when a take is wrong.
-  Promptimate never signs in to Claude itself. You connect your own client to the local MCP server.
-- **kimodo.cpp generates locally.** A resident `kmd-generate --server` worker keeps the Kimodo SOMA motion model and
-  the Llama 3-based text encoder loaded on the GPU between requests. It unloads after 10 minutes idle.
-- **Importer.** Each result is written as a `.kimodo` file (JSON) into your Unity project. The `com.promptimate.unity`
-  `ScriptedImporter` builds the SOMA rest rig and a Humanoid Avatar, samples it with `HumanPoseHandler`, and outputs a
-  Humanoid `AnimationClip` (muscles plus root motion) that retargets onto any humanoid.
-- **Automatic validation.** Every clip gets fast Python checks (facing, foot contact, toes, travel compared with
-  facing) and a headless Unity bake. The bake compares the clip with independent forward-kinematics reference
-  positions, replays it on the SOMA avatar, retargets it onto a differently proportioned rig, and checks facing,
-  left/right and feet. Negative controls (`unity_validate.py --self-test`) confirm that deliberately broken
-  conversions fail. GLB and BVH exports are also written to `output/`.
+   friend and waves"*. The clips appear in `Assets/Promptimate/Generated/` and import as Humanoid animation clips. GLB and BVH copies
+   are also written to `output/`.
 
 ## MCP tools
 
