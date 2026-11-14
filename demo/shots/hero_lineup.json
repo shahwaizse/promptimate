@@ -1,0 +1,12 @@
+{
+  "seconds": 6, "supersample": 2,
+  "background": "#141821", "ground": "#2b3142",
+  "camera": {"pos": [0.8, 1.35, 5.8], "endPos": [-0.6, 1.25, 4.3], "lookAt": [0, 0.95, 0], "fov": 36},
+  "actors": [
+    {"model": "Assets/Characters/Mixamo/Ch24_nonPBR.fbx", "clip": "Assets/Clips/cheer_1.kimodo", "pos": [2.2, 0, -0.4], "yaw": -12, "timeOffset": 1.0},
+    {"model": "Assets/Characters/Mixamo/Ch34_nonPBR.fbx", "clip": "Assets/Clips/idle_stretch.kimodo", "pos": [1.1, 0, 0.1], "yaw": -6, "timeOffset": 0.5},
+    {"model": "Assets/Characters/Mixamo/Erika Archer.fbx", "clip": "Assets/Clips/idle_look.kimodo", "pos": [0, 0, 0.3], "yaw": 0, "timeOffset": 0.0},
+    {"model": "Assets/Characters/Mixamo/Ch43_nonPBR.fbx", "clip": "Assets/Clips/idle_talk_1.kimodo", "pos": [-1.1, 0, 0.1], "yaw": 8, "timeOffset": 2.0},
+    {"model": "Assets/Characters/Kenney/characterMedium.fbx", "skin": "Assets/Characters/Kenney/Skins/zombieA.png", "clip": "Assets/Clips/cheer_2.kimodo", "pos": [-2.2, 0, -0.4], "yaw": 14, "height": 1.45, "timeOffset": 0.0}
+  ]
+}

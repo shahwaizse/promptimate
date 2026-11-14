@@ -1,0 +1,446 @@
+{
+ "supersample": 2,
+ "ground": "#6b6862",
+ "fps": 30,
+ "seconds": 4,
+ "camera": {
+  "pos": [
+   8,
+   3.0,
+   11
+  ],
+  "lookAt": [
+   0,
+   0.9,
+   0
+  ],
+  "orbitDegPerSec": 3,
+  "fov": 40
+ },
+ "actors": [
+  {
+   "model": "Assets/Characters/Mixamo/Ch24_nonPBR.fbx",
+   "clip": "",
+   "pos": [
+    -3.967632799689249,
+    0,
+    -1.4182940907330193
+   ],
+   "yaw": -164.33689573455942,
+   "timeOffset": 1.877160912324162,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/humanMaleA.png",
+   "clip": "",
+   "pos": [
+    -4.162048203284012,
+    0,
+    -2.64733334482658
+   ],
+   "yaw": 15.577680603547874,
+   "timeOffset": 2.986934506531388,
+   "height": 1.4794269154057922,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/cyborgFemaleA.png",
+   "clip": "",
+   "pos": [
+    -1.094155509103459,
+    0,
+    1.5803169200236138
+   ],
+   "yaw": 183.55922154984174,
+   "timeOffset": 2.2237555686044708,
+   "height": 1.4318799879524562,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/humanFemaleA.png",
+   "clip": "",
+   "pos": [
+    -1.151984841079253,
+    0,
+    0.4602945039515032
+   ],
+   "yaw": 24.129885496900492,
+   "timeOffset": 1.4182472659964005,
+   "height": 1.5428258967222406,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Ch34_nonPBR.fbx",
+   "clip": "",
+   "pos": [
+    2.452750505499452,
+    0,
+    -0.7512621780586697
+   ],
+   "yaw": 174.727739494416,
+   "timeOffset": 2.636599981014125,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/survivorMaleB.png",
+   "clip": "",
+   "pos": [
+    3.033109272374089,
+    0,
+    -1.8056124756838892
+   ],
+   "yaw": -55.014658335573735,
+   "timeOffset": 1.2634455376992295,
+   "height": 1.5068206169978888,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/skaterFemaleA.png",
+   "clip": "",
+   "pos": [
+    1.9910346148942317,
+    0,
+    -1.8327697927682993
+   ],
+   "yaw": 51.92564262064047,
+   "timeOffset": 2.569201699190267,
+   "height": 1.5397231740663015,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/survivorFemaleA.png",
+   "clip": "",
+   "pos": [
+    5.213589681448026,
+    0,
+    2.746207424409816
+   ],
+   "yaw": -161.95387075365016,
+   "timeOffset": 1.8989277146370989,
+   "height": 1.456991492397241,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Ch34_nonPBR.fbx",
+   "clip": "",
+   "pos": [
+    5.73749503021678,
+    0,
+    1.80248702430566
+   ],
+   "yaw": -60.31293946474567,
+   "timeOffset": 1.0322406023873831,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/criminalMaleA.png",
+   "clip": "",
+   "pos": [
+    4.547872754317368,
+    0,
+    1.523609332148979
+   ],
+   "yaw": 40.9590439875529,
+   "timeOffset": 0.13257018338863014,
+   "height": 1.475560953793586,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/cyborgFemaleA.png",
+   "clip": "",
+   "pos": [
+    -5.0779882617432905,
+    0,
+    3.7662678549595556
+   ],
+   "yaw": 188.6077043189228,
+   "timeOffset": 2.9955268361273295,
+   "height": 1.4216238611933034,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Ch24_nonPBR.fbx",
+   "clip": "",
+   "pos": [
+    -4.212955485009816,
+    0,
+    2.9831964857879205
+   ],
+   "yaw": -74.63405289469571,
+   "timeOffset": 1.8314013689020245,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/humanMaleA.png",
+   "clip": "",
+   "pos": [
+    -5.180307569579296,
+    0,
+    2.391185519690699
+   ],
+   "yaw": 12.303172712521945,
+   "timeOffset": 2.689978924282805,
+   "height": 1.5739783041478292,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/survivorFemaleA.png",
+   "clip": "",
+   "pos": [
+    -5.764921349551314,
+    0,
+    2.9476865991749603
+   ],
+   "yaw": 91.51672674704919,
+   "timeOffset": 1.8603784063357858,
+   "height": 1.4862383106861865,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/criminalMaleA.png",
+   "clip": "",
+   "pos": [
+    1.1011596550096199,
+    0,
+    5.277556178034618
+   ],
+   "yaw": -174.46411005413873,
+   "timeOffset": 1.563381879843618,
+   "height": 1.5576792931783354,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/humanMaleA.png",
+   "clip": "",
+   "pos": [
+    1.6020196772410302,
+    0,
+    4.318726690868275
+   ],
+   "yaw": -76.94700258312459,
+   "timeOffset": 0.18024153188316905,
+   "height": 1.4705831716645976,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Ch24_nonPBR.fbx",
+   "clip": "",
+   "pos": [
+    0.8259946972787551,
+    0,
+    3.819684311208176
+   ],
+   "yaw": 7.71477648829312,
+   "timeOffset": 0.06654740697242967,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Ch43_nonPBR.fbx",
+   "clip": "",
+   "pos": [
+    0.41074358826134927,
+    0,
+    4.668157389483328
+   ],
+   "yaw": 104.61663651768639,
+   "timeOffset": 0.5322630635787937,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/skaterFemaleA.png",
+   "clip": "",
+   "pos": [
+    -2.605336564191806,
+    0,
+    -4.260640477020149
+   ],
+   "yaw": 160.03778763289932,
+   "timeOffset": 2.914123503176674,
+   "height": 1.4620033390820186,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/cyborgFemaleA.png",
+   "clip": "",
+   "pos": [
+    -1.7594302704996148,
+    0,
+    -4.875560222224027
+   ],
+   "yaw": -107.37759104259202,
+   "timeOffset": 2.0341908358462373,
+   "height": 1.4203683385263741,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/cyborgFemaleA.png",
+   "clip": "",
+   "pos": [
+    -2.432464457571764,
+    0,
+    -5.629827891635126
+   ],
+   "yaw": 3.8858081321380222,
+   "timeOffset": 2.4292949852839527,
+   "height": 1.4673420470089762,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Ch34_nonPBR.fbx",
+   "clip": "",
+   "pos": [
+    -3.268093544267159,
+    0,
+    -4.930576362011567
+   ],
+   "yaw": 93.69767419322542,
+   "timeOffset": 2.361020813604876,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/cyborgFemaleA.png",
+   "clip": "",
+   "pos": [
+    4.139032116494342,
+    0,
+    -4.253212721250131
+   ],
+   "yaw": -178.94618602086993,
+   "timeOffset": 1.0203290017074287,
+   "height": 1.5612515682270112,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/survivorFemaleA.png",
+   "clip": "",
+   "pos": [
+    4.529215174346536,
+    0,
+    -5.243201596755015
+   ],
+   "yaw": -71.56049865270901,
+   "timeOffset": 1.3941623869468482,
+   "height": 1.4839542367582503,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/humanFemaleA.png",
+   "clip": "",
+   "pos": [
+    3.346528497394343,
+    0,
+    -5.426161762815235
+   ],
+   "yaw": 46.56953524810372,
+   "timeOffset": 1.4320575880244633,
+   "height": 1.511774299964549,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/cyborgFemaleA.png",
+   "clip": "",
+   "pos": [
+    6.877779992151558,
+    0,
+    -1.273832745152779
+   ],
+   "yaw": 180.54714363884887,
+   "timeOffset": 1.631583146923826,
+   "height": 1.5715962195227708,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/skaterMaleA.png",
+   "clip": "",
+   "pos": [
+    7.556996123633049,
+    0,
+    -2.16172276234699
+   ],
+   "yaw": -81.47342738273649,
+   "timeOffset": 2.710827845401026,
+   "height": 1.5793134329968097,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Ch24_nonPBR.fbx",
+   "clip": "",
+   "pos": [
+    6.83510928639937,
+    0,
+    -2.6743722566759596
+   ],
+   "yaw": -0.8658563303384881,
+   "timeOffset": 0.5154647716102112,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Erika Archer.fbx",
+   "clip": "",
+   "pos": [
+    6.346635687662381,
+    0,
+    -1.9902128629568951
+   ],
+   "yaw": 104.02947765664456,
+   "timeOffset": 1.0240579722539853,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/skaterFemaleA.png",
+   "clip": "",
+   "pos": [
+    -7.0532076153376195,
+    0,
+    -0.40303308666175786
+   ],
+   "yaw": 175.94580164301917,
+   "timeOffset": 0.5139067822573318,
+   "height": 1.5646997525107162,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Erika Archer.fbx",
+   "clip": "",
+   "pos": [
+    -6.794066430351559,
+    0,
+    -1.6765020596989721
+   ],
+   "yaw": -6.054103537759584,
+   "timeOffset": 2.269466808544033,
+   "height": 1.75,
+   "loop": false
+  }
+ ]
+}

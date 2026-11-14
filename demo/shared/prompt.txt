@@ -1,0 +1,4 @@
+I'm making a stealth game in Unity. Using the kimodo-motion tools, create a 3-shot animation for my guard NPC:
+he walks forward on patrol, then stops because he heard a noise and looks around nervously, then spots a friend and waves.
+Look at each preview and the validation results, and redo any take that doesn't match what I asked for.
+Keep the final summary short.

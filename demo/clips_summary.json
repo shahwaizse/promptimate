@@ -1,0 +1,132 @@
+{
+  "idle_talk_1": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\idle_talk_1_20261114_162046\\preview.png"
+  },
+  "idle_talk_2": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\idle_talk_2_20261114_162341\\preview.png"
+  },
+  "idle_phone": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\idle_phone_20261114_162451\\preview.png"
+  },
+  "idle_wait": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\idle_wait_20261114_162601\\preview.png"
+  },
+  "idle_look": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\idle_look_20261114_162711\\preview.png"
+  },
+  "idle_cross": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\idle_cross_20261114_162822\\preview.png"
+  },
+  "idle_stretch": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\idle_stretch_20261114_162933\\preview.png"
+  },
+  "cheer_1": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\cheer_1_20261114_163044\\preview.png"
+  },
+  "cheer_2": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\cheer_2_20261114_163157\\preview.png"
+  },
+  "clap": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\clap_20261114_163308\\preview.png"
+  },
+  "dance_1": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\dance_1_20261114_163419\\preview.png"
+  },
+  "dance_2": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\dance_2_20261114_163529\\preview.png"
+  },
+  "walk_1": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\walk_1_20261114_163640\\preview.png"
+  },
+  "walk_2": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\walk_2_20261114_163752\\preview.png"
+  },
+  "walk_3": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\walk_3_20261114_163902\\preview.png"
+  },
+  "walk_phone": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\walk_phone_20261114_164013\\preview.png"
+  },
+  "jog": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\jog_20261114_164125\\preview.png"
+  },
+  "zombie_1": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\zombie_1_20261114_164236\\preview.png"
+  },
+  "zombie_2": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\zombie_2_20261114_164352\\preview.png"
+  },
+  "zombie_3": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\zombie_3_20261114_164504\\preview.png"
+  },
+  "guard": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\guard_20261114_164615\\preview.png"
+  },
+  "wave_hello": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\wave_hello_20261114_164729\\preview.png"
+  },
+  "boxer": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\boxer_20261114_164842\\preview.png"
+  },
+  "point_shout": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\point_shout_20261114_164953\\preview.png"
+  },
+  "injured_limp": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\injured_limp_20261114_165105\\preview.png"
+  },
+  "sequence_hero": {
+    "checks": true,
+    "fails": [],
+    "preview": "D:\\unity-text-to-anim\\output\\sequence_hero_20261114_165217\\preview.png"
+  }
+}

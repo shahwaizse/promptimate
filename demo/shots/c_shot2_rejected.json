@@ -1,0 +1,34 @@
+{
+ "supersample": 2,
+ "ground": "#6b6862",
+ "seconds": 7,
+ "camera": {
+  "pos": [
+   2.0,
+   1.4,
+   4.2
+  ],
+  "lookAt": [
+   0,
+   1.0,
+   0
+  ],
+  "followActor": "hero",
+  "fov": 34
+ },
+ "actors": [
+  {
+   "id": "hero",
+   "model": "Assets/Characters/Mixamo/Ch24_nonPBR.fbx",
+   "clip": "Assets/TextToAnim/Generated/guard_shot2_hear_noise_look_around_20261114_170709.kimodo",
+   "pos": [
+    0,
+    0,
+    0
+   ],
+   "yaw": 0,
+   "loop": false,
+   "height": 1.8
+  }
+ ]
+}

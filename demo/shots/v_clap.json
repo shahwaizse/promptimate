@@ -1,0 +1,37 @@
+{
+ "supersample": 2,
+ "ground": "#6b6862",
+ "fps": 30,
+ "seconds": 5,
+ "camera": {
+  "pos": [
+   1.4,
+   1.3,
+   4.0
+  ],
+  "lookAt": [
+   0,
+   0.95,
+   0
+  ],
+  "orbitDegPerSec": -4,
+  "fov": 34,
+  "followActor": "hero"
+ },
+ "actors": [
+  {
+   "model": "Assets/Characters/Mixamo/Ch24_nonPBR.fbx",
+   "clip": "Assets/Clips/clap.kimodo",
+   "pos": [
+    0,
+    0,
+    0
+   ],
+   "yaw": 0,
+   "timeOffset": 1.0,
+   "height": 1.75,
+   "loop": false,
+   "id": "hero"
+  }
+ ]
+}

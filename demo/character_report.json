@@ -1,0 +1,64 @@
+{
+    "rows": [
+        {
+            "character": "characterMedium",
+            "clip": "moonwalk",
+            "avatarHuman": true,
+            "passed": true,
+            "failures": [],
+            "facingErrMaxDeg": 1.0752002000808716,
+            "travelErrDeg": 0.0,
+            "toesForwardRatio": 1.0,
+            "handednessRatio": 1.0,
+            "groundedRatio": 1.0
+        },
+        {
+            "character": "Ch24_nonPBR",
+            "clip": "moonwalk",
+            "avatarHuman": true,
+            "passed": true,
+            "failures": [],
+            "facingErrMaxDeg": 1.4611231088638306,
+            "travelErrDeg": 0.0,
+            "toesForwardRatio": 1.0,
+            "handednessRatio": 1.0,
+            "groundedRatio": 1.0
+        },
+        {
+            "character": "Ch34_nonPBR",
+            "clip": "moonwalk",
+            "avatarHuman": true,
+            "passed": true,
+            "failures": [],
+            "facingErrMaxDeg": 3.470005512237549,
+            "travelErrDeg": 0.0,
+            "toesForwardRatio": 1.0,
+            "handednessRatio": 1.0,
+            "groundedRatio": 1.0
+        },
+        {
+            "character": "Ch43_nonPBR",
+            "clip": "moonwalk",
+            "avatarHuman": true,
+            "passed": true,
+            "failures": [],
+            "facingErrMaxDeg": 1.2969409227371216,
+            "travelErrDeg": 0.0,
+            "toesForwardRatio": 1.0,
+            "handednessRatio": 1.0,
+            "groundedRatio": 1.0
+        },
+        {
+            "character": "Erika Archer",
+            "clip": "moonwalk",
+            "avatarHuman": true,
+            "passed": true,
+            "failures": [],
+            "facingErrMaxDeg": 0.9259842038154602,
+            "travelErrDeg": 0.0,
+            "toesForwardRatio": 1.0,
+            "handednessRatio": 1.0,
+            "groundedRatio": 1.0
+        }
+    ]
+}

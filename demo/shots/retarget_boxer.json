@@ -1,0 +1,106 @@
+{
+ "supersample": 2,
+ "ground": "#6b6862",
+ "fps": 30,
+ "seconds": 6,
+ "camera": {
+  "pos": [
+   0,
+   1.5,
+   8.2
+  ],
+  "endPos": [
+   0,
+   1.4,
+   7.2
+  ],
+  "lookAt": [
+   0,
+   0.95,
+   0
+  ],
+  "fov": 40
+ },
+ "actors": [
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieMaleA.png",
+   "clip": "Assets/Clips/boxer.kimodo",
+   "pos": [
+    -3.75,
+    0,
+    -0.3
+   ],
+   "yaw": 10,
+   "timeOffset": 1.0,
+   "height": 1.5,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Ch24_nonPBR.fbx",
+   "clip": "Assets/Clips/boxer.kimodo",
+   "pos": [
+    -2.25,
+    0,
+    0
+   ],
+   "yaw": 0,
+   "timeOffset": 1.0,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Ch34_nonPBR.fbx",
+   "clip": "Assets/Clips/boxer.kimodo",
+   "pos": [
+    -0.75,
+    0,
+    0
+   ],
+   "yaw": 0,
+   "timeOffset": 1.0,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Ch43_nonPBR.fbx",
+   "clip": "Assets/Clips/boxer.kimodo",
+   "pos": [
+    0.75,
+    0,
+    0
+   ],
+   "yaw": 0,
+   "timeOffset": 1.0,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Mixamo/Erika Archer.fbx",
+   "clip": "Assets/Clips/boxer.kimodo",
+   "pos": [
+    2.25,
+    0,
+    0
+   ],
+   "yaw": 0,
+   "timeOffset": 1.0,
+   "height": 1.75,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/cyborgFemaleA.png",
+   "clip": "Assets/Clips/boxer.kimodo",
+   "pos": [
+    3.75,
+    0,
+    -0.3
+   ],
+   "yaw": -10,
+   "timeOffset": 1.0,
+   "height": 1.5,
+   "loop": false
+  }
+ ]
+}

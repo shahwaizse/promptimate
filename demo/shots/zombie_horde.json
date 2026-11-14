@@ -1,0 +1,422 @@
+{
+ "supersample": 2,
+ "ground": "#6b6862",
+ "fps": 30,
+ "seconds": 7,
+ "sunPitch": 25,
+ "sunIntensity": 0.9,
+ "skyExposure": 0.7,
+ "atmosphere": 1.6,
+ "camera": {
+  "pos": [
+   1.5,
+   1.2,
+   6
+  ],
+  "endPos": [
+   0.8,
+   1.0,
+   4.5
+  ],
+  "lookAt": [
+   0,
+   1.0,
+   -3
+  ],
+  "fov": 40
+ },
+ "actors": [
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    -1.761672351668376,
+    0,
+    -8.642357434679482
+   ],
+   "yaw": -10.261529119978974,
+   "timeOffset": 1.339705010766723,
+   "height": 1.473137783382517,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_1.kimodo",
+   "pos": [
+    -4.4200107522529315,
+    0,
+    -5.433078401295218
+   ],
+   "yaw": -1.592503592102739,
+   "timeOffset": 0.17463855893654734,
+   "height": 1.418142602668773,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieC.png",
+   "clip": "Assets/Clips/zombie_1.kimodo",
+   "pos": [
+    -0.7548081085748599,
+    0,
+    -2.558330877951658
+   ],
+   "yaw": 3.1350219775616903,
+   "timeOffset": 1.4574922611510184,
+   "height": 1.412372409667228,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_1.kimodo",
+   "pos": [
+    0.8554142264038678,
+    0,
+    -9.553696179492057
+   ],
+   "yaw": 1.359957550490222,
+   "timeOffset": 0.3329370411040128,
+   "height": 1.483827808714293,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieC.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    0.40685885532142496,
+    0,
+    -4.8617767931793905
+   ],
+   "yaw": -9.526662901353808,
+   "timeOffset": 1.4280109785294806,
+   "height": 1.4375742053574287,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    -4.025694240052666,
+    0,
+    -3.5910031082846174
+   ],
+   "yaw": 2.856230236165292,
+   "timeOffset": 1.2410362377837294,
+   "height": 1.5063440493160372,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieFemaleA.png",
+   "clip": "Assets/Clips/zombie_2.kimodo",
+   "pos": [
+    2.7722877498080702,
+    0,
+    -5.809583207442934
+   ],
+   "yaw": -4.8055920752716235,
+   "timeOffset": 1.985948703806228,
+   "height": 1.5397988867459143,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieMaleA.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    -2.559034892778471,
+    0,
+    -4.830186607671961
+   ],
+   "yaw": 9.003299893762293,
+   "timeOffset": 1.823613223598044,
+   "height": 1.4575875529780373,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieC.png",
+   "clip": "Assets/Clips/zombie_2.kimodo",
+   "pos": [
+    4.801748474925821,
+    0,
+    -8.93740799570534
+   ],
+   "yaw": 6.171382309565985,
+   "timeOffset": 0.3799613366512619,
+   "height": 1.497792620095161,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieFemaleA.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    -4.607927429525623,
+    0,
+    -3.986057291190443
+   ],
+   "yaw": -3.8370633074113076,
+   "timeOffset": 0.8754459692979208,
+   "height": 1.4993349590597975,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieFemaleA.png",
+   "clip": "Assets/Clips/zombie_1.kimodo",
+   "pos": [
+    2.968919758215943,
+    0,
+    -9.381133455338254
+   ],
+   "yaw": -0.6216399019285319,
+   "timeOffset": 1.660380513686686,
+   "height": 1.4121338855194439,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieMaleA.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    2.014920213044239,
+    0,
+    -4.175840309250981
+   ],
+   "yaw": -5.1697072297404185,
+   "timeOffset": 0.964478606116777,
+   "height": 1.5337305431768375,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_1.kimodo",
+   "pos": [
+    -4.774370719444114,
+    0,
+    -5.844742423302107
+   ],
+   "yaw": -0.15136813063244503,
+   "timeOffset": 0.5455194370491987,
+   "height": 1.4574863852997724,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_2.kimodo",
+   "pos": [
+    2.383633795947942,
+    0,
+    -6.4189208930839055
+   ],
+   "yaw": -8.007209220673907,
+   "timeOffset": 1.0041106408357603,
+   "height": 1.45556782615689,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieFemaleA.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    -3.6307385698497416,
+    0,
+    -6.125305140198319
+   ],
+   "yaw": 4.953521027916047,
+   "timeOffset": 2.466167702502965,
+   "height": 1.5365446118774904,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieC.png",
+   "clip": "Assets/Clips/zombie_1.kimodo",
+   "pos": [
+    -1.195586997439623,
+    0,
+    -7.923236427021861
+   ],
+   "yaw": -8.368838805206384,
+   "timeOffset": 1.6462916924308255,
+   "height": 1.4024126119687597,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_2.kimodo",
+   "pos": [
+    3.3109356156828635,
+    0,
+    -8.358914134169224
+   ],
+   "yaw": -8.503766581008467,
+   "timeOffset": 1.336477405750259,
+   "height": 1.5219624870513995,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    -1.8138831888811344,
+    0,
+    -8.870576387536207
+   ],
+   "yaw": -1.040550667131006,
+   "timeOffset": 2.177448752894429,
+   "height": 1.5903772441663044,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieMaleA.png",
+   "clip": "Assets/Clips/zombie_2.kimodo",
+   "pos": [
+    1.8057510106171009,
+    0,
+    -4.966554332290515
+   ],
+   "yaw": -2.54111961659126,
+   "timeOffset": 1.2038070454129868,
+   "height": 1.4800885261032697,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieC.png",
+   "clip": "Assets/Clips/zombie_2.kimodo",
+   "pos": [
+    -3.0939046243319215,
+    0,
+    -1.1379915931905167
+   ],
+   "yaw": -9.361720679988805,
+   "timeOffset": 1.501818151261203,
+   "height": 1.4204759195450443,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_2.kimodo",
+   "pos": [
+    0.6678360813308446,
+    0,
+    -5.1704318082840794
+   ],
+   "yaw": -10.312426172316247,
+   "timeOffset": 0.5198817069468831,
+   "height": 1.4752458723612882,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieFemaleA.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    1.3440957853390092,
+    0,
+    -1.4007877847067576
+   ],
+   "yaw": -0.6203648824377854,
+   "timeOffset": 0.2883837902720443,
+   "height": 1.4976136118070822,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_2.kimodo",
+   "pos": [
+    4.778230001478601,
+    0,
+    -5.676444058459164
+   ],
+   "yaw": -8.541180234756302,
+   "timeOffset": 1.874184801106077,
+   "height": 1.548070244885619,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    -0.21378056490008746,
+    0,
+    -3.7714890803922163
+   ],
+   "yaw": -7.074839839163023,
+   "timeOffset": 2.3800523677516243,
+   "height": 1.472350491801802,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieFemaleA.png",
+   "clip": "Assets/Clips/zombie_3.kimodo",
+   "pos": [
+    1.900675858793588,
+    0,
+    -1.7726879548774495
+   ],
+   "yaw": 11.484029825255348,
+   "timeOffset": 2.1583125757241723,
+   "height": 1.5392393571815604,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieFemaleA.png",
+   "clip": "Assets/Clips/zombie_1.kimodo",
+   "pos": [
+    -2.3888480277063806,
+    0,
+    -6.69970187414939
+   ],
+   "yaw": 6.52650980164875,
+   "timeOffset": 1.3314809937321974,
+   "height": 1.5558109782676355,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieC.png",
+   "clip": "Assets/Clips/zombie_1.kimodo",
+   "pos": [
+    -1.7033500495223763,
+    0,
+    -7.992624942071334
+   ],
+   "yaw": 7.639990639808957,
+   "timeOffset": 1.8496825509392854,
+   "height": 1.445347898006317,
+   "loop": false
+  },
+  {
+   "model": "Assets/Characters/Kenney/characterMedium.fbx",
+   "skin": "Assets/Characters/Kenney/Skins/zombieA.png",
+   "clip": "Assets/Clips/zombie_1.kimodo",
+   "pos": [
+    0.1763872424350552,
+    0,
+    -6.799937109805376
+   ],
+   "yaw": 6.962739279166197,
+   "timeOffset": 1.1806001562471382,
+   "height": 1.4387289892025619,
+   "loop": false
+  }
+ ]
+}

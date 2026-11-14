@@ -1,0 +1,36 @@
+{
+ "supersample": 2,
+ "ground": "#6b6862",
+ "fps": 30,
+ "seconds": 10,
+ "camera": {
+  "pos": [
+   3.0,
+   1.5,
+   3.0
+  ],
+  "lookAt": [
+   0,
+   1.0,
+   0
+  ],
+  "followActor": "hero",
+  "fov": 36
+ },
+ "actors": [
+  {
+   "model": "Assets/Characters/Mixamo/Erika Archer.fbx",
+   "clip": "Assets/Clips/sequence_hero.kimodo",
+   "pos": [
+    0,
+    0,
+    -2
+   ],
+   "yaw": 0,
+   "timeOffset": 0.0,
+   "height": 1.75,
+   "loop": false,
+   "id": "hero"
+  }
+ ]
+}
