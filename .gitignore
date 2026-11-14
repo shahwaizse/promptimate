@@ -58,3 +58,10 @@ demo/claude_run/session.*
 *.mp4
 *.mov
 *.wav
+
+# Internal notes: kept locally, not part of the published repo
+docs/
+AGENTS.md
+demo/shared/*.md
+demo/shared/*.json
+demo/clips_summary.json

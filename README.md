@@ -94,35 +94,6 @@ See [`mcp_server/README.md`](mcp_server/README.md) for environment variables and
 - **Only tested on AMD / Windows.** NVIDIA and Intel should work through Vulkan but haven't been tested.
 - The model licenses are separate from this code. Check them before you use output commercially (see below).
 
-## Repository layout
-
-| Path | Contents |
-|---|---|
-| `unity/com.promptimate.unity/` | Unity editor package: `.kimodo` importer, validator, batch-validation entry point |
-| `unity/PromptimateSandbox/` | Minimal Unity 6 project that references the package (default drop target) |
-| `unity/DemoStudio/` | Editor scripts used to render the demo videos (characters not included) |
-| `mcp_server/` | The MCP server, kimodo.cpp worker, motion utilities and headless Unity validation |
-| `scripts/` | Model download and engine packaging |
-| `setup.ps1` | One-command Windows setup |
-| `demo/` | Tooling used to make the launch videos (renders and music not included) |
-| `spike/` | Measurement and smoke-test scripts from the feasibility spike |
-| `docs/` | Research notes and spike results |
-
-## Research notes
-
-| File | Contents |
-|---|---|
-| [`docs/spike-results.md`](docs/spike-results.md) | Measured results on the RX 6600 XT: speed, quality, validation |
-| [`docs/01-landscape.md`](docs/01-landscape.md) | What prompted this, existing UE and Unity tools, where the gap is |
-| [`docs/02-model.md`](docs/02-model.md) | Kimodo and kimodo.cpp: models, sizes, constraints, outputs |
-| [`docs/03-hardware.md`](docs/03-hardware.md) | VRAM budget, fitting on 8 GB, AMD/Vulkan notes |
-| [`docs/04-architecture.md`](docs/04-architecture.md) | Proposed plugin architecture |
-| [`docs/05-spike-plan.md`](docs/05-spike-plan.md) | The feasibility spike plan |
-| [`docs/06-claude-integration.md`](docs/06-claude-integration.md) | Why not "use a Claude sub" directly, and the MCP design |
-| [`docs/07-licensing-risks.md`](docs/07-licensing-risks.md) | Model licenses, distribution, open questions |
-
-These notes are a snapshot from November 2026.
-
 ## Credits
 
 - **NVIDIA Kimodo**: the SOMA text-to-motion diffusion model.
@@ -136,8 +107,3 @@ These notes are a snapshot from November 2026.
 Promptimate's code is released under the [MIT License](LICENSE). Third-party components and the model licenses are
 listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The models aren't included. You download them during
 setup under the NVIDIA Open Model License (Kimodo SOMA) and the Meta Llama 3 Community License (text encoder).
-
-## Disclaimer
-
-Promptimate is an independent project. It is not affiliated with, endorsed by or sponsored by NVIDIA, Unity
-Technologies, Anthropic, Meta or Adobe. All trademarks belong to their respective owners.
