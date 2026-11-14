@@ -1,0 +1,5 @@
+mcp[cli]<2
+numpy
+matplotlib
+pillow
+huggingface_hub

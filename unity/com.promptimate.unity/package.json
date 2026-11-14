@@ -1,0 +1,14 @@
+{
+  "name": "com.promptimate.unity",
+  "version": "0.1.0",
+  "displayName": "Promptimate",
+  "description": "Free, local text-to-animation for Unity. Imports .kimodo motions generated on your own GPU (NVIDIA Kimodo via kimodo.cpp, driven by the Promptimate MCP server) as Humanoid AnimationClips, and validates every clip automatically.",
+  "unity": "6000.0",
+  "license": "MIT",
+  "documentationUrl": "https://unity-anim.shahwaiz.dev",
+  "author": {
+    "name": "shahwaizse",
+    "url": "https://github.com/shahwaizse/promptimate"
+  },
+  "keywords": ["animation", "humanoid", "text-to-motion", "kimodo", "mcp"]
+}

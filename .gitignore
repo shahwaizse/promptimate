@@ -1,13 +1,60 @@
+# --- Model weights (multi-GB, separate licenses; downloaded by setup.ps1) ---
 models/
 *.gguf
 *.npz
-# Unity
-Library/
-Temp/
-Obj/
-Logs/
-UserSettings/
+
+# --- Local environment, caches, logs ---
+.venv/
+.cache/
+__pycache__/
+*.pyc
+logs/
+.mcp.json
+
+# --- Build outputs and engine ---
+build/
+dist/
+engine/
+third_party/
+output/
+spike/out/
+
+# --- Unity generated folders (every project under unity/) ---
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
 *.csproj
 *.sln
-# build
-build/
+*.slnx
+unity/ValidationProject/
+# Legacy local sandbox from before the Promptimate rename (use unity/PromptimateSandbox)
+unity/TextToAnimSandbox/
+unity/PromptimateSandbox/Assets/Promptimate/Generated/
+unity/PromptimateSandbox/Assets/Promptimate/Generated.meta
+
+# --- Demo studio: third-party characters and generated clips are never distributed ---
+unity/DemoStudio/Assets/Characters/
+unity/DemoStudio/Assets/Clips/
+unity/DemoStudio/Assets/TextToAnim/
+unity/DemoStudio/Assets/TextToAnim.meta
+unity/DemoStudio/Assets/Promptimate/Generated/
+unity/DemoStudio/ProjectSettings/
+assets/mixamo/
+assets/cc0/
+assets/kenney/
+
+# --- Demo films: renders, footage, music, session dumps ---
+demo/video*/
+demo/renders/
+demo/frames/
+demo/shared/footage/
+demo/shared/claude_previews/
+demo/_drop/
+demo/music/*.wav
+demo/music/candidates/
+demo/claude_run/session.*
+*.mp4
+*.mov
+*.wav

@@ -1,0 +1,6 @@
+{
+  "name": "Promptimate.Editor",
+  "includePlatforms": ["Editor"],
+  "references": [],
+  "autoReferenced": false
+}
