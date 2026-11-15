@@ -80,17 +80,50 @@ local function rotationOnly(cf: CFrame): CFrame
 	return cf - cf.Position
 end
 
--- Standing hips height in studs: LowerTorso centre above the bottom of the feet, measured on the rest rig.
-local function standHeight(character: Model): number
-	local lt = character:FindFirstChild("LowerTorso") :: BasePart
+-- Joint offsets: Part1.CFrame = Part0.CFrame * C0 * Transform * C1:Inverse() for both joint types
+local function jointC0(j: Instance): CFrame
+	if j:IsA("Motor6D") then
+		return (j :: Motor6D).C0
+	end
+	return ((j :: AnimationConstraint).Attachment0 :: Attachment).CFrame
+end
+local function jointC1(j: Instance): CFrame
+	if j:IsA("Motor6D") then
+		return (j :: Motor6D).C1
+	end
+	return ((j :: AnimationConstraint).Attachment1 :: Attachment).CFrame
+end
+
+-- Rest-pose geometry from the joint offsets alone (all Transforms identity), so it doesn't depend on the pose the
+-- rig is in right now (a clip created while the rig is still seated from the previous clip must get the same
+-- scale). Returns (standing hips height: LowerTorso centre above the bottom of the feet, LowerTorso centre above the
+-- HumanoidRootPart centre), in studs. Falls back to the current pose if a joint is missing.
+local function restHeights(character: Model): (number, number)
+	local rest: { [string]: CFrame } = { HumanoidRootPart = CFrame.identity }
+	for _, name in ORDER do
+		local part = character:FindFirstChild(name)
+		local joint = part and part:FindFirstChild(MOTORS[name].motor)
+		local parentCF = rest[MOTORS[name].parent]
+		if not (joint and parentCF and (joint:IsA("Motor6D") or joint:IsA("AnimationConstraint"))) then
+			local lt = character:FindFirstChild("LowerTorso") :: BasePart
+			local root = character:FindFirstChild("HumanoidRootPart") :: BasePart
+			local lowest = math.huge
+			for _, n in { "LeftFoot", "RightFoot" } do
+				local f = character:FindFirstChild(n) :: BasePart?
+				if f then
+					lowest = math.min(lowest, f.Position.Y - f.Size.Y / 2)
+				end
+			end
+			return lt.Position.Y - lowest, lt.Position.Y - root.Position.Y
+		end
+		rest[name] = parentCF * jointC0(joint) * jointC1(joint):Inverse()
+	end
 	local lowest = math.huge
 	for _, n in { "LeftFoot", "RightFoot" } do
-		local f = character:FindFirstChild(n) :: BasePart?
-		if f then
-			lowest = math.min(lowest, f.Position.Y - f.Size.Y / 2)
-		end
+		local f = character:FindFirstChild(n) :: BasePart
+		lowest = math.min(lowest, rest[n].Y - f.Size.Y / 2)
 	end
-	return lt.Position.Y - lowest
+	return rest.LowerTorso.Y - lowest, rest.LowerTorso.Y
 end
 
 function Player.new(character: Model, clip: Clip, opts: { origin: CFrame?, speed: number? }?)
@@ -102,7 +135,7 @@ function Player.new(character: Model, clip: Clip, opts: { origin: CFrame?, speed
 	self.rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart
 	assert(self.humanoid and self.rootPart, "PromptimatePlayer needs an R15 character with a Humanoid")
 	assert(self.humanoid.RigType == Enum.HumanoidRigType.R15, "PromptimatePlayer needs an R15 rig")
-	self.scale = standHeight(character)
+	self.scale, self.rootToHips = restHeights(character)
 	local here = self.rootPart.CFrame
 	-- default origin: where the character stands now, facing its current look direction
 	self.origin = (opts and opts.origin) or CFrame.lookAt(
@@ -137,27 +170,11 @@ function Player.new(character: Model, clip: Clip, opts: { origin: CFrame?, speed
 	for i, name in clip.parts do
 		self.index[name] = (i - 1) * 4
 	end
-	-- vertical offset between the HumanoidRootPart centre and the LowerTorso centre on the rest rig
-	self.rootToHips = self.parts.LowerTorso.Position.Y - self.rootPart.Position.Y
 	self.time = 0
 	self.playing = false
 	self.Ended = Instance.new("BindableEvent")
 	self:_precomputeLocks()
 	return self
-end
-
--- Joint offsets: Part1.CFrame = Part0.CFrame * C0 * Transform * C1:Inverse() for both joint types
-local function jointC0(j: Instance): CFrame
-	if j:IsA("Motor6D") then
-		return (j :: Motor6D).C0
-	end
-	return ((j :: AnimationConstraint).Attachment0 :: Attachment).CFrame
-end
-local function jointC1(j: Instance): CFrame
-	if j:IsA("Motor6D") then
-		return (j :: Motor6D).C1
-	end
-	return ((j :: AnimationConstraint).Attachment1 :: Attachment).CFrame
 end
 
 local function quat(row: { number }, o: number): CFrame
