@@ -5,9 +5,22 @@ using UnityEditor;
 
 public class HumanoidModelPostprocessor : AssetPostprocessor
 {
+    public override uint GetVersion() => 2; // bump when import settings change (forces a re-import)
+
     void OnPreprocessModel()
     {
-        if (!assetPath.StartsWith("Assets/Characters/")) return;
+        // Kit props under Assets/ThirdParty are plain models; only the characters there become Humanoids.
+        if (assetPath.StartsWith("Assets/ThirdParty/") && !assetPath.Contains("/AnimatedCharacters"))
+        {
+            var pm = (ModelImporter)assetImporter;
+            pm.animationType = ModelImporterAnimationType.None;
+            pm.importAnimation = false;
+            pm.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
+            pm.materialLocation = ModelImporterMaterialLocation.InPrefab;
+            pm.materialSearch = ModelImporterMaterialSearch.Local;
+            return;
+        }
+        if (!assetPath.StartsWith("Assets/Characters/") && !assetPath.StartsWith("Assets/ThirdParty/")) return;
         var mi = (ModelImporter)assetImporter;
         mi.animationType = ModelImporterAnimationType.Human;
         mi.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;

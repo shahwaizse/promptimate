@@ -71,3 +71,4 @@ bench/results/
 
 # --- Roblox bridge: generated clips ---
 roblox/out/
+*.rbxlx.lock

@@ -665,6 +665,102 @@ def worker_status(warm_up: bool = False) -> str:
                        "prewarm": st})
 
 
+# ===== BEGIN render_shot tools (mcp_server/shots.py: Unity previs / shorts renderer) ================================
+import anyio  # noqa: E402
+import shots  # noqa: E402
+
+
+class ShotActor(BaseModel):
+    id: str = Field(description="Short id used by the camera and by other actors, e.g. 'leo'")
+    cast: str | None = Field(None, description="Starter cast: businessman, adventurer, punk, beach, farmer, kenney_skater_f, "
+                                               "kenney_skater_m, kenney_criminal, kenney_cyborg (or mixamo:<name> locally)")
+    model: str | None = Field(None, description="Instead of cast: a model in the render project, 'Assets/....fbx|.glb'")
+    motion: list[str] | str | None = Field(None, description="Promptimate motion name, or several played back to back "
+                                                           "(a continue_from chain). Omitted = stands in the idle pose")
+    start: float = Field(0.0, description="Time offset (s): >0 holds the first frame until then, <0 starts that far into "
+                                          "the motion (to film a later part of a chain)")
+    loop: bool = Field(False, description="Loop the last motion (walk cycles, idles)")
+    at: list[float] | None = Field(None, description="[x, z] metres where the motion starts (or, with enter_from, where the "
+                                                     "actor arrives). +X = audience right, +Z = away from the audience")
+    yaw: float | None = Field(None, description="Facing in degrees: 0 = away from the audience (+Z), 90 = right, 180 = toward")
+    near: str | None = Field(None, description="Place relative to this actor (with distance/side)")
+    distance: float = Field(1.5, description="Metres from 'near'")
+    side: str = Field("front", description="front|behind|left|right of the 'near' actor (its own front/left)")
+    face: str | None = Field(None, description="An actor id, or audience|away|left|right")
+    enter_from: str | None = Field(None, description="left|right|back|front: walks in from there to 'at' (needs a motion "
+                                                     "generated with the root_path stage_actors returns)")
+    enter_distance: float = Field(4.0, description="Walk-in distance in metres for enter_from")
+    height: float | None = Field(None, description="Override the character's height in metres")
+
+
+class ShotCamera(BaseModel):
+    preset: str = Field("medium", description="wide | medium | close_up | over_shoulder | follow | push_in | orbit | "
+                                              "low_angle | top_down | two_shot | explicit")
+    subject: str | None = Field(None, description="Actor the shot is about (default: the first actor)")
+    target: str | None = Field(None, description="Second actor: over_shoulder looks from subject toward target; two_shot")
+    side: str = Field("auto", description="auto (audience side; keeps the 180-degree rule across cuts) | right/reverse")
+    distance: float = Field(1.0, description=">1 looser, <1 tighter framing")
+    height: float | None = Field(None, description="Camera height override (m)")
+    fov: float | None = Field(None, description="Vertical field of view override (deg)")
+    amount: float = Field(1.0, description="Strength of push_in / orbit / follow smoothing")
+    orbit_deg: float | None = Field(None, description="orbit: total degrees over the shot (default 50)")
+    yaw_offset: float = Field(0.0, description="Extra rotation around the subject (deg)")
+    handheld: float = Field(0.0, description="0-1 subtle handheld motion")
+    pos: list[float] | None = Field(None, description="explicit: [x,y,z]")
+    look_at: list[float] | None = Field(None, description="explicit: [x,y,z]")
+    end_pos: list[float] | None = Field(None, description="explicit: dolly to [x,y,z]")
+    end_look_at: list[float] | None = Field(None, description="explicit")
+    follow: str | None = Field(None, description="explicit: actor whose hips the look-at tracks")
+
+
+def _shot_spec(actors, camera, stage, lighting, aspect, resolution, seconds, fps, quality, name, seed, key_yaw):
+    cam = {"preset": camera} if isinstance(camera, str) else {k: v for k, v in camera.model_dump().items() if v is not None}
+    return {"actors": [{k: v for k, v in a.model_dump().items() if v is not None} for a in actors], "camera": cam,
+            "stage": stage, "lighting": {"preset": lighting, **({"key_yaw": key_yaw} if key_yaw is not None else {})},
+            "aspect": aspect, "resolution": resolution, "seconds": seconds, "fps": fps, "quality": quality,
+            "name": name, "seed": seed}
+
+
+@mcp.tool()
+async def render_shot(actors: list[ShotActor], camera: ShotCamera | str = "medium", stage: str = "street",
+                      lighting: str = "day", aspect: str = "9:16", resolution: str | None = None,
+                      seconds: float | None = None, fps: int = 30, quality: str = "final", name: str | None = None,
+                      seed: int = 0, key_yaw: float | None = None) -> list:
+    """Render a shot of Promptimate motions on characters, in Unity (URP: soft shadows, AO, ACES, bloom), to MP4.
+
+    For storyline shorts (aspect 9:16) and previs/animatics (16:9). Give each actor a cast member and the motion
+    name(s) from generate_motion; chained continue_from clips play back to back and carry on from each other.
+    Place actors with at/yaw or relations (near/side/distance/face); for walk-ins call stage_actors first and generate
+    the motion with the root_path it returns. Camera presets are computed from the actual poses: wide, medium,
+    close_up, over_shoulder (subject -> target), follow, push_in, orbit, low_angle, top_down, two_shot (or explicit).
+    The default 'auto' side keeps the camera on the audience side, so cuts between presets respect the 180-degree rule.
+    stage: street | interior | park | studio | void. lighting: day | golden_hour | night_street | interior_warm |
+    studio. key_yaw fixes the key light direction (same lighting across the shots of a scene).
+    resolution: e.g. '720p' (default: 1080 on the short side). quality: draft (fast) | final | high.
+    seconds: defaults to the length of the longest motion chain (max 12).
+    Returns the MP4 path, validation (resolution/length, every character in frame, not hidden, on the ground, no jumps
+    at clip joins) and a contact sheet: 4 frames with each character's box and, for 9:16, the caption / platform-UI
+    zone (red lines). Look at it and re-render with another preset, side or distance if the framing is off.
+    Identical shots come from the cache instantly. The first render starts a Unity render server (about 30 s; a few
+    minutes the very first time while assets import), which stays warm for 15 minutes.
+    """
+    spec = _shot_spec(actors, camera, stage, lighting, aspect, resolution, seconds, fps, quality, name, seed, key_yaw)
+    # Runs in a worker thread: a render takes seconds to minutes and must not block the stdio session.
+    res = await anyio.to_thread.run_sync(lambda: shots.render(spec))
+    return [json.dumps(res, indent=2), Image(path=res["contact_sheet"])]
+
+
+@mcp.tool()
+def stage_actors(actors: list[ShotActor]) -> str:
+    """Work out where actors stand before generating their motions. Resolves at/yaw/near/side/distance/face into
+    world placements, and for enter_from returns the walk-in start point plus the root_path (and suggested segments)
+    to pass to generate_motion, so the generated walk ends exactly at 'at'. Also lists the available cast."""
+    placed = shots.stage([{k: v for k, v in a.model_dump().items() if v is not None} for a in actors])
+    return json.dumps({"placements": placed, "cast": shots.list_cast(), "stages": shots.STAGES,
+                       "lighting": shots.LIGHTING, "cameras": shots.CAMERAS}, indent=2)
+# ===== END render_shot tools =========================================================================================
+
+
 if __name__ == "__main__":
     if os.environ.get("PROMPTIMATE_PREWARM", "1") != "0":
         threading.Thread(target=_prewarm, daemon=True, name="prewarm").start()

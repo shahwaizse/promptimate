@@ -1,0 +1,7 @@
+{
+  "note": "Blocking for 'Wrong Turn' (shots.stage format). Leo walks in from the left to x=-0.85, Ava from the right to x=+0.85; they end 1.7 m apart facing each other.",
+  "actors": [
+    {"id": "leo", "cast": "adventurer", "at": [-0.85, 0], "face": "ava", "enter_from": "left", "enter_distance": 4.0, "walk_seconds": 3.2, "total_seconds": 6.2},
+    {"id": "ava", "cast": "punk", "at": [0.85, 0], "face": "leo", "enter_from": "right", "enter_distance": 4.0, "walk_seconds": 3.0, "total_seconds": 4.5}
+  ]
+}

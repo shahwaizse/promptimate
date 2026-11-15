@@ -78,6 +78,9 @@ public static class DemoRenderer
     public static void Render(Shot s)
     {
         AssetDatabase.Refresh();
+        // The launch-film shots use built-in Standard materials; ShotStudio switches the project to URP for its renders.
+        GraphicsSettings.defaultRenderPipeline = null;
+        QualitySettings.renderPipeline = null;
         HumanoidModelPostprocessor.EnsureTextures();
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         QualitySettings.shadows = ShadowQuality.All;
