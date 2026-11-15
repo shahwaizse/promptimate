@@ -26,6 +26,8 @@ namespace Promptimate.Editor
         // Optional hints from the MCP server (missing = false). The importer's "From File" options follow them.
         public bool loop;       // motion is meant to loop (cycle)
         public bool inPlace;    // strip travel: the character should stay on the spot (locomotion driven by code)
+        // Optional finger poses inferred from the prompt (mcp_server/hands.py). Only rigs with finger bones show them.
+        public KimodoHandPoseRange[] handPoses;
 
         internal KimodoFile Clone()
         {
@@ -34,6 +36,18 @@ namespace Promptimate.Editor
             c.refPos = (float[])refPos?.Clone();
             return c;
         }
+    }
+
+    /// One hand pose over a frame range: held from start to end (frames, inclusive), blended in over the `blend` frames
+    /// before start and out over the `blend` frames after end. Later entries win where they overlap.
+    /// JSON: {"hand": "right", "pose": "point", "start": 30, "end": 120, "blend": 6}
+    [System.Serializable]
+    public class KimodoHandPoseRange
+    {
+        public string hand;   // "left" | "right"
+        public string pose;   // relaxed | open | flat | fist | point | grip
+        public int start, end;
+        public int blend = -1; // frames; < 0 = default (6 frames, 0.2 s at 30 fps)
     }
 
     public enum KimodoLoopMode
@@ -53,9 +67,12 @@ namespace Promptimate.Editor
     public enum KimodoHandPose
     {
         [InspectorName("Relaxed (natural slight curl)")] Relaxed,
-        [InspectorName("Open (flat hand)")] Open,
+        [InspectorName("Open (fingers straight and spread)")] Open,
         Fist,
         [InspectorName("None (no finger curves)")] None,
+        [InspectorName("Point (index finger out)")] Point,
+        [InspectorName("Flat (fingers straight and together)")] Flat,
+        [InspectorName("Grip (holding something)")] Grip,
     }
 
     /// Resolved import options (importer settings combined with the file's hints).
@@ -63,13 +80,14 @@ namespace Promptimate.Editor
     {
         public bool loop, loopPose, inPlace, bakeRootRotation, bakeRootHeight, ikGoals;
         public float cycleOffset;
-        public KimodoHandPose hands;
+        public KimodoHandPose hands;           // base pose of both hands
+        public KimodoHandPoseRange[] handPoses; // timed poses on top of it (null = none)
 
         /// Neutral options: what the core conversion checks run against (no loop, full root motion, no hand curves).
         public static BakeOptions Neutral => new BakeOptions { bakeRootHeight = true, hands = KimodoHandPose.None, ikGoals = true };
     }
 
-    [ScriptedImporter(4, "kimodo")]
+    [ScriptedImporter(5, "kimodo")]
     public class KimodoImporter : ScriptedImporter
     {
         [Header("Loop")]
@@ -93,6 +111,10 @@ namespace Promptimate.Editor
         [Header("Hands")]
         [Tooltip("The model generates no finger motion. Relaxed adds a natural resting hand (slight curl, thumb in) as finger muscle curves. None writes no finger curves so another layer can drive the fingers.")]
         public KimodoHandPose handPose = KimodoHandPose.Relaxed;
+        [Tooltip("Apply the hand poses the MCP server inferred from the prompt (\"points\" = index finger out, \"punches\" = fist, " +
+                 "\"waves\" = open hand, \"claps\" = flat hands, \"holds\" = grip) over their time ranges, on top of the base hand pose. " +
+                 "Needs a character with finger bones.")]
+        public bool handPosesFromPrompt = true;
 
         [Header("IK")]
         [Tooltip("Write foot and hand IK goal curves, like Unity's FBX importer does. Needed wherever Foot IK is applied: Timeline " +
@@ -132,9 +154,19 @@ namespace Promptimate.Editor
             bakeRootRotation = bakeRootRotation,
             bakeRootHeight = bakeRootHeight,
             hands = handPose,
+            handPoses = handPosesFromPrompt ? data.handPoses : null,
             ikGoals = ikGoalCurves,
         };
 
+        /// The SOMA mesh sole is this far below the toe-base joint when the foot is flat. The MCP server puts the floor
+        /// there (postprocess.TOE_FLOOR), so the generated motion stands with the toe joint 1.8 cm above y = 0.
+        internal const float SomaSoleBelowToe = 0.018f;
+        internal static bool SkipSoleShift; // validator self-test only (negative control)
+
+        /// Builds the SOMA rig in its rest (T-)pose. The rest pose stands with its soles on y = 0 (the toe joint
+        /// SomaSoleBelowToe above it), the floor convention of the motion: Unity derives the avatar's foot bottom height
+        /// from it, and Foot IK uses that to put each target character's soles where SOMA's soles are. With the raw
+        /// offsets (toe joint at y ~ 0) every character floated 1.9 cm with Foot IK on.
         internal static GameObject BuildRig(KimodoFile data, out Transform[] bones)
         {
             var rigRoot = new GameObject("KimodoRig");
@@ -147,6 +179,9 @@ namespace Promptimate.Editor
                 t.localRotation = Quaternion.identity;
                 bones[j] = t;
             }
+            int toe = System.Array.IndexOf(data.names, "LeftToeBase"), root = System.Array.IndexOf(data.parents, -1);
+            if (toe >= 0 && root >= 0 && !SkipSoleShift)
+                bones[root].localPosition += Vector3.up * (SomaSoleBelowToe - bones[toe].position.y);
             return rigRoot;
         }
 
@@ -313,16 +348,14 @@ namespace Promptimate.Editor
                 for (int i = 0; i < 3; i++) clip.SetCurve("", anim, "RootT." + tq[i], rootT[i]);
                 for (int i = 0; i < 4; i++) clip.SetCurve("", anim, "RootQ." + qq[i], rootQ[i]);
                 var hand = HandPoseMuscles(opts.hands);
-                float end = (F - 1) * dt;
                 for (int m = 0; m < muscleCount; m++)
                 {
                     var mName = HumanTrait.MuscleName[m];
                     if (IsFingerMuscle(mName))
                     {
-                        // The model has no finger data: write a constant hand pose (or nothing for None).
+                        // The model has no finger data: the base hand pose, plus timed poses from the prompt (or nothing for None).
                         if (hand == null) continue;
-                        hand.TryGetValue(mName, out var v);
-                        clip.SetCurve("", anim, MusclePropertyName(mName), AnimationCurve.Constant(0, end, v));
+                        clip.SetCurve("", anim, MusclePropertyName(mName), FingerCurve(mName, opts, F, data.fps));
                     }
                     else clip.SetCurve("", anim, MusclePropertyName(mName), muscleCurves[m]);
                 }
@@ -385,24 +418,112 @@ namespace Promptimate.Editor
         // Per finger: 1 Stretched, Spread, 2 Stretched, 3 Stretched, in Unity muscle units (default limits, which Mixamo
         // and most FBX humanoids use). Measured on a Mixamo avatar: muscle 0 is NOT a flat hand, it is a ~33/37/36 deg
         // curl per joint; flat T-pose fingers are about 0.67 / 0.81 / 0.81. Per-joint flex ~= 33 - 50*v (joint 1),
-        // 37 - 45*v (joints 2, 3). Thumb: lower 1 Stretched = closer to the index, lower Spread = in front of the palm.
+        // 37 - 45*v (joints 2, 3). Spread +1 moves a finger away from the middle finger (index ~22 deg, little ~34 deg off
+        // the middle finger); spread 0 is already a slight natural spread. Thumb: lower 1 Stretched = closer to the
+        // index, lower Spread = in front of the palm.
         //                                          Thumb                           Index                          Middle                         Ring                           Little
         static readonly float[,] RelaxedPose = { { -0.80f, -0.30f, 0.10f, 0.00f }, { 0.22f, -0.35f, 0.04f, 0.47f }, { 0.12f, -0.60f, -0.07f, 0.40f }, { 0.04f, -0.55f, -0.16f, 0.36f }, { -0.04f, -0.25f, -0.24f, 0.31f } };
-        static readonly float[,] OpenPose =    { { -0.50f, 0.20f, 0.60f, 0.60f }, { 0.67f, -0.45f, 0.81f, 0.81f }, { 0.67f, -0.61f, 0.81f, 0.81f }, { 0.67f, -0.61f, 0.81f, 0.81f }, { 0.67f, -0.46f, 0.81f, 0.81f } };
+        static readonly float[,] OpenPose =    { { -0.10f, 0.30f, 0.60f, 0.60f }, { 0.67f, 0.55f, 0.81f, 0.81f }, { 0.67f, 0.00f, 0.81f, 0.81f }, { 0.67f, 0.55f, 0.81f, 0.81f }, { 0.67f, 0.80f, 0.81f, 0.81f } };
+        static readonly float[,] FlatPose =    { { -0.90f, 0.00f, 0.60f, 0.60f }, { 0.67f, -0.45f, 0.81f, 0.81f }, { 0.67f, -0.61f, 0.81f, 0.81f }, { 0.67f, -0.75f, 0.81f, 0.81f }, { 0.67f, -0.80f, 0.81f, 0.81f } };
         static readonly float[,] FistPose =    { { -1.00f, -0.80f, -0.40f, -0.60f }, { -1.00f, -0.40f, -1.00f, -0.50f }, { -1.00f, -0.60f, -1.00f, -0.50f }, { -1.00f, -0.60f, -1.00f, -0.50f }, { -1.00f, -0.40f, -1.00f, -0.50f } };
+        static readonly float[,] PointPose =   { { -1.00f, -0.70f, -0.30f, -0.50f }, { 0.67f, -0.20f, 0.81f, 0.81f }, { -1.00f, -0.60f, -1.00f, -0.50f }, { -1.00f, -0.60f, -1.00f, -0.50f }, { -1.00f, -0.40f, -1.00f, -0.50f } };
+        static readonly float[,] GripPose =    { { -1.00f, -0.60f, -0.10f, -0.20f }, { -0.35f, -0.40f, -0.50f, -0.10f }, { -0.40f, -0.60f, -0.55f, -0.10f }, { -0.45f, -0.60f, -0.55f, -0.10f }, { -0.50f, -0.40f, -0.55f, -0.10f } };
+
+        internal const int DefaultHandBlendFrames = 6;
+
+        static float[,] Table(KimodoHandPose p)
+        {
+            switch (p)
+            {
+                case KimodoHandPose.Open: return OpenPose;
+                case KimodoHandPose.Fist: return FistPose;
+                case KimodoHandPose.Point: return PointPose;
+                case KimodoHandPose.Flat: return FlatPose;
+                case KimodoHandPose.Grip: return GripPose;
+                default: return RelaxedPose;
+            }
+        }
+
+        /// "point" -> Point etc. (case-insensitive); false for unknown names and "none".
+        internal static bool ParsePose(string name, out KimodoHandPose pose)
+        {
+            pose = KimodoHandPose.Relaxed;
+            if (string.IsNullOrEmpty(name) || char.IsDigit(name.Trim()[0])) return false;
+            return System.Enum.TryParse(name.Trim(), true, out pose) && pose != KimodoHandPose.None;
+        }
+
+        static readonly string[] MusclePart = { "1 Stretched", "Spread", "2 Stretched", "3 Stretched" };
+
+        /// Value of one finger muscle ("Left Index 1 Stretched") in a pose.
+        internal static float PoseValue(KimodoHandPose pose, string muscle)
+        {
+            var t = Table(pose);
+            for (int f = 0; f < 5; f++)
+                for (int p = 0; p < 4; p++)
+                    if (muscle.EndsWith(" " + Fingers[f] + " " + MusclePart[p])) return t[f, p];
+            return 0f;
+        }
 
         /// Finger muscle name -> value for a hand pose; null for None (write no finger curves).
         internal static Dictionary<string, float> HandPoseMuscles(KimodoHandPose pose)
         {
             if (pose == KimodoHandPose.None) return null;
-            var table = pose == KimodoHandPose.Relaxed ? RelaxedPose : pose == KimodoHandPose.Fist ? FistPose : OpenPose;
+            var table = Table(pose);
             var m = new Dictionary<string, float>();
-            string[] part = { "1 Stretched", "Spread", "2 Stretched", "3 Stretched" };
             foreach (var side in new[] { "Left", "Right" })
                 for (int f = 0; f < 5; f++)
                     for (int p = 0; p < 4; p++)
-                        m[$"{side} {Fingers[f]} {part[p]}"] = table[f, p];
+                        m[$"{side} {Fingers[f]} {MusclePart[p]}"] = table[f, p];
             return m;
+        }
+
+        /// Valid timed poses for one hand ("left"/"right"), in file order.
+        internal static List<(KimodoHandPose pose, int start, int end, int blend)> HandRanges(BakeOptions o, string side)
+        {
+            var list = new List<(KimodoHandPose, int, int, int)>();
+            if (o.handPoses == null) return list;
+            foreach (var r in o.handPoses)
+                if (r != null && string.Equals((r.hand ?? "").Trim(), side, System.StringComparison.OrdinalIgnoreCase) &&
+                    ParsePose(r.pose, out var p) && r.end >= r.start)
+                    list.Add((p, r.start, r.end, r.blend < 0 ? DefaultHandBlendFrames : r.blend));
+            return list;
+        }
+
+        /// Weight (0..1) of a timed pose at a frame: 1 inside [start, end], smoothstep ramps of `blend` frames outside.
+        internal static float RangeWeight(int start, int end, int blend, float frame)
+        {
+            if (frame >= start && frame <= end) return 1f;
+            if (blend <= 0) return 0f;
+            float d = frame < start ? start - frame : frame - end;
+            float u = Mathf.Clamp01(1f - d / blend);
+            return u * u * (3f - 2f * u);
+        }
+
+        /// A finger muscle's value at a frame: base pose, then each timed pose of that hand blended on top, in order.
+        internal static float FingerValue(string muscle, BakeOptions o, float frame, List<(KimodoHandPose pose, int start, int end, int blend)> ranges)
+        {
+            float v = PoseValue(o.hands, muscle);
+            foreach (var r in ranges)
+            {
+                float w = RangeWeight(r.start, r.end, r.blend, frame);
+                if (w > 0f) v = Mathf.Lerp(v, PoseValue(r.pose, muscle), w);
+            }
+            return v;
+        }
+
+        static AnimationCurve FingerCurve(string muscle, BakeOptions o, int frames, float fps)
+        {
+            var ranges = HandRanges(o, muscle.StartsWith("Left ") ? "left" : "right");
+            float end = (frames - 1) / fps;
+            if (ranges.Count == 0) return AnimationCurve.Constant(0, end, PoseValue(o.hands, muscle));
+            var keys = new Keyframe[frames];
+            for (int f = 0; f < frames; f++) keys[f] = new Keyframe(f / fps, FingerValue(muscle, o, f, ranges));
+            for (int f = 0; f < frames; f++) // linear tangents: no overshoot between the per-frame keys
+            {
+                keys[f].inTangent = f > 0 ? (keys[f].value - keys[f - 1].value) * fps : 0f;
+                keys[f].outTangent = f < frames - 1 ? (keys[f + 1].value - keys[f].value) * fps : 0f;
+            }
+            return new AnimationCurve(keys);
         }
 
         // HumanTrait finger muscle names ("Left Thumb 1 Stretched") differ from Animator property names

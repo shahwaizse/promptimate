@@ -31,6 +31,15 @@ namespace Promptimate.Editor
     {
         public bool loop, loopPose, inPlace, bakeRootRotation, bakeRootHeight, ikGoals;
         public string hands;
+        public int handPoses;   // timed hand poses applied (from the prompt)
+    }
+
+    [System.Serializable]
+    public class HandPoseCheck
+    {
+        public string hand, pose; public int frame;
+        public float indexCurlDeg, otherCurlDeg; // rig C: index finger, mean of middle/ring/little (MCP+PIP+DIP)
+        public bool ok;
     }
 
     [System.Serializable]
@@ -71,9 +80,12 @@ namespace Promptimate.Editor
         public float footIKErrMaxM = -1;        // SOMA avatar: feet with Foot IK on vs off
         public float otherRigFootIKDiffMaxM = -1; // rig C: feet with Foot IK on vs off (info: proportion correction)
         public RigChecks otherRigFootIK = new RigChecks();
+        public float otherRigSoleErrM = -999;   // rig C, Foot IK on: lowest foot joint vs where its own sole convention puts it
         // Hands
         public int fingerCurves;
         public float fingerCurlDeg = -1;  // rig C, mean total curl of the four fingers at t=0
+        public List<HandPoseCheck> handPoseChecks = new List<HandPoseCheck>(); // rig C, one per timed pose (+ base)
+        public int handPoseIgnored;       // timed poses the importer could not use (unknown pose / hand / range)
         // Loop
         public float loopSeamM = -1;      // pose difference end vs start of the looping clip (hips-relative)
         public float sourceSeamM = -1;    // same, raw source frames (how loopable the generated motion is)
@@ -88,6 +100,7 @@ namespace Promptimate.Editor
         const float ToePlantedM = 0.10f;  // toe joint below this height = foot on the ground (toes check)
         const float BoneDirMeanLimitDeg = 20f, RefPosLimit = 0.01f, HandRollMeanLimitDeg = 25f;
         const float GoalCurveLimitM = 0.002f, GoalCurveLimitDeg = 1f, FootIKLimitM = 0.03f;
+        const float SoleLimitM = 0.008f;
         const float InPlaceTravelLimit = 0.05f, InPlaceWanderLimit = 0.5f, LoopSeamLimit = 0.03f;
 
         static readonly string[] Compared =
@@ -125,6 +138,7 @@ namespace Promptimate.Editor
             {
                 loop = opts.loop, loopPose = opts.loopPose, inPlace = opts.inPlace, bakeRootRotation = opts.bakeRootRotation,
                 bakeRootHeight = opts.bakeRootHeight, ikGoals = opts.ikGoals, hands = opts.hands.ToString(),
+                handPoses = opts.handPoses?.Length ?? 0,
             };
             // Conversion checks run on a neutral copy, so loop blending / baking can't mask or fake errors.
             var core = Object.Instantiate(clip);
@@ -221,11 +235,33 @@ namespace Promptimate.Editor
                 var travel = Flat(a[hips].position) - p0;
                 r.travelM = travel.magnitude;
                 r.facingVsTravelDeg = r.travelM > 0.5f ? Vector3.Angle(fwdSum, travel) : -1f;
+                // Per frame: does the body move against the way it faces right then? (A clip that turns around and
+                // walks back has a meaningless average facing, so the whole-clip angle above can't decide this.)
+                if (r.facingVsTravelDeg > 120f)
+                {
+                    int iL = System.Array.IndexOf(data.names, "LeftLeg"), iR = System.Array.IndexOf(data.names, "RightLeg");
+                    int moving = 0, backward = 0, stride = 3;
+                    for (int f = 0; f + stride < F; f += stride)
+                    {
+                        KimodoImporter.ApplySourceFrame(data, a, f);
+                        var fw = BodyForward(a[iL].position, a[iR].position);
+                        var h0 = Flat(a[hips].position);
+                        KimodoImporter.ApplySourceFrame(data, a, f + stride);
+                        var v = (Flat(a[hips].position) - h0) * (data.fps / stride);
+                        if (v.magnitude < 0.5f) continue;
+                        moving++;
+                        if (Vector3.Angle(fw, v) > 120f) backward++;
+                    }
+                    r.facingVsTravelDeg = moving > 0 && backward * 2 > moving ? r.facingVsTravelDeg : -1f;
+                }
 
                 if (!r.humanMotion) r.failures.Add("clip is not humanoid");
                 if (r.refPosErrMaxM > RefPosLimit) r.failures.Add($"source rig differs from reference FK by {r.refPosErrMaxM:F3} m at {r.refPosErrMaxJoint} (conversion bug?)");
                 if (r.initialFacingDeg > 45f) r.failures.Add($"clip starts facing {r.initialFacingDeg:F0} deg away from +Z (Unity forward)");
-                bool backwardPrompt = (data.prompt ?? "").ToLowerInvariant().Contains("backward");
+                var lp = (data.prompt ?? "").ToLowerInvariant();
+                // Sitting / lying / kneeling down moves the hips back a little: not a facing bug.
+                bool backwardPrompt = lp.Contains("backward") ||
+                    (r.travelM < 1f && new[] { "sit", "lie ", "lies", "lying", "kneel" }.Any(lp.Contains));
                 if (r.facingVsTravelDeg > 120f && !backwardPrompt)
                     r.failures.Add($"moves opposite to where it faces ({r.facingVsTravelDeg:F0} deg) but prompt doesn't say backward");
                 if (r.poseErrMeanM > PoseErrMeanLimit) r.failures.Add($"SOMA round-trip pose error mean {r.poseErrMeanM:F3} m");
@@ -289,8 +325,17 @@ namespace Promptimate.Editor
                                Dictionary<string, Transform> fingers, Dictionary<string, Vector3> fingerRest, KimodoFile data)
         {
             var expected = KimodoImporter.HandPoseMuscles(o.hands);
+            var ranges = new Dictionary<string, List<(KimodoHandPose pose, int start, int end, int blend)>>
+            {
+                { "left", KimodoImporter.HandRanges(o, "left") }, { "right", KimodoImporter.HandRanges(o, "right") },
+            };
+            if (o.handPoses != null) r.handPoseIgnored = o.handPoses.Length - ranges["left"].Count - ranges["right"].Count;
+            if (r.handPoseIgnored > 0 && o.hands != KimodoHandPose.None)
+                r.failures.Add($"{r.handPoseIgnored} hand pose entr{(r.handPoseIgnored == 1 ? "y" : "ies")} in the file could not be applied (unknown hand/pose or end < start)");
+
+            // 1) Curves: one per finger muscle (none for None), following base pose + timed poses over the whole clip.
             var bindings = AnimationUtility.GetCurveBindings(clip).Where(bd => bd.type == typeof(Animator)).ToArray();
-            int bad = 0;
+            int bad = 0, F = data.frames, step = Mathf.Max(1, F / 60);
             foreach (var m in HumanTrait.MuscleName.Where(KimodoImporter.IsFingerMuscle))
             {
                 var prop = KimodoImporter.MusclePropertyName(m);
@@ -298,32 +343,60 @@ namespace Promptimate.Editor
                 if (bd.propertyName == null) continue;
                 r.fingerCurves++;
                 var curve = AnimationUtility.GetEditorCurve(clip, bd);
-                if (expected == null || !expected.TryGetValue(m, out var v) || Mathf.Abs(curve.Evaluate(0) - v) > 1e-4f) bad++;
+                if (expected == null) { bad++; continue; }
+                var rs = ranges[m.StartsWith("Left ") ? "left" : "right"];
+                for (int f = 0; f < F; f += step)
+                    if (Mathf.Abs(curve.Evaluate(f / data.fps) - KimodoImporter.FingerValue(m, o, f, rs)) > 1e-3f) { bad++; break; }
             }
             int want = expected?.Count ?? 0;
             if (r.fingerCurves != want || bad > 0)
                 r.failures.Add($"hand pose {o.hands}: {r.fingerCurves} finger curves (expected {want}), {bad} with wrong values");
 
             if (rigC == null || o.hands == KimodoHandPose.None) return;
-            // Functional check on a rig with finger bones: total curl (MCP+PIP+DIP) of the four fingers.
-            clip.SampleAnimation(rigC, 0f);
-            double sum = 0; int n = 0;
-            foreach (var side in new[] { "Left", "Right" })
+            // 2) Functional check on a rig with finger bones: the shape each pose promises, for each hand where it applies.
+            var probes = new List<(string side, KimodoHandPose pose, int frame)>();
+            foreach (var side in new[] { "left", "right" })
             {
-                var hand = c[System.Array.IndexOf(data.names, side + "Hand")];
-                foreach (var f in new[] { "Index", "Middle", "Ring", "Little" })
+                var rs = ranges[side];
+                // Each timed pose at its middle frame, unless a later entry (which wins) overlaps it there.
+                for (int i = 0; i < rs.Count; i++)
                 {
-                    var p = Enumerable.Range(1, 4).Select(i => fingers[$"{side}Hand{f}{i}"]).ToArray();
-                    var restDir = hand.TransformDirection(fingerRest[$"{side}Hand{f}1"]);
-                    var s1 = p[1].position - p[0].position; var s2 = p[2].position - p[1].position; var s3 = p[3].position - p[2].position;
-                    sum += Vector3.Angle(restDir, s1) + Vector3.Angle(s1, s2) + Vector3.Angle(s2, s3); n++;
+                    int mid = Mathf.Clamp((rs[i].start + rs[i].end) / 2, 0, F - 1);
+                    if (rs.Skip(i + 1).All(x => KimodoImporter.RangeWeight(x.start, x.end, x.blend, mid) == 0f)) probes.Add((side, rs[i].pose, mid));
                 }
+                // The base pose at a frame where no timed pose of this hand is active, if there is one.
+                int free = Enumerable.Range(0, F).Where(f => rs.All(x => KimodoImporter.RangeWeight(x.start, x.end, x.blend, f) == 0f)).DefaultIfEmpty(-1).First();
+                if (free >= 0) probes.Add((side, o.hands, free));
             }
-            r.fingerCurlDeg = (float)(sum / n);
-            bool ok = o.hands == KimodoHandPose.Open ? r.fingerCurlDeg < 20f
-                    : o.hands == KimodoHandPose.Fist ? r.fingerCurlDeg > 180f
-                    : r.fingerCurlDeg > 35f && r.fingerCurlDeg < 150f;
-            if (!ok) r.failures.Add($"hand pose {o.hands}: fingers curled {r.fingerCurlDeg:F0} deg on the test rig");
+            double sum0 = 0; int n0 = 0;
+            foreach (var (side, pose, frame) in probes)
+            {
+                clip.SampleAnimation(rigC, frame / data.fps);
+                string S = side == "left" ? "Left" : "Right";
+                var hand = c[System.Array.IndexOf(data.names, S + "Hand")];
+                float Curl(string f)
+                {
+                    var p = Enumerable.Range(1, 4).Select(i => fingers[$"{S}Hand{f}{i}"]).ToArray();
+                    var restDir = hand.TransformDirection(fingerRest[$"{S}Hand{f}1"]);
+                    var s1 = p[1].position - p[0].position; var s2 = p[2].position - p[1].position; var s3 = p[3].position - p[2].position;
+                    return Vector3.Angle(restDir, s1) + Vector3.Angle(s1, s2) + Vector3.Angle(s2, s3);
+                }
+                float idx = Curl("Index"), others = (Curl("Middle") + Curl("Ring") + Curl("Little")) / 3f, all4 = (idx + 3 * others) / 4f;
+                bool ok;
+                switch (pose)
+                {
+                    case KimodoHandPose.Flat: ok = all4 < 20f; break;
+                    case KimodoHandPose.Open: ok = all4 < 30f; break; // spread adds to the angle from the rest direction
+                    case KimodoHandPose.Fist: ok = all4 > 180f; break;
+                    case KimodoHandPose.Point: ok = idx < 30f && others > 150f; break;
+                    case KimodoHandPose.Grip: ok = all4 > 90f && all4 < 200f; break;
+                    default: ok = all4 > 35f && all4 < 150f; break;
+                }
+                r.handPoseChecks.Add(new HandPoseCheck { hand = side, pose = pose.ToString(), frame = frame, indexCurlDeg = idx, otherCurlDeg = others, ok = ok });
+                if (pose == o.hands) { sum0 += all4; n0++; }
+                if (!ok) r.failures.Add($"hand pose {pose} ({side} hand, frame {frame}): fingers curled index {idx:F0} deg, others {others:F0} deg on the test rig");
+            }
+            if (n0 > 0) r.fingerCurlDeg = (float)(sum0 / n0);
         }
 
         // ---- Runtime playback (root motion, in place, grounding) -------------------------------------------------
@@ -428,21 +501,46 @@ namespace Promptimate.Editor
             if (avatarC != null)
             {
                 var acc = new Acc();
+                var lowC = new List<float>();
                 r.otherRigFootIKDiffMaxM = FootIKDiff(data, () =>
                 {
                     var x = BuildSyntheticRig(data, out _, out _, out _);
                     var y = BuildSyntheticRig(data, out var u, out _, out _);
                     return (x, y, u);
-                }, avatarC, clip, acc);
+                }, avatarC, clip, acc, lowC);
                 r.otherRigFootIK = acc.Done();
                 CheckGrounded("other rig with Foot IK", r.otherRigFootIK, r.failures);
+                // Sole calibration: with Foot IK, a character's soles go where the source's soles are. The synthetic rig
+                // stands on y = 0 in its rest pose, so its lowest foot joint must reach its rest height (scaled like its
+                // legs) whenever the source foot is flat on the floor. A wrong SOMA foot bottom height floats every rig.
+                var restC = BuildSyntheticRig(data, out var cb, out _, out _);
+                try
+                {
+                    float restLow = FeetJoints.Select(n => cb[System.Array.IndexOf(data.names, n)].position.y).Min();
+                    // Per frame: source lowest foot joint (Unity space; sole = SomaSoleBelowToe under the toe joint when flat).
+                    var feetIdx = FeetJoints.Select(n => System.Array.IndexOf(data.names, n)).ToArray();
+                    bool hasRef = data.refPos != null && data.refPos.Length == data.frames * data.joints * 3;
+                    // Only meaningful with height baked into the pose (otherwise the height is root motion, not applied here).
+                    if (hasRef && lowC.Count == data.frames && o.bakeRootHeight)
+                    {
+                        var ls = Enumerable.Range(0, data.frames).Select(f => feetIdx.Min(j => data.refPos[(f * data.joints + j) * 3 + 1])).ToArray();
+                        float floorS = ls.Min();
+                        // Frames where the source stands flat on its floor; median, so Loop Pose blending can't skew it.
+                        var errs = Enumerable.Range(0, data.frames).Where(f => ls[f] < floorS + 0.005f)
+                            .Select(f => lowC[f] - (restLow + (ls[f] - KimodoImporter.SomaSoleBelowToe) * 0.9f)).OrderBy(x => x).ToArray();
+                        r.otherRigSoleErrM = errs[errs.Length / 2];
+                        if (Mathf.Abs(r.otherRigSoleErrM) > SoleLimitM)
+                            r.failures.Add($"other rig with Foot IK: soles {r.otherRigSoleErrM * 100:F1} cm off the floor (SOMA foot bottom height / sole calibration)");
+                    }
+                }
+                finally { Object.DestroyImmediate(restC); }
             }
         }
 
         /// Plays the clip on two copies of a rig (Foot IK off / on, no root motion); returns max feet distance.
         /// accOn collects semantics of the IK-on rig.
         static float FootIKDiff(KimodoFile data, System.Func<(GameObject off, GameObject on, Transform[] onBones)> make,
-                                Avatar avatar, AnimationClip clip, Acc accOn)
+                                Avatar avatar, AnimationClip clip, Acc accOn, List<float> lowestOn = null)
         {
             var (rigOff, rigOn, onBones) = make();
             // Transform arrays: re-resolve by name for the IK-off rig.
@@ -458,6 +556,7 @@ namespace Promptimate.Editor
                     g0.Evaluate(f == 0 ? 0 : dt); g1.Evaluate(f == 0 ? 0 : dt);
                     foreach (var j in feet) max = Mathf.Max(max, Vector3.Distance(offBones[j].position, onBones[j].position));
                     if (accOn != null) Semantics(data, onBones, accOn, Vector3.zero);
+                    if (lowestOn != null) lowestOn.Add(feet.Min(j => onBones[j].position.y));
                 }
             }
             finally

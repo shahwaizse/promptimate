@@ -1,8 +1,8 @@
 {
   "name": "com.promptimate.unity",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "displayName": "Promptimate",
-  "description": "Free, local text-to-animation for Unity. Imports .kimodo motions generated on your own GPU (NVIDIA Kimodo via kimodo.cpp, driven by the Promptimate MCP server) as Humanoid AnimationClips (root motion or in place, seamless loops, relaxed hand pose, IK goal curves for Timeline and Foot IK), and validates every clip automatically.",
+  "description": "Free, local text-to-animation for Unity. Imports .kimodo motions generated on your own GPU (NVIDIA Kimodo via kimodo.cpp, driven by the Promptimate MCP server) as Humanoid AnimationClips (root motion or in place, seamless loops, relaxed hand pose plus finger poses inferred from the prompt, IK goal curves for Timeline and Foot IK), turns on Foot IK for Animator states that play them, offers an optional grounding component for characters with other body shapes, and validates every clip automatically.",
   "unity": "6000.0",
   "license": "MIT",
   "documentationUrl": "https://promptimate.shahwaiz.dev",
