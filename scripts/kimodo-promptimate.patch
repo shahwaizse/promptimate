@@ -1,18 +1,19 @@
-From 7ffd24e5af52ec3ef064284340c6f2eb13ed9ab5 Mon Sep 17 00:00:00 2001
+From e3c3a60680e29dc19b7ae807383f072494b48683 Mon Sep 17 00:00:00 2001
 From: promptimate <noreply@localhost>
 Date: Sun, 15 Nov 2026 16:44:50 +0500
 Subject: [PATCH] Promptimate patches: 2-branch CFG without constraints, V2
  server options (cfg, ccfg, constraints), foot contacts output, motion-first
- load order, prompt embedding cache
+ load order, prompt embedding cache, KIMODO_TEXT_BACKEND
 
 ---
  include/kimodo/kimodo.hpp | 13 +++++++++
  src/denoiser.cpp          | 14 ++++++---
  src/denoiser.hpp          |  3 +-
  src/generate.cpp          | 39 +++++++++++++++++++++++--
+ src/llm_text_encoder.cpp  |  3 ++
  src/model.cpp             | 43 ++++++++++++++++++++++++++--
  src/sequence.cpp          | 60 +++++++++++++++++++++++++++++++++++++--
- 6 files changed, 161 insertions(+), 11 deletions(-)
+ 7 files changed, 164 insertions(+), 11 deletions(-)
 
 diff --git a/include/kimodo/kimodo.hpp b/include/kimodo/kimodo.hpp
 index e774e5a..711e550 100644
@@ -160,6 +161,20 @@ index 132f88e..5bcdc60 100644
                  if (!motion) throw std::runtime_error(motion.error());
                  write_motion(fields[3], *motion);
                  std::cout << "OK\t" << motion->frames << '\t' << motion->joints << '\n' << std::flush;
+diff --git a/src/llm_text_encoder.cpp b/src/llm_text_encoder.cpp
+index 05096a1..118f804 100644
+--- a/src/llm_text_encoder.cpp
++++ b/src/llm_text_encoder.cpp
+@@ -38,6 +38,9 @@ namespace {
+ constexpr int64_t hidden = 4096, heads = 32, kv_heads = 8, head_dim = 128;
+ 
+ bool use_vulkan() {
++    // Promptimate: KIMODO_TEXT_BACKEND=cpu keeps only the text encoder on the CPU, leaving the whole GPU budget
++    // to the motion model (8 GB cards spill the motion graph into shared memory otherwise).
++    if (const char *text = std::getenv("KIMODO_TEXT_BACKEND")) return std::string_view(text) != "cpu";
+     const char *choice = std::getenv("KIMODO_BACKEND");
+     return !choice || std::string_view(choice) != "cpu";
+ }
 diff --git a/src/model.cpp b/src/model.cpp
 index 91d2ec0..901c662 100644
 --- a/src/model.cpp
