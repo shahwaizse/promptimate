@@ -147,7 +147,7 @@ def write_skeleton_json(motion_dir: Path) -> Path:
     return p
 
 
-def write_kimodo_file(motion_dir: Path, target: Path, prompt: str) -> Path:
+def write_kimodo_file(motion_dir: Path, target: Path, prompt: str, extra: dict | None = None) -> Path:
     """Single-file interchange for the Unity ScriptedImporter (extension .kimodo, JSON).
     Coordinates are Kimodo's (right-handed, Y-up, metres, character faces +Z); the importer converts."""
     root, rot = load(motion_dir)
@@ -159,6 +159,7 @@ def write_kimodo_file(motion_dir: Path, target: Path, prompt: str) -> Path:
         "rot": [round(float(v), 6) for v in rot.reshape(-1)],
         # Independent ground truth for the Unity validator: global joint positions from our own FK (Kimodo space).
         "refPos": [round(float(v), 5) for v in fk(root, rot).reshape(-1)],
+        **(extra or {}),  # e.g. {"loop": true, "inPlace": false}: importer clip settings
     }
     local = motion_dir / target.name
     local.write_text(json.dumps(data, separators=(",", ":")))
@@ -169,7 +170,7 @@ def write_kimodo_file(motion_dir: Path, target: Path, prompt: str) -> Path:
     return target
 
 
-def checks(pos: np.ndarray, prompt: str) -> dict:
+def checks(pos: np.ndarray, prompt: str, in_place: bool = False) -> dict:
     """Semantic sanity checks in Kimodo space (right-handed, Y-up). Mirrors the Unity validator's invariants."""
     up = np.array([0.0, 1.0, 0.0])
     left = pos[:, 22] - pos[:, 26]                     # LeftLeg - RightLeg
@@ -179,9 +180,10 @@ def checks(pos: np.ndarray, prompt: str) -> dict:
     toes = []
     for foot, toe in ((24, 25), (28, 29)):
         v = pos[:, toe] - pos[:, foot]; v[:, 1] = 0
-        toes.append((np.linalg.norm(v, axis=1) > 0.03, np.einsum("fi,fi->f", v, fwd) > 0))
-    measurable = toes[0][0] & toes[1][0]
-    toes_ok = (toes[0][1] & toes[1][1])[measurable].mean() if measurable.any() else 1.0
+        planted = pos[:, foot, 1] < 0.12  # judge planted feet only: a kicked-up trailing foot points back legitimately
+        toes.append((planted & (np.linalg.norm(v, axis=1) > 0.03), np.einsum("fi,fi->f", v, fwd) > 0))
+    ok = np.concatenate([toes[0][1][toes[0][0]], toes[1][1][toes[1][0]]])
+    toes_ok = ok.mean() if ok.size else 1.0
     lowest = pos[:, [24, 25, 28, 29], 1].min(axis=1)
     travel = pos[-1, 0] - pos[0, 0]; travel[1] = 0
     dist = float(np.linalg.norm(travel))
@@ -196,7 +198,8 @@ def checks(pos: np.ndarray, prompt: str) -> dict:
     }
     fails = []
     if out["initial_facing_deg_from_+Z"] > 45: fails.append("does not start facing +Z")
-    if out["facing_vs_travel_deg"] and out["facing_vs_travel_deg"] > 120 and "backward" not in prompt.lower():
+    if (not in_place and out["facing_vs_travel_deg"] and out["facing_vs_travel_deg"] > 120
+            and "backward" not in prompt.lower()):
         fails.append("moves opposite to facing")
     if out["toes_forward_ratio"] < 0.6: fails.append("feet point backwards")
     if out["grounded_ratio"] < 0.3: fails.append("feet rarely near ground")

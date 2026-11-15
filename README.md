@@ -7,7 +7,7 @@ on Vulkan), so there is no cloud, no credits and no subscription. A local MCP se
 client, act as the director. It plans multi-shot sequences, generates each clip, checks the result and regenerates
 bad takes.
 
-**Status:** v0.1.0 preview. It works end to end on the developer's machine, but it has only been tested on one
+**Status:** v0.2.0 preview. It works end to end on the developer's machine, but it has only been tested on one
 AMD GPU under Windows. Expect rough edges.
 
 ## Requirements
@@ -15,7 +15,8 @@ AMD GPU under Windows. Expect rough edges.
 - Windows 10/11 (x64)
 - Unity 6 (6000.0 or newer)
 - A GPU with a Vulkan driver and about **8 GB VRAM** (AMD, NVIDIA or Intel in principle; only AMD has been tested).
-  The models stay loaded between requests (about 6 GB) and unload after 10 minutes idle.
+  The models stay loaded between requests and unload after 10 minutes idle, or as soon as another Promptimate
+  instance needs the GPU.
 - 16 GB system RAM
 - Python 3.10+ (used for the MCP server)
 - About 7 GB of free disk space for the models
@@ -52,10 +53,11 @@ The server id is `kimodo-motion`.
 
 | Tool | What it does |
 |---|---|
-| `generate_motion(segments[{prompt, seconds}], name?, seed, steps=30, transition_frames=5, unity_check=true)` | Generates a clip from one or more blended text segments. Returns stats, a preview image, file paths and the check results. |
+| `generate_motion(segments[{prompt, seconds}], name?, seed, steps=30, takes=3, clean=true, loop=false, in_place=false, root_path?, auto_stop=true, text_cfg?, transition_frames=5, unity_check="background")` | Generates a clip from one or more blended text segments. Makes 3 variations by default and keeps the cleanest, locks the feet to the ground, holds the character still where the text says it stops, and can make seamless loops, in-place clips or follow a root path. Returns stats, checks, a preview sheet (plus a takes sheet) and file paths. |
+| `use_take(name, take)` | Switches a multi-take result to another variation. |
 | `validate_in_unity(names?, self_test)` | Re-runs headless Unity validation. With `self_test` it also runs the negative controls. |
 | `list_motions(limit)` | Lists earlier results. |
-| `get_motion_preview(name)` | Returns the metadata and preview image of an earlier result. |
+| `get_motion_preview(name)` | Returns the metadata (including the background Unity check) and preview image of an earlier result. |
 | `worker_status(warm_up)` | Shows whether the GPU worker is loaded, or loads it now. |
 
 See [`mcp_server/README.md`](mcp_server/README.md) for environment variables and details.
@@ -63,12 +65,13 @@ See [`mcp_server/README.md`](mcp_server/README.md) for environment variables and
 ## Limitations
 
 - **Body only.** There are no fingers and no facial animation. The SOMA model outputs a 30-joint body skeleton.
-- **No positional constraints yet.** You can't specify keyframe poses, root paths or hand and foot targets, because
-  kimodo.cpp doesn't expose them. Input is text plus multi-segment prompts.
-- **Prompt-following is imperfect.** For example, "stops" may keep drifting forward. Regenerate with another seed or
-  reword the prompt. Claude does this automatically when the checks or the preview show a problem.
-- **Speed:** about **20 s per 5 s clip** once warm (30 diffusion steps), measured on an AMD RX 6600 XT (8 GB). The first
-  request also loads the models, which takes 1 to 2 minutes from an HDD.
+- **Constraints:** root paths, "stop here" holds and seamless loops are supported (through a small patch to
+  kimodo.cpp, see `scripts/kimodo-promptimate.patch`). Hand and foot targets aren't exposed yet.
+- **Prompt-following is imperfect.** Unusual actions can come out generic. Each call makes several variations and
+  Claude regenerates when the checks or the preview show a problem.
+- **Speed:** about **2.5 s per 5 s clip** once warm (30 diffusion steps), so a default 3-take call takes about 10 s,
+  measured on an AMD RX 6600 XT (8 GB). The first request also loads the models, which takes up to a minute from an
+  HDD.
 - **Only tested on AMD / Windows.** NVIDIA and Intel should work through Vulkan but haven't been tested.
 - The model licenses are separate from this code. Check them before you use output commercially (see below).
 
