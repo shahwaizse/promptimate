@@ -179,6 +179,14 @@ class KimodoWorker:
         return {"frames": int(parts[1]), "joints": int(parts[2]), "seconds": round(dt, 2),
                 "cold_start": cold, "text_quant": self.text_quant, "text_cfg": text_cfg}
 
+    def warm(self) -> dict:
+        """Load the models now with a tiny generation (no-op if already loaded)."""
+        if self.alive():
+            return {"warmed": False, "seconds": 0.0}
+        t0 = time.time()
+        self.generate([Segment("a person stands still", 30)], ROOT / ".cache" / "warm", steps=1, seed=0)
+        return {"warmed": True, "seconds": round(time.time() - t0, 2)}
+
     def stop(self) -> None:
         if self.alive():
             self.proc.stdin.close()

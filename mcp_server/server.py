@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import sys
 import threading
 import time
@@ -21,10 +20,13 @@ from mcp.server.fastmcp import FastMCP, Image  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 import constraints as C  # noqa: E402
+import hands  # noqa: E402
+import intent  # noqa: E402
 import metrics  # noqa: E402
 import motion  # noqa: E402
 import postprocess  # noqa: E402
 import render  # noqa: E402
+import selection  # noqa: E402
 import unity_validate  # noqa: E402
 from kimodo_worker import KimodoWorker, Segment  # noqa: E402
 
@@ -53,7 +55,14 @@ mcp = FastMCP("kimodo-motion", instructions=(
     "top-down path, height and foot-contact timeline) and judge whether the motion matches the request; regenerate "
     "with another seed or a reworded prompt if not. 'checks' are fast automatic sanity checks; if they fail, "
     "regenerate. Clips are cleaned automatically (feet locked to the ground, no floor penetration). "
-    "Speed on an 8 GB RX 6600 XT: ~8 s for a 5 s clip at 30 steps once warm, plus ~1 min model load on the first call."
+    "Clips that must fit together: start_pose/end_pose='idle' starts/ends the clip in the same neutral standing pose "
+    "every time. Use it on both ends for a set of game clips an Animator switches between (wave, attack, emote, "
+    "start/stop walking all returning to one shared idle). continue_from=<earlier motion name> starts the clip in "
+    "that clip's last pose and keeps its momentum, for a shot list or combo played back to back (walk in -> stop -> "
+    "talk -> leave). Leave both off for one-off clips, and don't combine them with loop. Every clip still starts at "
+    "the origin facing +Z; Apply Root Motion carries position and turning across chained clips. "
+    "Speed: a few seconds per clip once warm. The models start loading in the background when this server starts "
+    "(about 1 min from a slow disk), so the first call may wait for that."
 ))
 # All instances (one per Claude session) share one warm engine through motiond; MOTIOND=0 runs a private engine.
 if os.environ.get("MOTIOND", "1") == "0":
@@ -165,11 +174,18 @@ def _unity_bg(out_dir: Path, asset: Path) -> None:
     _update_meta(out_dir, unity_validation=res)
 
 
-def _finish(out_dir: Path, name: str, prompt_text: str, root, rot, *, loop: bool, in_place: bool) -> dict:
+def _finish(out_dir: Path, name: str, prompt_text: str, root, rot, *, loop: bool, in_place: bool,
+            segs=None) -> dict:
     """Write final raw files + .kimodo for the chosen take; returns file paths."""
     postprocess.save(out_dir, root, rot)
     motion.write_skeleton_json(out_dir)
     extra = {"loop": loop, "inPlace": in_place}
+    if segs:
+        # finger poses inferred from the text (point, fist, wave, clap, grip), timed to the gesture; rigs without
+        # finger bones ignore them. Segment frames are rescaled if the clip was retimed.
+        scale = len(root) / max(1, sum(s.frames for s in segs))
+        hs = [(s.prompt, max(1, round(s.frames * scale))) for s in segs]
+        extra["handPoses"] = hands.hand_poses(hs, pos=motion.fk(root, rot), frames=len(root))
     if (UNITY_PROJECT / "Assets").is_dir():
         target = UNITY_PROJECT / "Assets" / "Promptimate" / "Generated" / f"{name}.kimodo"
         files = {"unity_asset": str(motion.write_kimodo_file(out_dir, target, prompt_text, extra))}
@@ -180,12 +196,106 @@ def _finish(out_dir: Path, name: str, prompt_text: str, root, rot, *, loop: bool
     return files
 
 
+POSES = {"free", "idle"}
+CONTINUE_OVERLAP = 5  # continue_from: the previous clip's last 5 frames condition the start (pose + velocity)
+
+
+def _hold_frames(continue_from: str | None) -> int:
+    """Frames snapped exactly at the start: a short still hold for a canonical pose; a continuation snaps only
+    frame 0 so the motion carries on instead of pausing."""
+    return 1 if continue_from else C.POSE_WINDOW
+
+
+def _continue_context(continue_from: str, n: int) -> np.ndarray:
+    """Feature rows of the previous clip's last n frames, re-based so the first of them is at the origin facing +Z
+    (the model always starts its clip there; pinning frame 0 anywhere else fights it)."""
+    root, rot = motion.load(OUTPUT / continue_from)
+    n = min(n, len(root))
+    x, z, h = C.frame_placement(root, rot, len(root) - n)
+    r, q = C.rebase(root[-n:], rot[-n:], x, z, h)
+    feat = C.features(r, q)
+    return np.concatenate([np.repeat(feat[:1], n - len(feat), axis=0), feat]) if len(feat) < n else feat
+
+
+def _trim_lead_in(d: Path, n: int) -> None:
+    """Drop the first n frames of a take's engine output (the continue_from lead-in)."""
+    root, rot = motion.load(d)
+    postprocess.save(d, root[n:], rot[n:])
+    cf = d / "foot_contacts.f32"
+    if cf.exists():
+        c = np.fromfile(cf, dtype="<f4").reshape(len(root), -1)
+        np.ascontiguousarray(c[n:]).tofile(cf)
+
+
+def _start_target(start_pose: str, continue_from: str | None):
+    """Start pose (root, rot) in the new clip's canonical space (origin, facing +Z), and for continue_from the
+    previous clip's end placement (x, z, heading) in that clip's own space."""
+    if continue_from:
+        d = OUTPUT / continue_from
+        if not (d / "meta.json").exists() or not (d / "root_positions.f32").exists():
+            raise ValueError(f"unknown motion {continue_from!r} for continue_from; call list_motions")
+        root, rot = motion.load(d)  # the final (post-processed) clip, as it plays in Unity
+        x, z, h = C.frame_placement(root, rot, len(root) - 1)
+        return C.rebase(root[-1], rot[-1], x, z, h), (x, z, h)
+    if start_pose != "free":
+        return C.load_pose(start_pose), None
+    return None, None
+
+
+def _apply_pins(root, rot, start_pose, end_pose, continue_from, *, in_place=False):
+    """After post-processing: make the pinned start/end frames exactly the target pose (foot locking and grounding
+    move legs and hips a little), and work out where a continued clip sits in its chain.
+    Returns (root, rot, pins_info, chain)."""
+    pins, chain = {}, None
+    target, prev_end = _start_target(start_pose, continue_from)
+    # Each pin is placed where the clip's own feet are (fit_placement), so snapping reshapes the body without
+    # sliding planted feet; a pinned start is then moved rigidly so it begins exactly at the origin facing +Z.
+    if target is not None:
+        if in_place:
+            root, rot, info = C.snap_pose(root, rot, target, "start", hold=_hold_frames(continue_from))
+        else:
+            x, z, h = C.fit_placement(root, rot, 0, target)
+            root, rot, info = C.snap_pose(root, rot, C.transform(*target, x, z, h), "start",
+                                          hold=_hold_frames(continue_from), xz=True)
+            root, rot = C.rebase(root, rot, x, z, h)
+        pins["start"] = {"pose": "continue" if continue_from else start_pose, "frames": info["frames"],
+                         "distance_before_snap": info["before"], "distance_after": info["after"]}
+    if end_pose != "free":
+        target = C.load_pose(end_pose)
+        if in_place:
+            x, z, h = C.frame_placement(root, rot, len(root) - 1)
+        else:
+            x, z, h = C.fit_placement(root, rot, len(root) - 1, target)
+        root, rot, info = C.snap_pose(root, rot, C.transform(*target, x, z, h), "end", xz=not in_place)
+        pins["end"] = {"pose": end_pose, "frames": info["frames"], "distance_before_snap": info["before"],
+                       "distance_after": info["after"]}
+    if continue_from:
+        x, z, h = prev_end
+        try:
+            pw = json.loads((OUTPUT / continue_from / "meta.json").read_text()).get("chain", {}).get("world_start")
+        except Exception:
+            pw = None
+        pw = pw or {"x": 0.0, "z": 0.0, "heading_deg": 0.0}
+        a = np.radians(pw["heading_deg"])
+        wx = pw["x"] + np.cos(a) * x + np.sin(a) * z  # same rotation convention as constraints.transform
+        wz = pw["z"] - np.sin(a) * x + np.cos(a) * z
+        chain = {"previous": continue_from,
+                 "start_in_previous": {"x": round(x, 4), "z": round(z, 4), "heading_deg": round(np.degrees(h), 2)},
+                 "world_start": {"x": round(float(wx), 4), "z": round(float(wz), 4),
+                                 "heading_deg": round(pw["heading_deg"] + float(np.degrees(h)), 2)},
+                 "note": "re-based to start at the origin facing +Z; with Apply Root Motion (or Timeline 'match "
+                         "offsets') it carries on from the previous clip. world_start = where it begins in the "
+                         "first clip's space."}
+    return root, rot, pins, chain
+
+
 @mcp.tool()
 def generate_motion(segments: list[MotionSegment], name: str | None = None, seed: int = 0,
-                    steps: int = DEFAULT_STEPS, transition_frames: int = 5, text_cfg: float | None = None,
+                    steps: int = DEFAULT_STEPS, transition_frames: int = 10, text_cfg: float | None = None,
                     takes: int = DEFAULT_TAKES, clean: bool = True, loop: bool = False, in_place: bool = False,
                     root_path: list[Waypoint] | None = None, auto_stop: bool = True,
-                    unity_check: str = "background") -> list:
+                    start_pose: str = "free", end_pose: str = "free", continue_from: str | None = None,
+                    speed: float = 1.0, unity_check: str = "background") -> list:
     """Generate a humanoid motion clip from one or more text segments (played in order, blended).
 
     Returns stats, automatic checks, output paths (.kimodo dropped into the Unity project, imported as a Humanoid
@@ -196,66 +306,133 @@ def generate_motion(segments: list[MotionSegment], name: str | None = None, seed
     in_place: remove horizontal travel. root_path: waypoints pinning the hips' ground position over time.
     auto_stop: when a segment says the character stops / stands still / stays in place, actually hold the hips
     there (a second constrained pass; the model alone often keeps drifting).
+    start_pose / end_pose: "free" (default; the model picks) or "idle" (the same neutral standing pose every time,
+    held for a few frames). Use "idle" on both ends for game clips that an Animator blends between (idle -> wave ->
+    idle, starts and stops). end_pose="idle" costs a second pass per take.
+    continue_from: name of an earlier motion; this clip starts exactly in its last pose (seamless chaining for a
+    shot list or a combo). Each clip still starts at the origin facing +Z; meta "chain" says where it sits in the
+    first clip's space. Can't be combined with start_pose="idle" or loop.
+    speed: playback speed of the result (0.5-2.0). The model tops out around 3 m/s, so for a sprint use the run
+    prompt with speed 1.3-1.5; for slow motion use 0.5-0.8. The clip keeps the requested duration.
     unity_check: "background" (default; result lands in meta.json, see get_motion_preview), "sync" or "off".
     """
     if not segments:
         raise ValueError("need at least one segment")
     steps = max(1, min(int(steps), 200))
     takes = max(1, min(int(takes), 6))
-    segs = [Segment(s.prompt.strip(), max(2, min(300, round(s.seconds * motion.FPS)))) for s in segments]
+    speed = float(speed)
+    if not 0.5 <= speed <= 2.0:
+        raise ValueError("speed must be between 0.5 and 2.0")
+    if speed != 1.0 and (loop or continue_from or root_path):
+        raise ValueError("speed can't be combined with loop, continue_from or root_path yet")
+    # wording the model follows measurably better (intent.rewrite); the user's prompt is kept in the meta
+    given = [s.prompt.strip() for s in segments]
+    segs = [Segment(intent.rewrite(p), max(2, min(300, round(s.seconds * speed * motion.FPS))))
+            for p, s in zip(given, segments)]
     if len(segs) > 1 and any(s.frames <= transition_frames for s in segs[1:]):
         raise ValueError("every segment after the first must be longer than transition_frames")
     frames = sum(s.frames for s in segs)
     name = _slug(name or segs[0].prompt) + time.strftime("_%Y%m%d_%H%M%S")
-    out_dir = OUTPUT / name
-    out_dir.mkdir(parents=True, exist_ok=True)
     prompt_text = " | ".join(s.prompt for s in segs)
     cfg = DEFAULT_TEXT_CFG if text_cfg is None else float(text_cfg)
+    start_pose, end_pose = (start_pose or "free").lower(), (end_pose or "free").lower()
+    for v in (start_pose, end_pose):
+        if v not in POSES:
+            raise ValueError(f"start_pose/end_pose must be one of {sorted(POSES)}, got {v!r}")
+    if continue_from and start_pose != "free":
+        raise ValueError("continue_from already sets the start pose; leave start_pose='free'")
+    if loop and (continue_from or start_pose != "free" or end_pose != "free"):
+        raise ValueError("loop=true already makes the clip end in its start pose; it can't also use "
+                         "start_pose/end_pose/continue_from")
+    start_target, _ = _start_target(start_pose, continue_from)
+    out_dir = OUTPUT / name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # continue_from: the engine also generates `pre` lead-in frames pinned to the previous clip's last frames (so
+    # the new motion picks up its velocity, not just its pose); they're cut off again after generation.
+    pre = CONTINUE_OVERLAP - 1 if continue_from else 0
+    if segs[0].frames + pre > 300:  # stay within the engine's 10 s segment limit
+        segs[0] = Segment(segs[0].prompt, 300 - pre)
+        frames = sum(s.frames for s in segs)
+    gen_segs = [Segment(s.prompt, s.frames + (pre if i == 0 else 0)) for i, s in enumerate(segs)]
+    gframes = frames + pre
     cons = None
     if root_path:
-        cons = C.Constraints(frames).root_path([(w.t, w.x, w.z) for w in root_path])
+        cons = C.Constraints(gframes).root_path([(w.t + pre / motion.FPS, w.x, w.z) for w in root_path])
+    if start_target is not None:
+        cons = cons if cons is not None else C.Constraints(gframes)
+        if continue_from:
+            for t, row in enumerate(_continue_context(continue_from, pre + 1)):
+                cons.pose(t, row)
+        else:
+            feat = C.pose_features(*start_target)
+            for t in range(min(C.POSE_WINDOW, gframes)):
+                cons.pose(t, feat)
     boundaries = list(np.cumsum([s.frames for s in segs])[:-1]) if len(segs) > 1 else None
 
-    holds = _auto_holds(segs) if auto_stop and not root_path and not in_place else []
+    holds = _auto_holds(gen_segs) if auto_stop and not root_path and not in_place else []
 
     t0 = time.time()
     results = []
     for k in range(takes):
         d = out_dir / f"take{k}"
         cfile = cons.save(d / "constraints.bin") if cons is not None else None
-        info = worker.generate(segs, d, steps=steps, seed=seed + k, transition=transition_frames,
+        info = worker.generate(gen_segs, d, steps=steps, seed=seed + k, transition=transition_frames,
                                text_cfg=cfg, constraints=cfile)
-        if loop or holds:
+        if loop or holds or end_pose != "free":
             # pass 2, same seed: hold the hips still where the text says the character stops (at the spot the
-            # free pass reached), and/or pin the last frame to the first frame's pose (offset by the travel).
+            # free pass reached), pin the last frame to the first frame's pose (offset by the travel) for loops,
+            # and/or pin the end pose.
             r0, q0 = motion.load(d)
-            c2 = cons.copy() if cons is not None else C.Constraints(frames)
+            c2 = cons.copy() if cons is not None else C.Constraints(gframes)
             for h0, h1 in holds:
                 c2.hold_still(h0, h1, float(r0[h0, 0]), float(r0[h0, 2]))
             if loop:
                 feat = C.features(r0, q0)
                 end = feat[0].copy()
                 end[[0, 2]] += (r0[-1] - r0[0])[[0, 2]]
-                c2.pose(0, feat[0]).pose(frames - 1, end)
-            info2 = worker.generate(segs, d, steps=steps, seed=seed + k, transition=transition_frames,
+                c2.pose(0, feat[0]).pose(gframes - 1, end)
+            if end_pose != "free":
+                # the end pose turned to the heading pass 1 ended with, held still where pass 1 stopped
+                ex, ez, eh = C.frame_placement(r0, q0, gframes - 1)
+                if c2.mask[gframes - 1, 0]:  # an auto-stop hold or root_path already says where it ends
+                    ex, ez = float(c2.observed[gframes - 1, 0]), float(c2.observed[gframes - 1, 2])
+                feat = C.pose_features(*C.transform(*C.load_pose(end_pose), ex, ez, eh))
+                for t in range(max(0, gframes - C.POSE_WINDOW), gframes):
+                    held = (float(c2.observed[t, 0]), float(c2.observed[t, 2])) if c2.mask[t, 0] else (ex, ez)
+                    c2.pose(t, feat, root_xz=False)
+                    c2.root_xz(t, *held)
+            info2 = worker.generate(gen_segs, d, steps=steps, seed=seed + k, transition=transition_frames,
                                     text_cfg=cfg, constraints=c2.save(d / "constraints_pass2.bin"))
             info["seconds"] = round(info["seconds"] + info2["seconds"], 2)
             info["passes"] = 2
             if holds:
-                info["auto_holds_s"] = [[round(a / motion.FPS, 2), round(b / motion.FPS, 2)] for a, b in holds]
+                info["auto_holds_s"] = [[round((a - pre) / motion.FPS, 2), round((b - pre) / motion.FPS, 2)]
+                                        for a, b in holds]
+        if pre:
+            _trim_lead_in(d, pre)
+            info["frames"] = info.get("frames", gframes) - pre
+            info["lead_in_frames"] = pre
         root, rot = motion.load(d)
         pos = motion.fk(root, rot)
         chk = motion.checks(pos, prompt_text)
         m = metrics.compute(pos=pos, boundaries=boundaries)
         results.append({"take": k, "seed": seed + k, "dir": d, "info": info, "checks": chk, "metrics": m,
-                        "score": round(_score(m, chk), 3)})
+                        "pos": pos})
+    # pick the take that does what the prompt asks (prompt-derived checks, late starts, too-still takes) with real
+    # defects as tie-breakers; see selection.py
+    selection.score_takes(results, [(s.prompt, s.frames) for s in segs], prompt_text)
+    for r in results:
+        r.pop("pos", None)
     best = min(results, key=lambda r: r["score"])
     gen_seconds = round(time.time() - t0, 2)
 
     meta = _assemble(out_dir, name, segs, prompt_text, best, results, seed=seed, steps=steps, cfg=cfg,
                      transition_frames=transition_frames, clean=clean, loop=loop, in_place=in_place,
-                     root_path=[w.model_dump() for w in root_path] if root_path else None, unity_check=unity_check)
+                     root_path=[w.model_dump() for w in root_path] if root_path else None, unity_check=unity_check,
+                     start_pose=start_pose, end_pose=end_pose, continue_from=continue_from, speed=speed)
     meta["generation"]["total_gen_seconds"] = gen_seconds
+    if any(g != s.prompt for g, s in zip(given, segs)):
+        meta["prompts_as_given"] = given
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     images = [Image(path=str(out_dir / "preview.png"))]
     if takes > 1:
@@ -268,12 +445,17 @@ def generate_motion(segments: list[MotionSegment], name: str | None = None, seed
 
 
 def _assemble(out_dir: Path, name: str, segs, prompt_text: str, best: dict, results: list, *, seed, steps, cfg,
-              transition_frames, clean, loop, in_place, root_path, unity_check) -> dict:
+              transition_frames, clean, loop, in_place, root_path, unity_check, start_pose="free", end_pose="free",
+              continue_from=None, speed=1.0) -> dict:
     """Post-process the chosen take, write all outputs, start background export/validation, return meta."""
     d = best["dir"]
     root, rot = motion.load(d)
     contacts = postprocess.load_contacts(d)
     pp = {}
+    if speed != 1.0:
+        root, rot = postprocess.retime(root, rot, speed)
+        contacts = None  # engine contacts are per generated frame; the heuristic re-detects on the retimed clip
+        pp["speed"] = speed
     if loop:
         root, rot, li = postprocess.make_loop(root, rot, window=(0, len(root) - 1) if len(root) > 2 else None,
                                               foot_lock=clean, contacts=contacts)
@@ -281,11 +463,14 @@ def _assemble(out_dir: Path, name: str, segs, prompt_text: str, best: dict, resu
                       if k in li}
     elif clean:
         root, rot, ci = postprocess.clean(root, rot, contacts=contacts,
-                                          segment_boundaries=list(np.cumsum([s.frames for s in segs])[:-1]))
+                                          segment_boundaries=[round(b / speed) for b in np.cumsum([s.frames for s in segs])[:-1]])
         pp["clean"] = {k: ci[k] for k in ("ground_offset_m", "before", "after") if k in ci}
     if in_place:
         root, rot = postprocess.make_in_place(root, rot)[:2]
-    files = _finish(out_dir, name, prompt_text, root, rot, loop=loop, in_place=in_place)
+    root, rot, pins, chain = _apply_pins(root, rot, start_pose, end_pose, continue_from, in_place=in_place)
+    if pins:
+        pp["pose_pins"] = pins
+    files = _finish(out_dir, name, prompt_text, root, rot, loop=loop, in_place=in_place, segs=segs)
     pos = motion.fk(root, rot)
     render.render_judge_sheet(pos, out_dir / "preview.png", prompt_text)
     st = motion.stats(pos)
@@ -295,11 +480,14 @@ def _assemble(out_dir: Path, name: str, segs, prompt_text: str, best: dict, resu
                               "root_end_speed_ms", "root_travel_m", "heading_change_deg")}
     meta = {"name": name, "segments": [s.__dict__ for s in segs], "seed": best["seed"], "steps": steps,
             "text_cfg": cfg, "transition_frames": transition_frames, "options": {
-                "clean": clean, "loop": loop, "in_place": in_place, "root_path": root_path},
+                "clean": clean, "loop": loop, "in_place": in_place, "root_path": root_path, "speed": speed,
+                "start_pose": start_pose, "end_pose": end_pose, "continue_from": continue_from},
             "generation": best["info"], "stats": st, "checks": chk, "metrics": final_metrics, "postprocess": pp,
             "files": files}
+    if chain:
+        meta["chain"] = chain
     if len(results) > 1:
-        meta["takes"] = [{"take": r["take"], "seed": r["seed"], "score": r["score"],
+        meta["takes"] = [{"take": r["take"], "seed": r["seed"], "score": r["score"], "why": r.get("score_parts"),
                           "checks_passed": r["checks"]["passed"], "dir": str(r["dir"])} for r in results]
         meta["chosen_take"] = best["take"]
     asset = Path(files.get("unity_asset") or files["kimodo"])
@@ -352,8 +540,12 @@ def use_take(name: str, take: int) -> list:
     new = _assemble(out_dir, name, segs, prompt_text, best, [best, best], seed=tk["seed"], steps=meta["steps"],
                     cfg=meta["text_cfg"], transition_frames=meta["transition_frames"], clean=opts["clean"],
                     loop=opts["loop"], in_place=opts["in_place"], root_path=opts["root_path"],
-                    unity_check="background")
+                    unity_check="background", start_pose=opts.get("start_pose", "free"),
+                    end_pose=opts.get("end_pose", "free"), continue_from=opts.get("continue_from"),
+                    speed=opts.get("speed", 1.0))
     new["takes"], new["chosen_take"] = meta["takes"], take
+    if "prompts_as_given" in meta:
+        new["prompts_as_given"] = meta["prompts_as_given"]
     (out_dir / "meta.json").write_text(json.dumps(new, indent=2))
     return [json.dumps(new, indent=2), Image(path=str(out_dir / "preview.png"))]
 
@@ -392,17 +584,57 @@ def get_motion_preview(name: str) -> list:
     return [(d / "meta.json").read_text(), Image(path=str(d / "preview.png"))]
 
 
+_prewarm_state: dict = {"state": "off"}
+
+
+def _warm(w) -> dict:
+    try:
+        return w.warm()
+    except RuntimeError as e:
+        if "unknown op" not in str(e):
+            raise
+        # an older motiond without the warm op: an uncached tiny generation loads the models just the same
+        from motiond import RemoteWorker
+        RemoteWorker(cache=False).generate([Segment("a person stands still", 30)], ROOT / ".cache" / "warm",
+                                           steps=1, seed=0)
+        return {"warmed": True}
+
+
+def _prewarm() -> None:
+    """Load the engine in the background as soon as the server starts (models come off an HDD in 40 s - 2 min), so
+    it is usually ready by Claude's first generate_motion call. Uses its own daemon connection, so nothing waits on
+    it except a generation that would have had to load the models anyway. PROMPTIMATE_PREWARM=0 turns it off."""
+    _prewarm_state.update(state="running", started_at=time.time())
+    try:
+        if os.environ.get("MOTIOND", "1") == "0":
+            res = worker.warm()
+        else:
+            from motiond import RemoteWorker
+            res = _warm(RemoteWorker())
+        _prewarm_state.update(state="done", **res, finished_at=time.time())
+    except Exception as e:  # never take the server down; the first real call will load (and report) instead
+        _prewarm_state.update(state="failed", error=f"{type(e).__name__}: {e}")
+        print(f"prewarm failed: {type(e).__name__}: {e}", file=sys.stderr)
+
+
 @mcp.tool()
 def worker_status(warm_up: bool = False) -> str:
-    """Show whether the GPU worker is loaded. warm_up=true loads the models now (takes ~1 min cold)."""
+    """Show whether the GPU worker is loaded. The server already starts loading it in the background at startup;
+    warm_up=true waits until it's loaded (about 1 min cold)."""
     if warm_up and not worker.alive():
-        shutil.rmtree(OUTPUT / "_warmup", ignore_errors=True)
-        worker.generate([Segment("a person stands still", 30)], OUTPUT / "_warmup", steps=1, seed=0)
+        _warm(worker)
+    st = {k: (round(v, 2) if isinstance(v, float) else v) for k, v in _prewarm_state.items()
+          if k not in ("started_at", "finished_at")}
+    if "started_at" in _prewarm_state:
+        st["elapsed_s"] = round(_prewarm_state.get("finished_at", time.time()) - _prewarm_state["started_at"], 1)
     return json.dumps({"loaded": worker.alive(), "text_quant": worker.text_quant, "engine": str(worker.engine_dir),
-                       "uptime_s": round(time.time() - worker.started_at, 1) if worker.alive() else None})
+                       "uptime_s": round(time.time() - worker.started_at, 1) if worker.alive() else None,
+                       "prewarm": st})
 
 
 if __name__ == "__main__":
+    if os.environ.get("PROMPTIMATE_PREWARM", "1") != "0":
+        threading.Thread(target=_prewarm, daemon=True, name="prewarm").start()
     try:
         mcp.run()
     finally:

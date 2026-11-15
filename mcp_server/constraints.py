@@ -11,6 +11,7 @@ in raw (unnormalised) Kimodo feature space over the global output timeline. Feat
 """
 from __future__ import annotations
 
+import json
 import struct
 from pathlib import Path
 
@@ -137,3 +138,149 @@ class Constraints:
             fh.write(self.observed.astype("<f4").tobytes())
             fh.write(self.mask.astype("<f4").tobytes())
         return path
+
+
+# ------------------------------------------------------------------------------------------- canonical poses / chaining
+# A "pose" here is one frame: (root (3,), rot (J, 4)) in Kimodo space (hips position, local xyzw rotations with
+# joint 0 = global hips rotation). Clips are generated in a canonical frame (start at the origin facing +Z); the
+# helpers below move frames and clips between that frame and world placements.
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+POSE_WINDOW = 4      # frames held exactly at a pinned start/end pose (zero velocity there -> clean Animator blends)
+SNAP_BLEND = 10      # frames over which post-processing eases back onto the exact pinned pose
+
+
+def _yaw_q(a: float) -> np.ndarray:
+    return np.array([0.0, np.sin(a / 2), 0.0, np.cos(a / 2)])
+
+
+def _qmul(a, b):
+    ax, ay, az, aw = np.moveaxis(a, -1, 0)
+    bx, by, bz, bw = np.moveaxis(b, -1, 0)
+    return np.stack([aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+                     aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz], axis=-1)
+
+
+def transform(root: np.ndarray, rot: np.ndarray, x: float, z: float, yaw: float) -> tuple[np.ndarray, np.ndarray]:
+    """Rigidly move a clip/frame: rotate by `yaw` (radians, Kimodo heading convention) about the origin's vertical
+    axis, then translate by (x, z). Works on (F,3)/(F,J,4) or (3,)/(J,4)."""
+    root = np.asarray(root, np.float64)
+    rot = np.asarray(rot, np.float64)
+    c, s = np.cos(yaw), np.sin(yaw)
+    r = root.copy()
+    r[..., 0] = c * root[..., 0] + s * root[..., 2] + x
+    r[..., 2] = -s * root[..., 0] + c * root[..., 2] + z
+    q = rot.copy()
+    q[..., 0, :] = _qmul(np.broadcast_to(_yaw_q(yaw), rot[..., 0, :].shape), rot[..., 0, :])
+    return r.astype(np.float32), q.astype(np.float32)
+
+
+def rebase(root, rot, x: float, z: float, heading: float):
+    """Inverse of transform: the placement (x, z, heading) becomes the origin facing +Z."""
+    r = np.asarray(root, np.float64).copy()
+    r[..., 0] -= x
+    r[..., 2] -= z
+    return transform(r, rot, 0.0, 0.0, -heading)
+
+
+def frame_placement(root: np.ndarray, rot: np.ndarray, f: int) -> tuple[float, float, float]:
+    """(hips x, hips z, Kimodo heading) of frame f."""
+    p = motion.fk(root[f:f + 1], rot[f:f + 1])[0]
+    return float(root[f, 0]), float(root[f, 2]), float(heading_angle(p))
+
+
+FEET = (24, 25, 28, 29)  # ankles and toes
+
+
+def fit_placement(root: np.ndarray, rot: np.ndarray, f: int, pose: tuple[np.ndarray, np.ndarray],
+                  search_deg: float = 15.0) -> tuple[float, float, float]:
+    """Placement (x, z, heading) of a canonical pose that puts its feet where frame f's feet are (least squares on
+    ankles and toes, ground plane). Snapping to that placement moves the planted feet as little as possible."""
+    pf = motion.fk(root[f:f + 1], rot[f:f + 1])[0][list(FEET)][:, [0, 2]].astype(np.float64)
+    pr, pq = np.asarray(pose[0], np.float32)[None], np.asarray(pose[1], np.float32)[None]
+    cf = motion.fk(pr, pq)[0][list(FEET)][:, [0, 2]].astype(np.float64)
+    h0 = frame_placement(root, rot, f)[2]
+    best = None
+    for h in h0 + np.radians(np.arange(-search_deg, search_deg + 1e-9, 0.25)):
+        c, s = np.cos(h), np.sin(h)
+        rx, rz = c * cf[:, 0] + s * cf[:, 1], -s * cf[:, 0] + c * cf[:, 1]
+        t = pf.mean(axis=0) - np.array([rx.mean(), rz.mean()])
+        err = float(((rx + t[0] - pf[:, 0]) ** 2 + (rz + t[1] - pf[:, 1]) ** 2).sum())
+        if best is None or err < best[0]:
+            best = (err, float(t[0]), float(t[1]), float(h))
+    return best[1], best[2], best[3]
+
+
+def load_pose(name: str) -> tuple[np.ndarray, np.ndarray]:
+    """Canonical fixture pose (origin, facing +Z), e.g. "idle" -> fixtures/idle_pose.json."""
+    d = json.loads((FIXTURES / f"{name}_pose.json").read_text())
+    return np.array(d["root"], np.float32), np.array(d["rot"], np.float32)
+
+
+def pose_features(root: np.ndarray, rot: np.ndarray) -> np.ndarray:
+    """Feature row (D,) of a single pose."""
+    return features(np.asarray(root, np.float32)[None], np.asarray(rot, np.float32)[None])[0]
+
+
+def pose_distance(a: tuple[np.ndarray, np.ndarray], b: tuple[np.ndarray, np.ndarray]) -> dict:
+    """How far apart two poses are as the body looks (both re-based to the origin facing +Z, so a rigid move of the
+    whole character doesn't count): mean / max joint position distance (cm), hips height difference (cm), max joint
+    rotation difference (deg), and the heading difference (deg) before re-basing."""
+    out = {}
+    placed = []
+    for r, q in (a, b):
+        r = np.asarray(r, np.float32)[None]
+        q = np.asarray(q, np.float32)[None]
+        x, z, h = frame_placement(r, q, 0)
+        placed.append((rebase(r, q, x, z, h), h))
+    (ra, qa), ha = placed[0]
+    (rb, qb), hb = placed[1]
+    pa, pb = motion.fk(ra, qa)[0], motion.fk(rb, qb)[0]
+    dj = np.linalg.norm(pa - pb, axis=-1)
+    dq = np.abs(np.sum(qa[0] * qb[0], axis=-1))
+    out["joint_mean_cm"] = round(float(dj.mean() * 100), 2)
+    out["joint_max_cm"] = round(float(dj.max() * 100), 2)
+    out["hips_height_cm"] = round(float(abs(ra[0, 1] - rb[0, 1]) * 100), 2)
+    out["rot_max_deg"] = round(float(np.degrees(2 * np.arccos(np.clip(dq, 0, 1))).max()), 2)
+    out["heading_deg"] = round(float(np.degrees((ha - hb + np.pi) % (2 * np.pi) - np.pi)), 2)
+    return out
+
+
+def snap_pose(root: np.ndarray, rot: np.ndarray, target: tuple[np.ndarray, np.ndarray], at: str,
+              hold: int = POSE_WINDOW, blend: int | None = None, xz: bool = False) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Make the first (at="start") or last (at="end") `hold` frames exactly `target` (a placed pose: hips position
+    and local rotations) and fade the correction out over the `blend` frames next to them. The correction is an
+    offset (per-joint rotation delta and hips shift, scaled down smoothly), so the clip keeps its own velocities
+    there instead of being dragged towards a frozen pose. Used after post-processing so foot locking, grounding or
+    smoothing can't leave the pinned frames off-pose. xz=False keeps the clip's own horizontal hips position (only
+    height and rotations snap). Returns (root, rot, info)."""
+    from postprocess import qinv, qmul, qnorm, qpow
+    root = np.asarray(root, np.float64).copy()
+    rot = qnorm(np.asarray(rot, np.float64).copy())
+    F = len(root)
+    hold = max(1, min(hold, F))
+    blend = SNAP_BLEND if blend is None else blend
+    blend = max(0, min(blend, F - hold))
+    ramp = 0.5 + 0.5 * np.cos(np.pi * (np.arange(1, blend + 1) / (blend + 1)))  # 1..0 smooth, excludes ends
+    if at == "start":
+        held, ref, ease = np.arange(hold), 0, np.arange(hold, hold + blend)
+        edge = hold - 1
+    else:
+        held, ref, ease = np.arange(F - hold, F), F - 1, np.arange(F - hold - 1, F - hold - blend - 1, -1)
+        edge = F - hold
+    tr, tq = np.asarray(target[0], np.float64), np.asarray(target[1], np.float64)
+    before = pose_distance((root[ref], rot[ref]), (tr, tq))
+    axes = [0, 1, 2] if xz else [1]
+    dq = qmul(tq, qinv(rot[edge]))                     # (J, 4) local delta at the hold's inner edge
+    dq = np.where(dq[..., 3:4] < 0, -dq, dq)
+    dr = tr - root[edge]
+    if len(ease):
+        rot[ease] = qnorm(qmul(qpow(np.broadcast_to(dq, rot[ease].shape), ramp[:, None]), rot[ease]))
+        for a in axes:
+            root[ease, a] += ramp * dr[a]
+    tqh = np.where(np.sum(tq * rot[held], axis=-1, keepdims=True) < 0, -tq, tq)  # keep quaternion hemispheres
+    rot[held] = tqh
+    for a in axes:
+        root[held, a] = tr[a]
+    info = {"before": before, "after": pose_distance((root[ref], rot[ref]), (tr, tq)),
+            "frames": int(len(held) + len(ease))}
+    return root.astype(np.float32), rot.astype(np.float32), info

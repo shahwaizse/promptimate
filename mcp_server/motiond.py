@@ -13,6 +13,7 @@ Protocol: one JSON object per line over TCP 127.0.0.1:$MOTIOND_PORT (default 476
     {"op": "generate", "config": {...}, "segments": [[prompt, frames], ...], "out_dir": str, "steps": int,
      "seed": int, "transition": int, "text_cfg": float|null, "constraint_cfg": float|null,
      "constraints": str|null, "cache": bool}
+    {"op": "warm", "config": {...}}   (load the models now with a tiny uncached generation; no-op if loaded)
     {"op": "status"}   {"op": "unload"}   {"op": "shutdown"}
 config = {"engine_dir": str|null, "text_quant": str|null, "extra_env": {..}}; a different config restarts the engine.
 
@@ -111,6 +112,20 @@ class Daemon:
                 tmp.rename(hit)
             return {**info, "cache_hit": False}
 
+    def warm(self, req: dict) -> dict:
+        """Load the engine for this config ahead of the first real request (an MCP server calls this in the
+        background at startup). A real request that arrives meanwhile queues on the lock and finds it warm."""
+        with self.lock:
+            worker = self._ensure(req.get("config") or {})
+            if worker.alive():
+                return {"warmed": False, "seconds": 0.0}
+            t0 = time.time()
+            out = ROOT / ".cache" / "warm"
+            shutil.rmtree(out, ignore_errors=True)
+            worker.generate([Segment("a person stands still", 30)], out, steps=1, seed=0)
+            self.stats["warmups"] = self.stats.get("warmups", 0) + 1
+            return {"warmed": True, "seconds": round(time.time() - t0, 2)}
+
     def status(self) -> dict:
         w = self.worker
         return {**self.stats, "loaded": bool(w and w.alive()), "config": self.config_key,
@@ -131,6 +146,8 @@ class Handler(socketserver.StreamRequestHandler):
                 op = req.get("op")
                 if op == "generate":
                     res = {"ok": True, "result": DAEMON.generate(req)}
+                elif op == "warm":
+                    res = {"ok": True, "result": DAEMON.warm(req)}
                 elif op == "status":
                     res = {"ok": True, "result": DAEMON.status()}
                 elif op == "unload":
@@ -277,6 +294,10 @@ class RemoteWorker:
 
     def unload(self) -> dict:
         return self._call({"op": "unload"})
+
+    def warm(self) -> dict:
+        """Start the daemon if needed and load the models (blocks until loaded; call it from a background thread)."""
+        return self._call({"op": "warm", "config": self.config})
 
     def stop(self) -> None:
         self._close()
