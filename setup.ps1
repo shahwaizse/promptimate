@@ -12,7 +12,7 @@ param(
   [switch]$AcceptLicenses,
   [switch]$SkipModels,
   [string]$EngineZip = '',
-  [string]$EngineUrl = 'https://github.com/shahwaizse/promptimate/releases/download/v0.1.0/kimodo-engine-win64-vulkan.zip'
+  [string]$EngineUrl = 'https://github.com/shahwaizse/promptimate/releases/download/v0.2.0/kimodo-engine-win64-vulkan.zip'
 )
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -44,8 +44,12 @@ Ok "Text encoder: $Quant"
 # 2. Engine (prebuilt kimodo.cpp, Vulkan) ---------------------------------------------------------------------
 Step 2 'Installing the generation engine (kimodo.cpp, Vulkan build)'
 $engine = Join-Path $Root 'engine'
-if (Test-Path (Join-Path $engine 'kmd-generate.exe')) { Ok 'already installed' }
+$info = Join-Path $engine 'BUILD-INFO.txt'
+$current = (Test-Path (Join-Path $engine 'kmd-generate.exe')) -and (Test-Path $info) -and
+           ((Get-Content $info -Raw) -match 'Promptimate patches')
+if ($current) { Ok 'already installed' }
 else {
+  if (Test-Path (Join-Path $engine 'kmd-generate.exe')) { Write-Host '  updating the engine (v0.1 engine found; v0.2 is ~8x faster and adds constraints)' }
   New-Item -ItemType Directory -Force $engine | Out-Null
   $zip = $EngineZip
   if (-not $zip) {
