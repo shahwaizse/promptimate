@@ -49,10 +49,14 @@ def check_clean(d):
     r2, q2, info = pp.clean(root, rot)
     _sane(r2, q2)
     assert r2.dtype == np.float32 and q2.dtype == np.float32
-    # root: xz untouched, y moved by one constant (ground offset) only
+    # root: xz untouched; y moved by one constant (ground offset) plus, where knees/torso would go into the floor,
+    # a non-negative body lift (body_floor) bounded by what info reports
     assert np.array_equal(r2[:, [0, 2]], root[:, [0, 2]]), "root xz changed"
-    dy = r2[:, 1].astype(np.float64) - root[:, 1]
-    assert np.ptp(dy) < 1e-6 and abs(dy[0] - info["ground_offset_m"]) < 1e-4, "root y not a constant shift"
+    dy = r2[:, 1].astype(np.float64) - root[:, 1] - info["ground_offset_m"]
+    lift_max = info.get("body_lift_max_cm", 0.0) / 100
+    assert dy.min() > -1e-4 and dy.max() < lift_max + 1e-3, ("root y: not ground offset + body lift", dy.min(), dy.max())
+    if not lift_max:
+        assert np.ptp(dy) < 1e-4, "root y not a constant shift"
     # only leg joints are rotated
     others = [j for j in range(motion.J) if j not in LEG_JOINTS]
     assert np.array_equal(q2[:, others], rot[:, others]), "non-leg rotations changed"

@@ -227,6 +227,7 @@ def detect_contacts(pos, fps=FPS):
 CONTACT_KEYS = ("left_heel", "left_toe", "right_heel", "right_toe")  # = column order of foot_contacts.f32
 MODEL_MAX_H = 0.05   # m above the joint's floor height: model contacts higher than this are vetoed in "fuse"
 SEATED_HIPS_M = 0.6  # hips below this = seated or kneeling (model contacts unreliable there)
+KNEE_DOWN_M = 0.12   # knee joint below this = kneeling / crawling (no foot locking there)
 MODEL_MAX_V = 1.0    # m/s: model contacts on a fast-moving joint are vetoed in "fuse"
 
 
@@ -436,6 +437,13 @@ def clean(root, rot, fps=FPS, *, foot_lock=True, ground=True, smooth=False, segm
     else:
         contacts = heur
         info["contact_source"] = "heuristic"
+    # Knee on the floor (kneeling, crawling, getting up): pinning the feet with leg IK folds the shins into the floor.
+    # Leave those frames to body_floor() below. (Sitting keeps foot locking: the knees are up there.)
+    knee_down = P[:, [LEGS["left"][1], LEGS["right"][1]], 1].min(axis=1) < KNEE_DOWN_M
+    low = np.convolve(knee_down.astype(float), np.ones(2 * BLEND + 1), "same") > 0
+    if low.any():
+        contacts = {k: m & ~low for k, m in contacts.items()}
+        info["low_pose_frames"] = int(low.sum())
     info["contacts"] = {k: [[int(s), int(e)] for s, e in spans(m)] for k, m in contacts.items()}
     info["contact_frames"] = {k: int(m.sum()) for k, m in contacts.items()}
     info["before"] = metrics(root0 - np.array([0, shift, 0]), rot0, fps, contacts)
@@ -494,6 +502,10 @@ def clean(root, rot, fps=FPS, *, foot_lock=True, ground=True, smooth=False, segm
         max_err = max(max_err, float(np.linalg.norm(new_ank - target[idx], axis=-1).max()))
     info["ik_frames"] = ik_frames
     info["ik_unreached_max_cm"] = round(100 * max_err, 2)
+    if ground:
+        root1, lift = body_floor(root1, out_rot)
+        if lift.any():
+            info["body_lift_max_cm"] = round(100 * float(lift.max()), 2)
     info["after"] = metrics(root1, rot1, fps, contacts)
     info["skate_cms"] = [info["before"]["skate_cms"], info["after"]["skate_cms"]]
     return root1.astype(np.float32), out_rot, info
@@ -785,3 +797,30 @@ def retime(root, rot, factor, fps=FPS):
     rel = qmul(qinv(q0), q1)                       # q0^-1 q1, then q0 * rel^a
     new_rot = qmul(q0, qpow(rel, a))  # a: (n,1) broadcasts over joints
     return new_root.astype(np.float32), qnorm(new_rot).astype(np.float32)
+
+
+# Minimum height of non-foot joints above the floor (joint centres; roughly the flesh radius around them).
+# Hands and elbows are left out: they press into the floor when crawling or pushing up, and lifting the whole body for
+# them makes the feet float.
+BODY_CLEARANCE = {0: 0.07, 1: 0.07, 2: 0.07, 3: 0.07, 4: 0.06, 5: 0.06, 6: 0.08, 22: 0.06, 23: 0.02, 26: 0.06, 27: 0.02}
+
+
+def body_floor(root, rot, sigma=3.0):
+    """Lift the whole body where knees, hips, torso, head, elbows or hands would go into the floor (kneeling,
+    crawling, lying, falls). Only the root height changes, eased in and out so there is no pop. Returns
+    (root, per-frame lift in m)."""
+    root = np.asarray(root, np.float64).copy()
+    _, P = fk_full(root, np.asarray(rot, np.float64))
+    joints = np.array(list(BODY_CLEARANCE))
+    need = (np.array([BODY_CLEARANCE[j] for j in joints])[None] - P[:, joints, 1]).max(axis=1)
+    need = np.clip(need, 0.0, None)
+    if not need.any():
+        return root.astype(np.float32), need
+    w = int(3 * sigma)
+    padded = np.pad(need, w, mode="edge")
+    dil = np.array([padded[i:i + 2 * w + 1].max() for i in range(len(need))])   # never under-lift
+    k = np.exp(-0.5 * (np.arange(-w, w + 1) / sigma) ** 2)
+    lift = np.convolve(np.pad(dil, w, mode="edge"), k / k.sum(), "valid")
+    lift = np.maximum(lift, need)
+    root[:, 1] += lift
+    return root.astype(np.float32), lift
