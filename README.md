@@ -7,7 +7,7 @@ on Vulkan), so there is no cloud, no credits and no subscription. A local MCP se
 client, act as the director. It plans multi-shot sequences, generates each clip, checks the result and regenerates
 bad takes.
 
-**Status:** v0.2.0 preview.
+**Status:** v0.3.0 preview.
 
 ## Requirements
 
