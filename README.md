@@ -91,11 +91,13 @@ See [`mcp_server/README.md`](mcp_server/README.md) for environment variables and
 - **NVIDIA Kimodo**: the SOMA text-to-motion diffusion model.
 - **[kimodo.cpp](https://github.com/localai-org/kimodo.cpp)** from the LocalAI project: the GGML/Vulkan port that
   makes local generation possible, plus the GGUF conversions on Hugging Face.
-- **Meta Llama 3**: the LLM2Vec text encoder is built with Meta Llama 3.
+- **Built with Meta Llama 3**: the LLM2Vec text encoder is based on Meta Llama 3 (Meta Llama 3 Community License).
 - **[ggml](https://github.com/ggml-org/ggml)**: the tensor library and Vulkan backend.
 
 ## License
 
 Promptimate's code is released under the [MIT License](LICENSE). Third-party components and the model licenses are
 listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The models aren't included. You download them during
-setup under the NVIDIA Open Model License (Kimodo SOMA) and the Meta Llama 3 Community License (text encoder).
+setup under the NVIDIA Open Model License (Kimodo SOMA) and the Meta Llama 3 Community License (text encoder). Both
+allow commercial use with conditions (attribution, acceptable use); see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for a summary. It isn't legal advice.

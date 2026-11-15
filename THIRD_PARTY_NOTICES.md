@@ -41,7 +41,11 @@ their licenses. By downloading them you agree to:
 License and Acceptable Use Policy. Promptimate does not use, download or support the research-only SMPL-X Kimodo
 checkpoint.
 
-Check each license yourself before using generated animation commercially.
+**Commercial use (summary as of November 2026, not legal advice).** NVIDIA's model card for Kimodo SOMA RP v1.1
+states: "This model is ready for commercial use." Under the NVIDIA Open Model License, NVIDIA does not claim ownership
+of outputs, and you are responsible for how you use them. The Meta Llama 3 Community License allows commercial use
+(below 700 million monthly active users), with the attribution above and its Acceptable Use Policy. Read the full
+license texts before shipping, and have them reviewed if you're shipping at scale.
 
 ## Python dependencies (installed by pip, not redistributed)
 

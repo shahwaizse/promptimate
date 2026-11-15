@@ -68,3 +68,6 @@ demo/clips_summary.json
 
 # --- Benchmark output (generated clips, renders) ---
 bench/results/
+
+# --- Roblox bridge: generated clips ---
+roblox/out/
