@@ -19,5 +19,5 @@ OUT.parent.mkdir(exist_ok=True)
 with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED) as z:
     for src, name in files.items():
         z.write(src, name)
-    z.writestr("BUILD-INFO.txt", f"kimodo.cpp {rev} with the Promptimate patches (scripts/kimodo-promptimate.patch: V2 server options, constraints, foot contacts, motion-first load, 2-branch CFG, embedding cache), ggml Vulkan backend, MSVC x64 Release. Requires a Vulkan GPU driver and the VC++ 2015-2022 runtime.\n")
+    z.writestr("BUILD-INFO.txt", f"kimodo.cpp {rev} with the Promptimate patches, engine v0.3 (scripts/kimodo-promptimate.patch: V2 server options, constraints, in-sequence holds, foot contacts, motion-first load, 2-branch CFG, embedding cache, CPU text encoder), ggml Vulkan backend, MSVC x64 Release. Requires a Vulkan GPU driver and the VC++ 2015-2022 runtime.\n")
 print(OUT, OUT.stat().st_size // 1024, "KiB sha256", hashlib.sha256(OUT.read_bytes()).hexdigest())

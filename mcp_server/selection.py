@@ -64,3 +64,30 @@ def score_takes(takes: list[dict], segments: list[tuple[str, int]], prompt_text:
         t["score"] = round(sum(parts.values()), 3)
         t["intent_expect"] = {"whole": e, "segments": se}
     return takes
+
+
+_END_STATE = re.compile(r"\b(falls?|collapses?|faints?|lies?|lying|sits?|sitting|kneels?|kneeling|stops?|"
+                        r"stands? still|holds?|points?|freezes?|waits?|dies)\b", re.I)
+
+
+def action_end_s(pos: np.ndarray) -> float:
+    """Seconds at which the last clear movement ends (after that the character only stands/holds)."""
+    e = energy(pos)
+    thr = 0.15 * np.percentile(e, 95) + 0.05
+    active = np.where(e > thr)[0]
+    return (active[-1] + 1 if len(active) else 0) / FPS
+
+
+def idle_tail_hint(pos: np.ndarray, segments: list[tuple[str, int]]) -> str | None:
+    """A hint for the director when a single action finishes early and the rest of the clip is standing still
+    (the model performs one action in ~1-2 s regardless of the requested length)."""
+    last_prompt = segments[-1][0]
+    if _END_STATE.search(last_prompt) or _IDLE.search(last_prompt):
+        return None
+    dur = len(pos) / FPS
+    end = action_end_s(pos)
+    if dur - end >= max(1.0, 0.4 * dur):
+        return (f"the action ends at {end:.1f} s and the last {dur - end:.1f} s are standing still. If that isn't "
+                f"wanted, regenerate with the last segment ~{max(1.5, end - sum(f for _, f in segments[:-1]) / FPS + 0.5):.1f} s, "
+                "or add a segment for what happens next (e.g. the same action again).")
+    return None

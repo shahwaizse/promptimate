@@ -35,6 +35,8 @@ OUTPUT = ROOT / "output"
 DEFAULT_STEPS = int(os.environ.get("KIMODO_STEPS", "30"))
 DEFAULT_TEXT_CFG = float(os.environ.get("KIMODO_TEXT_CFG", "2.0"))
 DEFAULT_TAKES = int(os.environ.get("KIMODO_TAKES", "3"))
+# Engine v0.3 applies auto-stop holds inside a sequence in one pass; PROMPTIMATE_ENGINE_HOLDS=0 forces two passes.
+ENGINE = {"holds": os.environ.get("PROMPTIMATE_ENGINE_HOLDS", "1") != "0"}
 
 PROMPT_GUIDE = (
     "Prompt style (matches the captions Kimodo was trained on): one person, present tense, plain physical "
@@ -42,7 +44,10 @@ PROMPT_GUIDE = (
     "hand'), the direction ('walks forward', 'turns left', 'steps backward') and the manner ('slowly', 'energetically', "
     "'like a zombie'). Describe what the body does, not story, objects or scenery: 'a person sits down on the floor' "
     "works, 'a man sits on a chair in a cafe' does not. One or two actions per segment; for a sequence use several "
-    "segments (2-10 s each) and they are blended. Moods work as manner ('a person walks sadly with their head down')."
+    "segments (2-10 s each) and they are blended. Moods work as manner ('a person walks sadly with their head down'). "
+    "Durations: the model performs a single action (wave, jump, kick, punch, throw, bow) in about 1-2 s, so give such "
+    "a segment 2-3 s; to repeat it, add segments ('punches with the right hand', then 'punches again'). Use long "
+    "segments for continuous activity (walking, dancing, idling, talking). If a result carries 'hints', read them."
 )
 
 mcp = FastMCP("kimodo-motion", instructions=(
@@ -292,7 +297,7 @@ def _apply_pins(root, rot, start_pose, end_pose, continue_from, *, in_place=Fals
 @mcp.tool()
 def generate_motion(segments: list[MotionSegment], name: str | None = None, seed: int = 0,
                     steps: int = DEFAULT_STEPS, transition_frames: int = 10, text_cfg: float | None = None,
-                    takes: int = DEFAULT_TAKES, clean: bool = True, loop: bool = False, in_place: bool = False,
+                    takes: int | None = None, clean: bool = True, loop: bool = False, in_place: bool = False,
                     root_path: list[Waypoint] | None = None, auto_stop: bool = True,
                     start_pose: str = "free", end_pose: str = "free", continue_from: str | None = None,
                     speed: float = 1.0, unity_check: str = "background") -> list:
@@ -302,7 +307,7 @@ def generate_motion(segments: list[MotionSegment], name: str | None = None, seed
     AnimationClip; GLB/BVH written in the background) and a preview image.
     steps: diffusion steps (10-100). seed: change it for a different take. text_cfg: how strongly to follow the
     text (default ~2; higher = more literal but can get stiff). takes: generate N variations (seeds seed..seed+N-1)
-    and keep the cleanest. clean: lock feet to the ground and remove floor penetration. loop: seamless cycle.
+    and keep the one that best does what the prompt asks (default 3, or 2 for multi-segment sequences). clean: lock feet to the ground and remove floor penetration. loop: seamless cycle.
     in_place: remove horizontal travel. root_path: waypoints pinning the hips' ground position over time.
     auto_stop: when a segment says the character stops / stands still / stays in place, actually hold the hips
     there (a second constrained pass; the model alone often keeps drifting).
@@ -319,7 +324,10 @@ def generate_motion(segments: list[MotionSegment], name: str | None = None, seed
     if not segments:
         raise ValueError("need at least one segment")
     steps = max(1, min(int(steps), 200))
-    takes = max(1, min(int(takes), 6))
+    # default: 3 takes for one segment, 2 for sequences (measured: best-of-2 equals best-of-3 on sequences, which
+    # cost several engine runs per take)
+    takes = max(1, min(int(takes if takes is not None else (DEFAULT_TAKES if len(segments) == 1 else
+                                                              max(1, DEFAULT_TAKES - 1))), 6))
     speed = float(speed)
     if not 0.5 <= speed <= 2.0:
         raise ValueError("speed must be between 0.5 and 2.0")
@@ -370,14 +378,32 @@ def generate_motion(segments: list[MotionSegment], name: str | None = None, seed
     boundaries = list(np.cumsum([s.frames for s in segs])[:-1]) if len(segs) > 1 else None
 
     holds = _auto_holds(gen_segs) if auto_stop and not root_path and not in_place else []
+    # Holds that start after the first segment are applied by the engine in the same pass (it knows where the
+    # previous segment ended), so sequences like walk -> stop -> wave need no second "locate, then hold" pass.
+    engine_holds = []
+    if holds and ENGINE["holds"] and all(a >= gen_segs[0].frames for a, _ in holds) and not loop and end_pose == "free":
+        engine_holds, holds = holds, []
 
     t0 = time.time()
     results = []
     for k in range(takes):
         d = out_dir / f"take{k}"
         cfile = cons.save(d / "constraints.bin") if cons is not None else None
-        info = worker.generate(gen_segs, d, steps=steps, seed=seed + k, transition=transition_frames,
-                               text_cfg=cfg, constraints=cfile)
+        try:
+            info = worker.generate(gen_segs, d, steps=steps, seed=seed + k, transition=transition_frames,
+                                   text_cfg=cfg, constraints=cfile, holds=engine_holds or None)
+        except RuntimeError as e:
+            if not engine_holds or "holds" not in str(e):
+                raise
+            # older engine (v0.2) without in-pass holds: fall back to the two-pass hold for this and later calls
+            ENGINE["holds"] = False
+            holds, engine_holds = engine_holds, []
+            info = worker.generate(gen_segs, d, steps=steps, seed=seed + k, transition=transition_frames,
+                                   text_cfg=cfg, constraints=cfile)
+        if engine_holds:
+            info["auto_holds_s"] = [[round((a - pre) / motion.FPS, 2), round((b - pre) / motion.FPS, 2)]
+                                    for a, b in engine_holds]
+            info["holds_in_engine"] = True
         if loop or holds or end_pose != "free":
             # pass 2, same seed: hold the hips still where the text says the character stops (at the spot the
             # free pass reached), pin the last frame to the first frame's pose (offset by the travel) for loops,
@@ -475,6 +501,7 @@ def _assemble(out_dir: Path, name: str, segs, prompt_text: str, best: dict, resu
     render.render_judge_sheet(pos, out_dir / "preview.png", prompt_text)
     st = motion.stats(pos)
     chk = motion.checks(pos, prompt_text, in_place=in_place)
+    hint = selection.idle_tail_hint(pos, [(s.prompt, round(s.frames / speed)) for s in segs]) if not loop else None
     final_metrics = {k: v for k, v in metrics.compute(pos=pos).items()
                      if k in ("skate_speed_cms", "penetration_max_cm", "float_ratio", "jerk_p95", "pop_frames",
                               "root_end_speed_ms", "root_travel_m", "heading_change_deg")}
@@ -486,6 +513,8 @@ def _assemble(out_dir: Path, name: str, segs, prompt_text: str, best: dict, resu
             "files": files}
     if chain:
         meta["chain"] = chain
+    if hint:
+        meta["hints"] = [hint]
     if len(results) > 1:
         meta["takes"] = [{"take": r["take"], "seed": r["seed"], "score": r["score"], "why": r.get("score_parts"),
                           "checks_passed": r["checks"]["passed"], "dir": str(r["dir"])} for r in results]

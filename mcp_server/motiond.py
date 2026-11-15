@@ -72,6 +72,8 @@ class Daemon:
         h = hashlib.sha256()
         cons = req.get("constraints")
         payload = {k: req.get(k) for k in ("segments", "steps", "seed", "transition", "text_cfg", "constraint_cfg")}
+        if req.get("holds"):  # only when used, so cache keys of requests without holds stay valid
+            payload["holds"] = req["holds"]
         payload.update(engine=_engine_fingerprint(worker.engine_dir), quant=worker.text_quant,
                        env=worker.extra_env, v=VERSION)
         h.update(json.dumps(payload, sort_keys=True).encode())
@@ -99,7 +101,8 @@ class Daemon:
             info = worker.generate(segs, out_dir, steps=int(req["steps"]), seed=int(req["seed"]),
                                    transition=int(req.get("transition", 5)), text_cfg=req.get("text_cfg"),
                                    constraint_cfg=req.get("constraint_cfg"),
-                                   constraints=Path(req["constraints"]) if req.get("constraints") else None)
+                                   constraints=Path(req["constraints"]) if req.get("constraints") else None,
+                                   holds=req.get("holds"))
             if hit is not None:
                 tmp = CACHE / (key + ".tmp")
                 shutil.rmtree(tmp, ignore_errors=True)
@@ -264,8 +267,8 @@ class RemoteWorker:
     # KimodoWorker interface ---------------------------------------------------------------------------------
     def generate(self, segments: list[Segment], out_dir: Path, steps: int, seed: int, transition: int = 5,
                  text_cfg: float | None = None, constraint_cfg: float | None = None,
-                 constraints: Path | None = None) -> dict:
-        return self._call({"op": "generate", "config": self.config, "cache": self.cache,
+                 constraints: Path | None = None, holds: list | None = None) -> dict:
+        return self._call({"op": "generate", "config": self.config, "cache": self.cache, "holds": holds,
                            "segments": [[s.prompt, s.frames] for s in segments], "out_dir": str(out_dir),
                            "steps": steps, "seed": seed, "transition": transition, "text_cfg": text_cfg,
                            "constraint_cfg": constraint_cfg, "constraints": str(constraints) if constraints else None})

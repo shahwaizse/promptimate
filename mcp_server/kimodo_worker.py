@@ -137,8 +137,10 @@ class KimodoWorker:
 
     def generate(self, segments: list[Segment], out_dir: Path, steps: int, seed: int,
                  transition: int = 5, text_cfg: float | None = None, constraint_cfg: float | None = None,
-                 constraints: Path | None = None) -> dict:
+                 constraints: Path | None = None, holds: list | None = None) -> dict:
         """text_cfg / constraint_cfg: guidance weights (engine default 2.0). constraints: binary constraint file.
+        holds: [(first, last)] global frames where the engine holds the root still at the position the motion
+        reaches when the range starts (ranges must start after the first segment; needs engine v0.3).
         These options need the Promptimate-patched engine (V2 protocol)."""
         out_dir.mkdir(parents=True, exist_ok=True)
         fields = [str(transition), str(steps), str(seed), str(out_dir)]
@@ -149,6 +151,8 @@ class KimodoWorker:
             opts.append(f"ccfg={float(constraint_cfg):g}")
         if constraints is not None:
             opts.append(f"constraints={constraints}")
+        if holds:
+            opts.append("holds=" + ",".join(f"{int(a)}:{int(b)}" for a, b in holds))
         if opts:
             fields = ["V2", *opts, "--", *fields]
         for i, seg in enumerate(segments):
