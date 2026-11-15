@@ -226,6 +226,7 @@ def detect_contacts(pos, fps=FPS):
 
 CONTACT_KEYS = ("left_heel", "left_toe", "right_heel", "right_toe")  # = column order of foot_contacts.f32
 MODEL_MAX_H = 0.05   # m above the joint's floor height: model contacts higher than this are vetoed in "fuse"
+SEATED_HIPS_M = 0.6  # hips below this = seated or kneeling (model contacts unreliable there)
 MODEL_MAX_V = 1.0    # m/s: model contacts on a fast-moving joint are vetoed in "fuse"
 
 
@@ -255,6 +256,9 @@ def contacts_from_model(model, pos=None, fps=FPS, mode="fuse", threshold=0.5):
             j = LEGS[side][2] if part == "heel" else LEGS[side][3]
             h = pos[:, j, 1] - FLOOR[part]
             m &= (h < MODEL_MAX_H) & (_speed(pos[:, j], fps) < MODEL_MAX_V)
+            # Seated / kneeling (hips low): the model marks feet planted while the body shifts on the seat, and
+            # pinning them makes skating worse; leave those frames to the heuristic.
+            m &= pos[:, 0, 1] > SEATED_HIPS_M
         out[key] = _clean_mask(m)
     if mode == "union" and pos is not None:  # heuristic OR physically-plausible model contacts
         heur = detect_contacts(pos, fps)
@@ -763,3 +767,21 @@ def save(motion_dir, root, rot):
     root.tofile(d / "root_positions.f32")
     rot.tofile(d / "local_rotations_xyzw.f32")
     return d
+
+
+def retime(root, rot, factor, fps=FPS):
+    """Play the motion `factor` times faster (factor > 1: shorter clip, faster motion; < 1: slower). Root positions
+    are resampled linearly, rotations with per-joint slerp, so the result keeps fps and skeleton. Used for speeds the
+    model doesn't reach on its own (it tops out around 3 m/s, so a sprint is a 1.3x retimed run)."""
+    root = np.asarray(root, np.float64)
+    rot = hemisphere(qnorm(np.asarray(rot, np.float64)))
+    F = len(root)
+    n = max(2, int(round((F - 1) / float(factor))) + 1)
+    t = np.linspace(0.0, F - 1, n)
+    i0 = np.clip(np.floor(t).astype(int), 0, F - 2)
+    a = (t - i0)[:, None]
+    new_root = root[i0] * (1 - a) + root[i0 + 1] * a
+    q0, q1 = rot[i0], rot[i0 + 1]
+    rel = qmul(qinv(q0), q1)                       # q0^-1 q1, then q0 * rel^a
+    new_rot = qmul(q0, qpow(rel, a))  # a: (n,1) broadcasts over joints
+    return new_root.astype(np.float32), qnorm(new_rot).astype(np.float32)

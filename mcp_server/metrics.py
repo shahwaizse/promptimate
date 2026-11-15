@@ -32,7 +32,8 @@ FOOT_JOINTS = [L_FOOT, L_TOE, R_FOOT, R_TOE]
 CONTACT_HEIGHT = {L_FOOT: 0.10, R_FOOT: 0.10, L_TOE: 0.05, R_TOE: 0.05}
 CONTACT_MAX_SPEED = 1.0      # m/s (3D); HumanML3D-style: a contact joint must be both low and slow
 SKATE_SPEED = 0.15           # m/s horizontal: a contact frame faster than this counts as skating
-FLOAT_CLEARANCE = 0.08       # m: lowest foot point above this = no foot on the ground
+FLOAT_CLEARANCE = 0.08       # m: lowest foot point above this = no foot on the ground (floating detection)
+AIRBORNE_CLEARANCE = 0.04    # m: both feet at least this high = flight phase (runs/jumps; a run's flight is only cm)
 FLOAT_MIN_RUN_S = 0.7        # no-contact runs longer than a jump flight are "floating"
 STAND_HIPS = 0.95            # m: hips height of a standing SOMA character (rest pose 0.988)
 POP_ACC = 120.0              # m/s^2 per-joint acceleration that counts as a pop/glitch frame
@@ -173,7 +174,7 @@ def root_metrics(pos: np.ndarray, end_fraction: float = END_FRACTION) -> dict:
     fwd = facing(pos)
     f0 = fwd[: min(10, F)].mean(0)[[0, 2]]
     f0 /= np.linalg.norm(f0) + 1e-9
-    side = np.array([f0[1], -f0[0]])     # right-hand side of initial facing in (x,z)
+    side = np.array([f0[1], -f0[0]])     # the character's LEFT of its initial facing in (x,z) (Kimodo: +X = left when facing +Z)
     yaw = yaw_deg(fwd)
     w = max(3, min(15, F // 6))
     n_end = max(3, int(round(F * end_fraction)))
@@ -182,7 +183,7 @@ def root_metrics(pos: np.ndarray, end_fraction: float = END_FRACTION) -> dict:
         "root_travel_m": _r(np.linalg.norm(disp), 3),
         "root_path_m": _r(step.sum(), 3),
         "root_forward_m": _r(disp @ f0, 3),         # along initial facing (negative = backward)
-        "root_lateral_m": _r(disp @ side, 3),
+        "root_lateral_m": _r(disp @ side, 3),          # + = towards the character's left
         "root_mean_speed_ms": _r(step.sum() / dur, 3),
         "root_end_speed_ms": _r(step[-(n_end - 1):].mean() * FPS if F > 3 else 0.0, 3),
         "root_start_speed_ms": _r(step[: n_end - 1].mean() * FPS if F > 3 else 0.0, 3),
@@ -295,13 +296,25 @@ def expectation_checks(pos: np.ndarray, expect: dict, prefix: str = "") -> dict[
         elif key == "hips_rise_min":        # hips rise X m above their median height (jump)
             out[k] = _ge(hips_y.max() - np.median(hips_y), val)
         elif key == "airborne_frames_min":
-            out[k] = _ge(float((lowest > FLOAT_CLEARANCE).sum()), val)
+            out[k] = _ge(float((lowest > AIRBORNE_CLEARANCE).sum()), val)
         elif key == "foot_raise_min":       # a foot (ankle) goes at least X m above the floor (kick)
             out[k] = _ge(float(pos[:, [L_FOOT, R_FOOT], 1].max()), val)
         elif key == "head_low_max":         # mean head height at most X (slumped / sad posture)
             out[k] = _le(float(pos[:, HEAD, 1].mean()), val, 0.15)
         elif key == "stays_upright":        # head stays above X m the whole time (no accidental fall)
             out[k] = _ge(float(pos[:, HEAD, 1].min()), val, 0.4)
+        elif key == "hips_start_min":       # starts standing (hips over the first 10 % at least X m)
+            out[k] = _ge(float(hips_y[: max(1, len(hips_y) // 10)].mean()), val, 0.4)
+        elif key == "right_min":            # sideways travel to the character's right (strafe / side step), metres
+            out[k] = _ge(-rm["root_lateral_m"], val)
+        elif key == "left_min":             # sideways travel to the character's left, metres
+            out[k] = _ge(rm["root_lateral_m"], val)
+        elif key == "hand_near_head_frac":  # a hand within 25 cm of the head (phone call, scratch head, cover face)
+            d = np.minimum(np.linalg.norm(pos[:, R_HAND] - pos[:, HEAD], axis=1),
+                           np.linalg.norm(pos[:, L_HAND] - pos[:, HEAD], axis=1))
+            out[k] = _ge(float((d < 0.25).mean()), val)
+        elif key == "head_drop_min":        # head dips at least X m below its starting height (bow, nod, slump)
+            out[k] = _ge(float(pos[: max(1, len(pos) // 10), HEAD, 1].mean() - pos[:, HEAD, 1].min()), val, val)
         else:
             raise KeyError(f"unknown expectation '{key}'")
     return out
