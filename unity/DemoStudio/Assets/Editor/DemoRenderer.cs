@@ -8,6 +8,8 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Animations;
+using UnityEngine.Playables;
 
 public static class DemoRenderer
 {
@@ -20,6 +22,7 @@ public static class DemoRenderer
         public float[] endPos;             // optional linear dolly to this position
         public float[] endLookAt;
         public string followActor;         // optional: lookAt tracks this actor's hips (by id)
+        public string followBone;          // optional with followActor: track this HumanBodyBones bone in 3D instead
     }
     [System.Serializable] public class Actor
     {
@@ -34,6 +37,10 @@ public static class DemoRenderer
         public bool loop = true;
         public float scale = 1;
         public float height = 1.75f;       // target standing height in metres
+        public bool playable;              // play through an Animator/PlayableGraph (Foot IK, root motion) instead of SampleAnimation
+        public bool footIK;                // playable only: Apply Foot IK
+        public bool rootMotion;            // playable only: Apply Root Motion (frames must be rendered in order)
+        public bool grounding;             // playable only: add Promptimate Grounding (seat / soles / hands above the floor)
     }
     [System.Serializable] public class Shot
     {
@@ -131,6 +138,7 @@ public static class DemoRenderer
                 }
             }
             foreach (var r in go.GetComponentsInChildren<Renderer>()) { r.shadowCastingMode = ShadowCastingMode.On; r.receiveShadows = true; }
+            if (a.grounding) go.AddComponent<Promptimate.PromptimateGrounding>().Calibrate(); // bind pose, final scale
             actors.Add((a, go, clip, anim));
         }
 
@@ -166,22 +174,43 @@ public static class DemoRenderer
 
         int frames = Mathf.RoundToInt(s.seconds * s.fps);
         Transform followHips = null;
+        bool follow3D = false;
         if (!string.IsNullOrEmpty(s.camera.followActor))
-            followHips = actors.FirstOrDefault(x => x.a.id == s.camera.followActor).anim?.GetBoneTransform(HumanBodyBones.Hips);
+        {
+            var fa = actors.FirstOrDefault(x => x.a.id == s.camera.followActor).anim;
+            follow3D = !string.IsNullOrEmpty(s.camera.followBone);
+            followHips = fa?.GetBoneTransform(follow3D ? (HumanBodyBones)System.Enum.Parse(typeof(HumanBodyBones), s.camera.followBone) : HumanBodyBones.Hips);
+        }
 
+        var graphs = new Dictionary<GameObject, (PlayableGraph g, AnimationClipPlayable cp)>();
         for (int f = 0; f < frames; f++)
         {
             float t = f / (float)s.fps, u = frames > 1 ? f / (float)(frames - 1) : 0;
             foreach (var (a, go, clip, anim) in actors)
             {
                 if (clip == null) continue;
+                if (a.playable)
+                {
+                    if (!graphs.TryGetValue(go, out var gp))
+                    {
+                        anim.applyRootMotion = a.rootMotion; anim.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                        var g = PlayableGraph.Create(go.name); g.SetTimeUpdateMode(DirectorUpdateMode.Manual);
+                        var cp = AnimationClipPlayable.Create(g, clip); cp.SetApplyFootIK(a.footIK);
+                        AnimationPlayableOutput.Create(g, "out", anim).SetSourcePlayable(cp);
+                        g.Play(); cp.SetTime(a.timeOffset); g.Evaluate(0);
+                        graphs[go] = gp = (g, cp);
+                    }
+                    else gp.g.Evaluate(a.speed / s.fps);
+                    go.GetComponent<Promptimate.PromptimateGrounding>()?.Solve(); // LateUpdate doesn't run here
+                    continue;
+                }
                 float ct = a.timeOffset + t * a.speed;
                 ct = a.loop ? Mathf.Repeat(ct, clip.length) : Mathf.Clamp(ct, 0, clip.length);
                 clip.SampleAnimation(go, ct);
             }
             var look = V(s.camera.lookAt);
             if (s.camera.endLookAt != null) look = Vector3.Lerp(look, V(s.camera.endLookAt), Smooth(u));
-            if (followHips != null) look = new Vector3(followHips.position.x, look.y, followHips.position.z);
+            if (followHips != null) look = follow3D ? followHips.position : new Vector3(followHips.position.x, look.y, followHips.position.z);
             var pos = V(s.camera.pos);
             if (s.camera.endPos != null) pos = Vector3.Lerp(pos, V(s.camera.endPos), Smooth(u));
             if (followHips != null) pos += look - V(s.camera.lookAt);
@@ -198,6 +227,7 @@ public static class DemoRenderer
             RenderTexture.active = null;
             File.WriteAllBytes(Path.Combine(s.outDir, $"f{f:D5}.png"), tex2d.EncodeToPNG());
         }
+        foreach (var gp in graphs.Values) gp.g.Destroy();
         Debug.Log($"DEMO_DONE frames={frames} out={s.outDir}");
     }
 
