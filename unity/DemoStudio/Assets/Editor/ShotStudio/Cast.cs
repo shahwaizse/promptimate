@@ -27,6 +27,11 @@ namespace ShotStudio
             anim.applyRootMotion = false;
             anim.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             Normalise(go, anim, a.height);
+            if (a.build > 0 && Mathf.Abs(a.build - 1) > 1e-3f)
+            {
+                var ls = go.transform.localScale;
+                go.transform.localScale = new Vector3(ls.x * a.build, ls.y, ls.z * a.build);
+            }
             Materials.ConvertAll(go, string.IsNullOrEmpty(a.skin) ? null : AssetDatabase.LoadAssetAtPath<Texture2D>(a.skin));
             foreach (var r in go.GetComponentsInChildren<Renderer>())
             {

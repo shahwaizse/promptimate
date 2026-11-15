@@ -24,7 +24,13 @@ namespace ShotStudio
             public PlayableGraph graph; public AnimationMixerPlayable mixer; public List<AnimationClipPlayable> clips = new List<AnimationClipPlayable>();
             public Promptimate.PromptimateGrounding grounding; public int activeSeg = -2; public float lastT;
             public SkinnedMeshRenderer[] smrs;
+            public List<HeldProp> props = new List<HeldProp>();
+            public List<(PropSpec spec, Props.FingerSet fs)> fingers = new List<(PropSpec, Props.FingerSet)>();
+            public List<SeatState> seats = new List<SeatState>();
+            public float travelScale = 1;
         }
+
+        static readonly Dictionary<string, FurnitureInfo> furniture = new Dictionary<string, FurnitureInfo>();
 
         public static void Run()
         {
@@ -51,7 +57,15 @@ namespace ShotStudio
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             Mark("setup");
 
-            // Actors and their clip timelines.
+            // Set dressing placed by the shot (seats are measured), then actors and their clip timelines.
+            furniture.Clear();
+            var furnitureClear = new List<Vector3>();
+            foreach (var f in s.furniture ?? new FurnitureSpec[0])
+            {
+                var fi = Stages.Furniture(f);
+                furniture[string.IsNullOrEmpty(f.id) ? fi.go.name : f.id] = fi;
+                for (int q = 0; q < 9; q++) furnitureClear.Add(fi.bounds.center + new Vector3((q % 3 - 1) * fi.bounds.extents.x, 0, (q / 3 - 1) * fi.bounds.extents.z));
+            }
             var actors = new List<Actor>();
             foreach (var a in s.actors ?? new ActorSpec[0]) actors.Add(MakeActor(a));
             Mark("actors");
@@ -60,7 +74,7 @@ namespace ShotStudio
             float dt = 0.1f;
             int ns = Mathf.Max(2, Mathf.CeilToInt(s.seconds / dt) + 1);
             var tracks = actors.Select(x => new Track { id = x.spec.id, height = x.spec.height }).ToList();
-            var keepClear = new List<Vector3>();
+            var keepClear = new List<Vector3>(furnitureClear);
             for (int k = 0; k < ns; k++)
             {
                 float t = Mathf.Min(k * dt, s.seconds);
@@ -97,15 +111,49 @@ namespace ShotStudio
             var look = Looks.Get(s.lighting?.preset);
             var rig = Looks.Apply(look, s.lighting ?? new LightSpec(), camTrack.yaw);
             var stage = Stages.Build(s.stage, s.seed, keepClear);
-            if (look.practicals)
+            var lightSpec = s.lighting ?? new LightSpec();
+            if (lightSpec.rim >= 0 && rig.rim) rig.rim.intensity = lightSpec.rim;
+            else if (lightSpec.rim > 0)
+            {
+                rig.rim = new GameObject("Rim").AddComponent<Light>();
+                rig.rim.type = LightType.Directional; rig.rim.color = look.rimColor; rig.rim.intensity = lightSpec.rim;
+                rig.rim.transform.rotation = Quaternion.Euler(25, camTrack.yaw + 180 + 35, 0);
+            }
+            bool haze = Weather.Rain(lightSpec.weather) || Weather.Fog(lightSpec.weather);
+            var lampHeads = new List<(Vector3 p, Color c)>();
+            foreach (var f in s.furniture ?? new FurnitureSpec[0])
+                if (f.lamp != null && f.lamp.Length >= 3 && furniture.TryGetValue(f.id ?? "", out var fl) && look.practicals)
+                {
+                    var head = fl.go.transform.position + Quaternion.Euler(0, f.yaw, 0) * new Vector3(f.lamp[0], f.lamp[1], f.lamp[2]);
+                    Looks.Point(head, look.practicalColor, look.practicalIntensity * 1.6f, look.practicalRange * 1.1f, true);
+                    lampHeads.Add((head, look.practicalColor));
+                    Glow(head, look.practicalColor, 0.3f);
+                }
+            foreach (var pr in s.practicals ?? new PracticalSpec[0])
+            {
+                var pp = new Vector3(pr.pos[0], pr.pos[1], pr.pos[2]);
+                var c = pr.color != null && pr.color.Length >= 3 ? new Color(pr.color[0], pr.color[1], pr.color[2]) : look.practicalColor;
+                var l = Looks.Point(pp, c, pr.intensity, pr.range, pr.shadows);
+                if (pr.type == "spot")
+                {
+                    l.type = LightType.Spot; l.spotAngle = pr.angle; l.innerSpotAngle = pr.angle * 0.5f;
+                    var d = pr.dir != null && pr.dir.Length >= 3 ? new Vector3(pr.dir[0], pr.dir[1], pr.dir[2]) : Vector3.down;
+                    l.transform.rotation = Quaternion.LookRotation(d.normalized, Mathf.Abs(d.normalized.y) > 0.95f ? Vector3.forward : Vector3.up);
+                }
+                if (pr.glow) Glow(pp, c, 0.22f);
+            }            if (look.practicals)
             {
                 // Nearest lamps first (URP lights 8 per object), each with a glowing head for bloom outdoors.
                 var centre = tracks.Count > 0 ? tracks[0].Ground(0) : Vector3.zero;
                 int shadowed = 0;
-                foreach (var lp in stage.lamps.OrderBy(p => Vector3.Distance(p, centre)).Take(6))
-                {
+                var camAt = camTrack.pos[0];
+                bool wet = Weather.Rain(s.lighting?.weather);
+                foreach (var lp in stage.lamps.Where(p => stage.name == "interior" || p.y > 4.5f || (!wet && Vector3.Distance(p, camAt) > 8f))
+                                              .OrderBy(p => Vector3.Distance(p, centre)).Take(6))
+                {   // low outdoor lights right by the camera only paint glare blobs on wet ground
                     Looks.Point(lp, look.practicalColor, look.practicalIntensity, look.practicalRange, shadowed++ < 2);
-                    if (stage.name != "interior")
+                    if (stage.name != "interior" && lp.y > 4.5f) lampHeads.Add((lp, look.practicalColor));
+                    if (stage.name != "interior" && lp.y > 4.5f) // bulbs on lamp heads only (shop-window lights stay unseen)
                     {
                         var bulb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                         bulb.name = "LampGlow"; Object.DestroyImmediate(bulb.GetComponent<Collider>());
@@ -121,6 +169,11 @@ namespace ShotStudio
                 var side = Quaternion.Euler(0, camTrack.yaw - 60, 0) * Vector3.back;
                 Looks.Point(c + side * 2.6f + Vector3.up * 3.4f, look.practicalColor, look.sceneKey, 9f, true);
             }
+            // Haze catching the lamp light: cones under the street lamps (subtle on a clear night, strong in rain/fog).
+            if (look.practicals && stage.name != "interior")
+                foreach (var (p, c) in lampHeads) Weather.LightCone(p, c, haze ? 0.075f : 0.035f);
+            var (c0, r0, _) = camTrack.At(0);
+            var weather = Weather.Apply(lightSpec, look, c0, r0 * Vector3.forward, s.fps);
             Looks.Focus(rig, camTrack.focus, camTrack.fov[0]);
             Mark("stage");
 
@@ -160,14 +213,18 @@ namespace ShotStudio
             report.Append("{\"frames\":[");
             bool firstRep = true;
             var bake = new Mesh();
+            var pending = new List<System.Threading.Tasks.Task>();
             var prevHips = new Vector3[actors.Count];
             var maxJump = new float[actors.Count];
             for (int f = 0; f < frames; f++)
             {
                 float t = f / (float)s.fps;
+                if (f > 0) weather.Step(1f / s.fps);
+                bool rep = s.reportEvery > 0 && (f % s.reportEvery == 0 || f == frames - 1);
                 for (int j = 0; j < actors.Count; j++)
                 {
-                    Pose(actors[j], t);
+                    Pose(actors[j], t, rep);
+                    if (rep) foreach (var hp in actors[j].props) Props.Measure(hp, actors[j].anim, actors[j].spec.height);
                     var h = actors[j].anim.GetBoneTransform(HumanBodyBones.Hips).position;
                     if (f > 0) maxJump[j] = Mathf.Max(maxJump[j], Vector3.Distance(h, prevHips[j]));
                     prevHips[j] = h;
@@ -180,10 +237,18 @@ namespace ShotStudio
                 Graphics.Blit(rt, outRt);
                 RenderTexture.active = outRt;
                 tex.ReadPixels(new Rect(0, 0, s.width, s.height), 0, 0);
-                tex.Apply(false);
                 RenderTexture.active = null;
-                var bytes = s.format == "jpg" ? tex.EncodeToJPG(95) : tex.EncodeToPNG();
-                File.WriteAllBytes(Path.Combine(s.outDir, $"f{f:D5}.{(s.format == "jpg" ? "jpg" : "png")}"), bytes);
+                // Encode and write on worker threads (thread-safe array encoders); the main thread renders on.
+                var raw = tex.GetRawTextureData<byte>().ToArray();
+                string file = Path.Combine(s.outDir, $"f{f:D5}.{(s.format == "jpg" ? "jpg" : "png")}");
+                bool jpg = s.format == "jpg"; int w0 = s.width, h0 = s.height;
+                while (pending.Count(x => !x.IsCompleted) > 6) pending.First(x => !x.IsCompleted).Wait();
+                pending.Add(System.Threading.Tasks.Task.Run(() =>
+                {
+                    var bytes = jpg ? ImageConversion.EncodeArrayToJPG(raw, UnityEngine.Experimental.Rendering.GraphicsFormat.R8G8B8_SRGB, (uint)w0, (uint)h0, 0, 95)
+                                    : ImageConversion.EncodeArrayToPNG(raw, UnityEngine.Experimental.Rendering.GraphicsFormat.R8G8B8_SRGB, (uint)w0, (uint)h0);
+                    File.WriteAllBytes(file, bytes);
+                }));
 
                 if (s.reportEvery > 0 && (f % s.reportEvery == 0 || f == frames - 1))
                 {
@@ -201,10 +266,13 @@ namespace ShotStudio
                     report.Append("]}");
                 }
             }
+            System.Threading.Tasks.Task.WaitAll(pending.ToArray());
             Mark("render");
             report.Append("],");
             report.Append($"\"camera\":{{\"preset\":\"{camTrack.preset}\",\"yaw\":{F(camTrack.yaw)},\"focus\":{F(camTrack.focus)}}},");
-            report.Append("\"actors\":[" + string.Join(",", actors.Select((x, j) => $"{{\"id\":\"{x.spec.id}\",\"maxHipStepM\":{F(maxJump[j])},\"segments\":{x.spec.segs?.Length ?? 0}}}")) + "],");
+            report.Append("\"actors\":[" + string.Join(",", actors.Select((x, j) => $"{{\"id\":\"{x.spec.id}\",\"maxHipStepM\":{F(maxJump[j])},\"segments\":{x.spec.segs?.Length ?? 0}," +
+                $"\"props\":[{string.Join(",", x.props.Select(Props.Report))}],\"seats\":[{string.Join(",", x.seats.Select(Seating.Report))}]}}")) + "],");
+            report.Append("\"furniture\":[" + string.Join(",", furniture.Values.Select(fi => $"{{\"id\":\"{fi.id}\",\"seatTopM\":{F(fi.seatTop)},\"seatCenter\":[{V(fi.seatCenter)}],\"scaleY\":{F(fi.scaleY)},\"boundsMin\":[{V(fi.bounds.min)}],\"boundsMax\":[{V(fi.bounds.max)}]}}")) + "],");
             report.Append($"\"width\":{s.width},\"height\":{s.height},\"fps\":{s.fps},\"frameCount\":{frames},\"stage\":\"{stage.name}\",\"lighting\":\"{look.name}\",");
             report.Append("\"timing\":{" + timing.ToString().TrimEnd(',') + "}}");
             File.WriteAllText(Path.Combine(s.outDir, "report.json"), report.ToString());
@@ -226,6 +294,19 @@ namespace ShotStudio
             x.anim = x.go.GetComponent<Animator>();
             x.anim.applyRootMotion = true;
             x.smrs = x.go.GetComponentsInChildren<SkinnedMeshRenderer>();
+            // Props and finger poses are calibrated in the bind pose, before anything animates the rig.
+            foreach (var ps in a.props ?? new PropSpec[0])
+            {
+                if (string.IsNullOrEmpty(ps.model)) continue;
+                x.props.Add(Props.Attach(ps, x.go, x.anim, a.height));
+                var fs = Props.FingerTargets(x.anim, (ps.hand ?? "right").ToLower().StartsWith("l"), ps.fingers);
+                if (fs != null) x.fingers.Add((ps, fs));
+            }
+            foreach (var ss in a.seats ?? new SeatSpec[0])
+            {
+                if (!furniture.TryGetValue(ss.furniture ?? "", out var fi)) throw new System.Exception($"actor {a.id}: seat on unknown furniture '{ss.furniture}'");
+                x.seats.Add(new SeatState { spec = ss, seat = fi });
+            }
             x.go.transform.SetPositionAndRotation(P(a.pos), Quaternion.Euler(0, a.yaw, 0));
             if (a.grounding)
             {
@@ -248,6 +329,7 @@ namespace ShotStudio
                 }
                 AnimationPlayableOutput.Create(x.graph, "out", x.anim).SetSourcePlayable(x.mixer);
                 x.graph.Play();
+                CalibrateTravel(x);
             }
             return x;
         }
@@ -270,7 +352,65 @@ namespace ShotStudio
         /// Poses an actor at shot time t (non-decreasing since the last Reset). Clips play with Apply Root Motion, the
         /// way Unity chains Promptimate clips: the first segment is placed at its world spot, later segments carry on
         /// from wherever the previous clip left the character (continue_from clips start in its last pose).
-        static void Pose(Actor x, float t)
+        static void Pose(Actor x, float t, bool measure = false)
+        {
+            PoseBody(x, t);
+            // Fingers for held props, then the seat contact, then the props follow the final hand.
+            foreach (var (ps, fs) in x.fingers)
+            {
+                const float b = 0.2f;
+                float w = t < ps.start ? 1 - (ps.start - t) / b : t > ps.end ? 1 - (t - ps.end) / b : 1;
+                Props.ApplyFingers(fs, w);
+            }
+            foreach (var st in x.seats) Seating.Apply(st, x.anim, x.grounding, t, measure);
+            foreach (var hp in x.props) Props.Place(hp, t);
+        }
+
+        static void Glow(Vector3 p, Color c, float size)
+        {
+            var bulb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            bulb.name = "LampGlow"; Object.DestroyImmediate(bulb.GetComponent<Collider>());
+            bulb.transform.position = p; bulb.transform.localScale = Vector3.one * size;
+            var br = bulb.GetComponent<Renderer>(); br.sharedMaterial = Materials.Emissive(c, 6f); br.shadowCastingMode = ShadowCastingMode.Off;
+        }
+
+        /// Evaluates the graph and rescales this step's root travel (horizontal) to metres: Humanoid retargeting
+        /// scales root motion with the avatar, so without this a 1.66 m character covers ~6 % less ground than the
+        /// generated clip and staged end points (walk-ins, seats) miss.
+        static void Eval(Actor x, float dt)
+        {
+            var before = x.go.transform.position;
+            x.graph.Evaluate(dt);
+            if (Mathf.Abs(x.travelScale - 1) > 1e-4f)
+            {
+                var after = x.go.transform.position;
+                var d = after - before;
+                x.go.transform.position = before + new Vector3(d.x * x.travelScale, d.y, d.z * x.travelScale);
+            }
+        }
+
+        /// Travel scale from the actor's longest-travel clip: metric distance (from Python, from the motion data) over
+        /// the distance the clip moves this character in Unity.
+        static void CalibrateTravel(Actor x)
+        {
+            var c = x.spec.travelCal;
+            if (c == null || c.Length < 2 || c[1] < 0.3f || x.clips.Count == 0) return;
+            int k = Mathf.Clamp((int)c[0], 0, x.clips.Count - 1);
+            var clip = x.clips[k];
+            float len = (float)clip.GetAnimationClip().length;
+            for (int i = 0; i < x.clips.Count; i++) { x.mixer.SetInputWeight(i, i == k ? 1 : 0); if (i == k) x.clips[i].Play(); else x.clips[i].Pause(); }
+            x.go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            clip.SetSpeed(1); clip.SetTime(0); clip.SetTime(0);
+            x.graph.Evaluate(0);
+            var p0 = x.go.transform.position;
+            for (float t = 0; t < len - 1e-4f; t += 1 / 30f) x.graph.Evaluate(Mathf.Min(1 / 30f, len - t));
+            var d = x.go.transform.position - p0; d.y = 0;
+            if (d.magnitude > 0.2f) x.travelScale = Mathf.Clamp(c[1] / d.magnitude, 0.7f, 1.4f);
+            Debug.Log($"SHOT_TRAVEL {x.spec.id} metric={c[1]:F3} unity={d.magnitude:F3} scale={x.travelScale:F3}");
+            x.go.transform.SetPositionAndRotation(P(x.spec.pos), Quaternion.Euler(0, x.spec.yaw, 0));
+        }
+
+        static void PoseBody(Actor x, float t)
         {
             var segs = x.spec.segs;
             if (segs == null || segs.Length == 0) return;
@@ -280,7 +420,7 @@ namespace ShotStudio
             if (k != x.activeSeg)
             {
                 // Finish the previous clip's travel up to the join, so no root motion is lost between frames.
-                if (x.activeSeg >= 0 && s.start > x.lastT) x.graph.Evaluate(s.start - x.lastT);
+                if (x.activeSeg >= 0 && s.start > x.lastT) Eval(x, s.start - x.lastT);
                 float ct = s.clipStart + Mathf.Max(0, t - s.start) * s.speed;
                 for (int i = 0; i < segs.Length; i++)
                 {
@@ -293,11 +433,11 @@ namespace ShotStudio
                 x.clips[k].SetTime(0);
                 x.clips[k].SetTime(0); // twice: also resets the previous time, so the jump adds no root motion
                 x.graph.Evaluate(0);
-                if (ct > 1e-4f) x.graph.Evaluate(ct); // entering mid-clip: carry the clip's travel up to ct
+                if (ct > 1e-4f) Eval(x, ct); // entering mid-clip: carry the clip's travel up to ct
                 x.clips[k].SetSpeed(s.speed);
                 x.activeSeg = k;
             }
-            else x.graph.Evaluate(Mathf.Max(0, t - x.lastT));
+            else Eval(x, Mathf.Max(0, t - x.lastT));
             x.lastT = t;
             if (x.grounding) x.grounding.Solve();
         }

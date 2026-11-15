@@ -17,11 +17,19 @@ point `KIMODO_ENGINE_DIR` at any folder that contains `kmd-generate.exe`.
 ## Tools
 | Tool | What it does |
 |---|---|
-| `generate_motion(segments[{prompt, seconds}], seed, steps=30, takes=3, clean=true, loop=false, in_place=false, root_path?, auto_stop=true, start_pose="free", end_pose="free", continue_from?, speed=1.0, text_cfg?, transition_frames=10, name?, unity_check="background")` | Generates the motion and returns stats, checks, a preview sheet and (for several takes) a takes sheet. Writes raw `.f32` (plus the engine's `foot_contacts.f32`) to `output/<name>/take<k>/` and the cleaned result to `output/<name>/`, GLB and BVH in the background, and drops `<name>.kimodo` into `$UNITY_PROJECT/Assets/Promptimate/Generated/`. |
+| `generate_motion(segments[{prompt, seconds}], seed, steps=30, takes=3, clean=true, loop=false, in_place=false, root_path?, auto_stop=true, start_pose="free", end_pose="free", continue_from?, speed=1.0, text_cfg?, transition_frames=10, name?, unity_check="background", seat?)` | Generates the motion and returns stats, checks, a preview sheet and (for several takes) a takes sheet. Writes raw `.f32` (plus the engine's `foot_contacts.f32`) to `output/<name>/take<k>/` and the cleaned result to `output/<name>/`, GLB and BVH in the background, and drops `<name>.kimodo` into `$UNITY_PROJECT/Assets/Promptimate/Generated/`. |
 | `use_take(name, take)` | Switch a multi-take result to another take |
+| `stage_actors(actors)` | Resolves placements (`at`/`near`/`face`/`enter_from`) before generating; returns walk-in root paths and lists the cast, props, furniture, stages, lighting and weather |
+| `render_shot(actors, camera, stage, lighting, weather?, furniture?, practicals?, cast_file?, ...)` | Films Promptimate motions on characters in Unity (URP) to MP4 with automatic validation: framing, ground contact, clip joins, held props (follow the hand, stay out of the body), seat contact. See `demo/shorts_template/README.md` |
 | `validate_in_unity(names?, self_test)` | Headless Unity bake and verify (also runs in the background after each generation unless `unity_check="off"`) |
 | `list_motions`, `get_motion_preview(name)` | Browse earlier results |
 | `worker_status(warm_up)` | Load the GPU worker ahead of time (about 1 min cold) |
+
+`seat={"t": [start, end], "height": 0.45, "x": .., "z": .., "heading_deg": .., "furniture": "bench"}` makes the clip sit
+on something of that height: the model alone sits on the floor for "sits on a chair", and it ignores a lone hips-height
+constraint, so the seated span pins a synthetic seated lower body (hips at height + 0.17 m, legs and feet from
+`constraints.seated_pose`) like an end-effector constraint, with eased transitions in and out; the upper body stays free.
+`meta.seat_check` reports hips height/position error and foot drift. `render_shot` puts matching furniture under it.
 
 ## Automatic verification
 Every `generate_motion` result includes:

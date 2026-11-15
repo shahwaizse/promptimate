@@ -82,6 +82,13 @@ namespace ShotStudio
                 Beat("rendering " + id);
                 var spec = JsonUtility.FromJson<ShotSpec>(File.ReadAllText(running));
                 AssetDatabase.Refresh(); // new .kimodo clips dropped in by the Python side
+                if (EditorApplication.isCompiling)
+                {
+                    // Renderer scripts changed: requeue and render after the domain reload, with the new code.
+                    File.Move(running, job);
+                    Beat("compiling");
+                    return;
+                }
                 ShotRenderer.Render(spec);
                 File.WriteAllText(done, "{\"ok\":true}");
             }

@@ -151,6 +151,108 @@ namespace ShotStudio
             return g;
         }
 
+        // ---- furniture placed by the shot -------------------------------------------------------------------------
+
+        /// Spawns a piece of set dressing and measures its seat top (median of downward rays over the middle of the
+        /// footprint, against temporary mesh colliders). seatHeight > 0 rescales it vertically to that seat height.
+        public static FurnitureInfo Furniture(FurnitureSpec f)
+        {
+            var parent = GameObject.Find("Furniture")?.transform ?? new GameObject("Furniture").transform;
+            GameObject go;
+            Vector3 pos = f.pos != null && f.pos.Length >= 3 ? new Vector3(f.pos[0], f.pos[1], f.pos[2]) : Vector3.zero;
+            if (f.model == "box")
+            {
+                var sz = f.size != null && f.size.Length >= 3 ? new Vector3(f.size[0], f.size[1], f.size[2]) : new Vector3(1.2f, 0.45f, 0.45f);
+                go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                Object.DestroyImmediate(go.GetComponent<Collider>());
+                go.transform.localScale = sz;
+                go.transform.SetPositionAndRotation(pos + Vector3.up * sz.y / 2, Quaternion.Euler(0, f.yaw, 0));
+                var c = f.color != null && f.color.Length >= 3 ? new Color(f.color[0], f.color[1], f.color[2]) : new Color(0.45f, 0.44f, 0.42f);
+                go.GetComponent<Renderer>().sharedMaterial = Materials.Make(c, Materials.Noise(new Color(0.8f, 0.8f, 0.8f), Color.white, 128, 10, 7), 0.15f);
+            }
+            else
+            {
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(f.model);
+                if (prefab == null) throw new System.Exception("missing furniture model " + f.model + " (run unity/DemoStudio/fetch_render_assets.py)");
+                float k = f.scale;
+                if (!string.IsNullOrEmpty(f.kit))
+                {
+                    var refs = new Dictionary<string, (string, int, float)> { ["Furniture"] = ("doorway", 1, 2.25f), ["CityRoads"] = ("road-straight", 3, 7f), ["CitySuburban"] = ("tree-large", 1, 5.5f) };
+                    if (refs.TryGetValue(f.kit, out var r)) k *= Scale(f.kit, r.Item1, r.Item2, r.Item3);
+                }
+                go = (GameObject)Object.Instantiate(prefab);
+                go.transform.localScale = prefab.transform.localScale * k;
+                if (f.stretch > 0 && Mathf.Abs(f.stretch - 1) > 1e-3f) { var l0 = go.transform.localScale; go.transform.localScale = new Vector3(l0.x * f.stretch, l0.y, l0.z); }
+                go.transform.SetPositionAndRotation(pos, Quaternion.Euler(0, f.yaw, 0));
+                var rs0 = go.GetComponentsInChildren<Renderer>();
+                if (rs0.Length > 0) { var b0 = rs0[0].bounds; foreach (var r in rs0) b0.Encapsulate(r.bounds); go.transform.position += Vector3.up * (pos.y - b0.min.y); }
+                Materials.ConvertAll(go);
+            }
+            if (f.anchor != "pivot")
+            {
+                var rsC = go.GetComponentsInChildren<Renderer>();
+                if (rsC.Length > 0) { var bc = rsC[0].bounds; foreach (var r in rsC) bc.Encapsulate(r.bounds); go.transform.position += new Vector3(pos.x - bc.center.x, 0, pos.z - bc.center.z); }
+            }
+            go.name = string.IsNullOrEmpty(f.id) ? "furniture" : f.id;
+            go.transform.SetParent(parent, true);
+            foreach (var r in go.GetComponentsInChildren<Renderer>()) { r.shadowCastingMode = ShadowCastingMode.On; r.receiveShadows = true; }
+            var info = new FurnitureInfo { id = f.id, go = go, front = Quaternion.Euler(0, f.yaw, 0) * Vector3.forward };
+            info.seatTop = MeasureSeat(go, out var bounds, out var seatXZ);
+            if (f.seatHeight > 0 && info.seatTop > 0.05f)
+            {
+                float sy = Mathf.Clamp(f.seatHeight / info.seatTop, 0.75f, 1.25f);
+                var ls = go.transform.localScale; go.transform.localScale = new Vector3(ls.x, ls.y * sy, ls.z);
+                info.scaleY = sy;
+                info.seatTop = MeasureSeat(go, out bounds, out seatXZ);
+            }
+            info.bounds = bounds;
+            info.seatCenter = new Vector3(seatXZ.x, info.seatTop, seatXZ.z); // centre of the seat surface, not of the backrest
+            return info;
+        }
+
+        static float MeasureSeat(GameObject go, out Bounds b, out Vector3 seatXZ)
+        {
+            var rs = go.GetComponentsInChildren<Renderer>();
+            b = rs.Length > 0 ? rs[0].bounds : new Bounds(go.transform.position, Vector3.zero);
+            foreach (var r in rs) b.Encapsulate(r.bounds);
+            var cols = new List<Collider>();
+            foreach (var mf in go.GetComponentsInChildren<MeshFilter>())
+                if (mf.sharedMesh) { var mc = mf.gameObject.AddComponent<MeshCollider>(); mc.sharedMesh = mf.sharedMesh; cols.Add(mc); }
+            Physics.SyncTransforms();
+            var hits = new List<float>(); var hitPts = new List<Vector3>();
+            var right = go.transform.right; var fwd = go.transform.forward;
+            // Footprint extents along the piece's own axes.
+            float ex = 0, ez = 0;
+            foreach (var r in rs)
+                foreach (var corner in Corners(r.bounds))
+                {
+                    var d = corner - b.center;
+                    ex = Mathf.Max(ex, Mathf.Abs(Vector3.Dot(d, right))); ez = Mathf.Max(ez, Mathf.Abs(Vector3.Dot(d, fwd)));
+                }
+            for (int i = -2; i <= 2; i++)
+                for (int j = -2; j <= 2; j++)
+                {
+                    var o = b.center + right * (i * 0.15f * ex) + fwd * (j * 0.12f * ez);
+                    o.y = b.max.y + 0.5f;
+                    if (Physics.Raycast(o, Vector3.down, out var hit, b.size.y + 1f) && hit.point.y > 0.15f && hit.point.y < 1.2f && cols.Contains(hit.collider))
+                    { hits.Add(hit.point.y); hitPts.Add(hit.point); }
+                }
+            foreach (var c in cols) Object.DestroyImmediate(c);
+            seatXZ = b.center;
+            if (hits.Count == 0) return go.name.Contains("box") ? b.max.y : -1;
+            var sorted = new List<float>(hits); sorted.Sort();
+            float top = sorted[sorted.Count / 2];
+            var on = hitPts.FindAll(q => Mathf.Abs(q.y - top) < 0.03f);
+            if (on.Count > 0) { var m = Vector3.zero; foreach (var q in on) m += q; seatXZ = m / on.Count; }
+            return top;
+        }
+
+        static IEnumerable<Vector3> Corners(Bounds b)
+        {
+            for (int i = 0; i < 8; i++)
+                yield return new Vector3((i & 1) == 0 ? b.min.x : b.max.x, (i & 2) == 0 ? b.min.y : b.max.y, (i & 4) == 0 ? b.min.z : b.max.z);
+        }
+
         // ---- stages -------------------------------------------------------------------------------------------------
 
         static void Studio(StageInfo s)

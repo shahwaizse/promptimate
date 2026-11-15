@@ -24,6 +24,9 @@ D = 9 + 12 * J
 POS0 = 5
 ROT0 = 5 + 3 * J
 RIGHT_HIP, LEFT_HIP = 26, 22
+# Hips joint height above the seat surface when seated upright (SOMA skeleton; measured as the median gap between the
+# hips joint and the mesh's seat contact over the render cast, see demo/shorts_template/README.md).
+SEAT_HIPS_OFFSET = 0.17  # SOMA's pelvis root is ~8.5 cm above the hip joints, which sit ~8.5 cm above the seat
 END_EFFECTORS = (24, 28, 13, 19)  # left foot, right foot, left hand, right hand
 
 
@@ -89,8 +92,7 @@ class Constraints:
     def root_path(self, waypoints: list[tuple[float, float, float]], dense: bool = True) -> "Constraints":
         """waypoints: (seconds, x, z) in metres. dense=True linearly interpolates a constraint on every frame
         between consecutive waypoints (a path), else only the waypoint frames are pinned."""
-        pts = sorted((self._frame(round(s * motion.FPS)) if s * motion.FPS < self.frames else self.frames - 1, x, z)
-                     for s, x, z in waypoints)
+        pts = sorted((self._frame(min(round(s * motion.FPS), self.frames - 1)), x, z) for s, x, z in waypoints)
         if not dense or len(pts) == 1:
             for t, x, z in pts:
                 self.root_xz(t, x, z)
@@ -105,6 +107,54 @@ class Constraints:
         """Root stays at (x, z) for frames t0..t1 inclusive (the 'actually stops' fix)."""
         for t in range(self._frame(t0), self._frame(t1) + 1):
             self.root_xz(t, x, z)
+        return self
+
+    def hips_height(self, t: int, y: float) -> "Constraints":
+        """Hips joint height (feature 1, metres above the floor) at frame t."""
+        t = self._frame(t)
+        self.observed[t, 1] = y
+        self.mask[t, 1] = 1.0
+        return self
+
+    def seat(self, t0: int, t1: int, height: float, x: float | None = None, z: float | None = None,
+             heading: float | None = None, legs: str = "full", ease: int = 24, ease_out: bool = True) -> "Constraints":
+        """Seated on a seat whose top is `height` m above the floor for frames t0..t1 inclusive. The model ignores a
+        lone hips-height mask (it was trained on root, end-effector and full-body masks), so this pins a seated
+        lower body like an end-effector constraint: hips (height + SEAT_HIPS_OFFSET), legs and feet from
+        seated_pose(), plus the ground position (x, z) and the facing (heading, radians, default the clip's initial
+        facing). The upper body stays free. legs: "full" (hips, thighs, knees, feet) | "feet" (hips and feet only)."""
+        h = 0.0 if heading is None else float(heading)
+        row = seated_pose_features(height, h, 0.0 if x is None else x, 0.0 if z is None else z)
+        joints = [0, 24, 25, 28, 29] if legs == "feet" else [0, 22, 23, 24, 25, 26, 27, 28, 29]
+        if row is None:  # seat too high for the feet to reach the floor: hips and thighs only
+            row = seated_pose_features(height, h, 0.0 if x is None else x, 0.0 if z is None else z, feet=False)
+            joints = [0, 22, 23, 26, 27]
+        cols = [1, 3, 4] + [POS0 + 3 * j + k for j in joints for k in range(3)]
+        cols += [ROT0 + 6 * j + k for j in (24, 28) if j in joints for k in range(6)]
+        body = list(cols)
+        if x is not None and z is not None:
+            cols += [0, 2]
+        t0, t1 = self._frame(t0), self._frame(t1)
+        for t in range(t0, t1 + 1):
+            self.observed[t, cols] = row[cols]
+            self.mask[t, cols] = 1.0
+        # Eased transitions from standing into the seat (and back out when the clip goes on): without them the model
+        # drops to the floor first and is then pulled up onto the seat. Root-relative body only, so the approach
+        # path stays free.
+        if ease > 0:
+            stand = load_pose("idle")
+            seated = seated_pose(height, feet=row is not None and legs != "hips")
+            if seated is None:
+                seated = seated_pose(height, feet=False)
+            for k in range(1, ease + 1):
+                w = 0.5 - 0.5 * np.cos(np.pi * k / (ease + 1))           # 0..1 towards seated
+                r, q = blend_pose(stand, seated, w)
+                r, q = transform(r, q, 0.0, 0.0, h)
+                frow = pose_features(r, q)
+                for t in (t0 - (ease + 1 - k),) + ((t1 + (ease + 1 - k),) if ease_out else ()):
+                    if 0 <= t < self.frames and (t < t0 or t > t1) and not self.mask[t, 1]:
+                        self.observed[t, body] = frow[body]
+                        self.mask[t, body] = 1.0
         return self
 
     def pose(self, t: int, feat_row: np.ndarray, root_xz: bool = True) -> "Constraints":
@@ -214,6 +264,83 @@ def load_pose(name: str) -> tuple[np.ndarray, np.ndarray]:
     """Canonical fixture pose (origin, facing +Z), e.g. "idle" -> fixtures/idle_pose.json."""
     d = json.loads((FIXTURES / f"{name}_pose.json").read_text())
     return np.array(d["root"], np.float32), np.array(d["rot"], np.float32)
+
+
+def _rx(a: float) -> np.ndarray:
+    return np.array([np.sin(a / 2), 0.0, 0.0, np.cos(a / 2)])
+
+
+def seated_pose(height: float, feet: bool = True) -> tuple[np.ndarray, np.ndarray] | None:
+    """Canonical seated pose (origin, facing +Z) on a seat `height` m high: the idle pose with the hips at
+    height + SEAT_HIPS_OFFSET, each thigh pitched forward so the shin hangs vertically and the ankle lands at its idle
+    height above the floor (feet flat, where they were in global orientation). None when the seat is too high (or low)
+    for the feet to reach the floor that way; feet=False then gives thighs horizontal-ish and the feet free."""
+    from postprocess import qinv, qmul, qnorm
+    root, rot = load_pose("idle")
+    root = np.asarray(root, np.float64).copy()
+    rot = np.asarray(rot, np.float64).copy()
+    p0 = motion.fk(root[None].astype(np.float32), rot[None].astype(np.float32))[0]
+    root[1] = float(height) + SEAT_HIPS_OFFSET
+
+    def glob(q):
+        g = [None] * J
+        for j, par in enumerate(motion.PARENTS):
+            g[j] = q[j] if par < 0 else qmul(g[par], q[j])
+        return g
+
+    for hip, knee, ankle in ((22, 23, 24), (26, 27, 28)):
+        g0 = glob(rot)
+        ankle_y0 = float(p0[ankle, 1])
+
+        def place(a):
+            q = rot.copy()
+            gt = qmul(_rx(-a), g0[hip])                      # thigh pitched forward by a (about the global X axis)
+            q[hip] = qnorm(qmul(qinv(g0[motion.PARENTS[hip]]), gt))
+            q[knee] = qnorm(qmul(qinv(gt), g0[knee]))       # shin keeps its idle (vertical) global orientation
+            return q
+
+        def ankle_y(a):
+            q = place(a)
+            return float(motion.fk(root[None].astype(np.float32), q[None].astype(np.float32))[0][ankle, 1])
+
+        lo, hi = np.radians(20), np.radians(120)
+        if not feet:
+            rot = place(np.radians(80))
+            continue
+        if not (ankle_y(lo) <= ankle_y0 + 1e-4 <= ankle_y(hi) + 2e-4):  # the ankle rises as the thigh pitches up
+            return None
+        for _ in range(40):
+            mid = 0.5 * (lo + hi)
+            lo, hi = (lo, mid) if ankle_y(mid) > ankle_y0 else (mid, hi)
+        rot = place(0.5 * (lo + hi))
+    return root.astype(np.float32), rot.astype(np.float32)
+
+
+def blend_pose(a: tuple[np.ndarray, np.ndarray], b: tuple[np.ndarray, np.ndarray], w: float):
+    """Per-joint slerp of local rotations and lerp of the hips position between two canonical poses."""
+    ra, qa = np.asarray(a[0], np.float64), np.asarray(a[1], np.float64)
+    rb, qb = np.asarray(b[0], np.float64), np.asarray(b[1], np.float64)
+    qb = np.where(np.sum(qa * qb, axis=-1, keepdims=True) < 0, -qb, qb)
+    d = np.clip(np.sum(qa * qb, axis=-1, keepdims=True), -1, 1)
+    th = np.arccos(d)
+    sn = np.sin(th)
+    small = sn < 1e-5
+    wa = np.where(small, 1 - w, np.sin((1 - w) * th) / np.where(small, 1, sn))
+    wb = np.where(small, w, np.sin(w * th) / np.where(small, 1, sn))
+    q = wa * qa + wb * qb
+    q /= np.linalg.norm(q, axis=-1, keepdims=True)
+    return (ra + w * (rb - ra)).astype(np.float32), q.astype(np.float32)
+
+
+def seated_pose_features(height: float, heading: float, x: float, z: float, feet: bool = True) -> np.ndarray | None:
+    """Feature row of seated_pose turned to `heading` (radians) with the hips at (x, z)."""
+    p = seated_pose(height, feet)
+    if p is None:
+        return None
+    r, q = transform(p[0], p[1], 0.0, 0.0, heading)
+    r = np.asarray(r, np.float32).copy()
+    r[0], r[2] = x, z
+    return pose_features(r, q)
 
 
 def pose_features(root: np.ndarray, rot: np.ndarray) -> np.ndarray:

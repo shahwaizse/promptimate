@@ -33,17 +33,20 @@ STUDIO = Path(os.environ.get("PROMPTIMATE_RENDER_PROJECT", ROOT / "unity" / "Dem
 CACHE = ROOT / ".cache" / "shots"
 QUEUE = CACHE / "queue"
 GENERATED = STUDIO / "Assets" / "Promptimate" / "Generated"
-VERSION = 7  # bump when the Unity renderer or resolution changes in a way that should invalidate cached renders
+VERSION = 8  # bump when the Unity renderer or resolution changes in a way that should invalidate cached renders
 
 ASPECTS = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080), "4:5": (1080, 1350)}
 STAGES = ["street", "interior", "park", "studio", "void"]
 LIGHTING = ["day", "golden_hour", "night_street", "interior_warm", "studio"]
+WEATHER = ["", "rain", "fog", "rain_fog"]
 CAMERAS = ["wide", "medium", "close_up", "over_shoulder", "follow", "push_in", "orbit", "low_angle", "top_down",
            "two_shot", "explicit"]
 
 # Starter cast: CC0 characters fetched by unity/DemoStudio/fetch_render_assets.py (see render_assets.json).
+# build > 1 widens the body (x/z scale) for heavier builds; height normalises the standing height.
 _Q = "Assets/ThirdParty/Quaternius/"
 _K = "Assets/ThirdParty/Kenney/AnimatedCharacters1/"
+_P = "Assets/ThirdParty/Props/"
 CAST = {
     "businessman": {"model": _Q + "BusinessMan.glb", "height": 1.82, "look": "man, dark suit and tie", "license": "CC0 (Quaternius)"},
     "adventurer": {"model": _Q + "Adventurer.glb", "height": 1.78, "look": "man, green explorer jacket, backpack", "license": "CC0 (Quaternius)"},
@@ -58,6 +61,71 @@ CAST = {
                         "look": "stylised blocky man, striped shirt", "license": "CC0 (Kenney)"},
     "kenney_cyborg": {"model": _K + "Model/characterMedium.fbx", "skin": _K + "Skins/cyborgFemaleA.png", "height": 1.7,
                       "look": "stylised blocky woman, cyborg", "license": "CC0 (Kenney)"},
+}
+# Extended cast (all CC0 Quaternius via Poly Pizza). Filled in by CAST_EXTRA below so the starter entries above stay
+# byte-identical for existing renders.
+_K2 = "Assets/ThirdParty/Kenney/AnimatedCharacters2/Skins/"
+_K3 = "Assets/ThirdParty/Kenney/AnimatedCharacters3/Skins/"
+CAST_EXTRA: dict = {
+    "woman_casual": {"model": _Q + "WomanCasual.glb", "height": 1.66, "look": "young woman, dark hair, mint t-shirt, dark shorts", "license": "CC0 (Quaternius)"},
+    "woman_tank_top": {"model": _Q + "WomanTankTop.glb", "height": 1.69, "look": "young woman, long hair, light blue tank top, sporty", "license": "CC0 (Quaternius)"},
+    "man_suit": {"model": _Q + "ManSuit.glb", "height": 1.79, "build": 1.08, "look": "older man, grey hair, black suit", "license": "CC0 (Quaternius)"},
+    "man": {"model": _Q + "Man.glb", "height": 1.80, "look": "young man, short hair, light blue t-shirt, shorts", "license": "CC0 (Quaternius)"},
+    "woman_dress": {"model": _Q + "WomanDress.glb", "height": 1.65, "look": "blonde woman, red dress", "license": "CC0 (Quaternius)"},
+    "blonde_woman": {"model": _Q + "AnimatedWomanA.glb", "height": 1.67, "look": "blonde woman, white top, orange trousers", "license": "CC0 (Quaternius)"},
+    "redhead_woman": {"model": _Q + "AnimatedWomanB.glb", "height": 1.63, "look": "red-haired woman, green dress", "license": "CC0 (Quaternius)"},
+    "hooded_adventurer": {"model": _Q + "HoodedAdventurer.glb", "height": 1.72, "look": "woman, brown leather adventurer outfit, white hair", "license": "CC0 (Quaternius)"},
+    "kid_boy": {"model": _K + "Model/characterMedium.fbx", "skin": _K3 + "humanMaleA.png", "height": 1.25,
+                "look": "stylised blocky kid (boy), ~8 years", "license": "CC0 (Kenney)"},
+    "kid_girl": {"model": _K + "Model/characterMedium.fbx", "skin": _K3 + "humanFemaleA.png", "height": 1.2,
+                 "look": "stylised blocky kid (girl), ~8 years", "license": "CC0 (Kenney)"},
+    "kenney_survivor_f": {"model": _K + "Model/characterMedium.fbx", "skin": _K2 + "survivorFemaleA.png", "height": 1.68,
+                          "look": "stylised blocky woman, survivor jacket", "license": "CC0 (Kenney)"},
+    "kenney_survivor_m": {"model": _K + "Model/characterMedium.fbx", "skin": _K2 + "survivorMaleB.png", "height": 1.8, "build": 1.12,
+                          "look": "stylised blocky heavy-set man, survivor jacket", "license": "CC0 (Kenney)"},
+}
+
+# Props held in a hand (Props.cs). size = longest side in metres for a 1.75 m character; grip_at = where the hand is
+# along the prop's main axis (0 bottom .. 1 top) after model_rot turns the model's main axis to +Y and its front to
+# +Z. grip: power (handle across the fist) | cup (upright, tilts at the mouth) | flat (against the palm) | hang (bag) |
+# cane | pinch. Models named
+# "procedural:*" are built in code (no download).
+PROPS: dict = {
+    "phone": {"model": _P + "Smartphone.glb", "grip": "flat", "size": 0.15, "grip_at": 0.35, "fingers": "hold_flat", "light": "screen",
+              "model_rot": [-90, 0, 180],  # file: lies flat, screen +Y, long side +Z -> screen +Z (out of the palm), long side +Y
+              "license": "CC0 (smallbigsquare, Poly Pizza)"},
+    "cup": {"model": _P + "Cup.glb", "grip": "cup", "size": 0.10, "grip_at": 0.5, "fingers": "grip", "license": "CC0 (Kenney)"},
+    "coffee": {"model": _P + "Frappe.glb", "grip": "cup", "size": 0.16, "grip_at": 0.45, "fingers": "grip", "license": "CC0 (Kenney)"},
+    "bag": {"model": _P + "BagQ.glb", "grip": "hang", "size": 0.38, "grip_at": 1.0, "fingers": "grip", "license": "CC0 (Quaternius)"},
+    "briefcase": {"model": _P + "Suitcase.glb", "grip": "hang", "size": 0.45, "grip_at": 1.0, "fingers": "grip",
+                  "license": "CC0 (smallbigsquare, Poly Pizza)"},
+    "sword": {"model": _P + "SwordA.glb", "grip": "power", "size": 0.95, "grip_at": 0.08, "fingers": "grip", "rot": [0, 0, 0], "license": "CC0 (Quaternius)"},
+    "book": {"model": _P + "BookA.glb", "grip": "flat", "size": 0.24, "grip_at": 0.5, "fingers": "hold_flat", "model_rot": [0, 90, 0], "license": "CC0 (Quaternius)"},
+    "flashlight": {"model": "procedural:flashlight", "grip": "power", "size": 0.2, "grip_at": 0.35, "fingers": "grip",
+                   "light": "torch", "license": "procedural (Promptimate)"},
+    "umbrella": {"model": "procedural:umbrella", "grip": "power", "size": 1.04, "grip_at": 0.05, "fingers": "grip",
+                 "license": "procedural (Promptimate)"},
+    "stick": {"model": "procedural:cane", "grip": "cane", "size": 0.92, "grip_at": 0.93, "fingers": "grip",
+              "license": "procedural (Promptimate)"},
+    "baton": {"model": _P + "Baton.glb", "grip": "power", "size": 0.5, "grip_at": 0.2, "fingers": "grip", "model_rot": [-90, 0, 0],
+              "license": "CC0 (CreativeTrio, Poly Pizza)"},
+}
+
+# Furniture placed by render_shot (Stages.Furniture). seat: the hips sit `seat_back` m behind the measured seat centre.
+_F = "Assets/ThirdParty/Kenney/Furniture/"
+_R = "Assets/ThirdParty/Kenney/CityRoads/"
+FURNITURE: dict = {
+    "bench": {"model": _F + "bench.fbx", "kit": "Furniture", "front_yaw": 180, "seat_height": 0.45, "seat_back": 0.04},
+    "bench_cushion": {"model": _F + "benchCushion.fbx", "kit": "Furniture", "front_yaw": 180, "seat_height": 0.45, "seat_back": 0.04},
+    "chair": {"model": _F + "chair.fbx", "kit": "Furniture", "front_yaw": 180, "seat_height": 0.46, "seat_back": 0.05},
+    "chair_cushion": {"model": _F + "chairCushion.fbx", "kit": "Furniture", "front_yaw": 180, "seat_height": 0.46, "seat_back": 0.05},
+    "sofa": {"model": _F + "loungeSofa.fbx", "kit": "Furniture", "front_yaw": 180, "seat_height": 0.42, "seat_back": 0.08},
+    "sofa_long": {"model": _F + "loungeSofaLong.fbx", "kit": "Furniture", "front_yaw": 180, "seat_height": 0.42, "seat_back": 0.08},
+    "lounge_chair": {"model": _F + "loungeChair.fbx", "kit": "Furniture", "front_yaw": 180, "seat_height": 0.42, "seat_back": 0.08},
+    "stool": {"model": _F + "stoolBar.fbx", "kit": "Furniture", "seat_height": 0.72, "seat_back": 0.0},
+    "ledge": {"model": "box", "size": [1.8, 0.42, 0.45], "color": [0.42, 0.41, 0.4], "seat_height": 0.0, "seat_back": 0.02},
+    "crate": {"model": "box", "size": [0.55, 0.45, 0.55], "color": [0.45, 0.33, 0.2], "seat_height": 0.0, "seat_back": 0.0},
+    "street_lamp": {"model": _R + "light-curved.fbx", "kit": "CityRoads", "lamp": [0.0, 5.6, 1.0], "anchor": "pivot"},
 }
 
 def _log(msg: str) -> None:
@@ -135,7 +203,7 @@ def ensure_assets(log=_log) -> None:
 
 
 def list_cast() -> dict:
-    out = {k: {"look": v["look"], "height_m": v["height"], "license": v["license"]} for k, v in CAST.items()}
+    out = {k: {"look": v["look"], "height_m": v["height"], "license": v["license"]} for k, v in _all_cast().items()}
     mix = STUDIO / "Assets" / "Characters" / "Mixamo"
     if mix.is_dir():  # local-only test characters; never redistributed
         for f in sorted(mix.glob("*.fbx")):
@@ -221,7 +289,7 @@ def _rot(yaw_deg: float, x: float, z: float) -> tuple[float, float]:
 
 
 def resolve_segments(motions: list[str], pos: tuple[float, float], yaw: float, start: float = 0.0,
-                     loop_last: bool = False) -> tuple[list[dict], float]:
+                     loop_last: bool = False, clips: list | None = None) -> tuple[list[dict], float]:
     """Unity clip segments for motions played back to back, and the time the last one ends. Each clip is placed where
     the previous one ended (what continue_from's meta 'chain' records), so walk -> stop -> wave plays as one
     continuous performance. start > 0 holds the first frame until then; start < 0 skips into the first clip."""
@@ -234,6 +302,8 @@ def resolve_segments(motions: list[str], pos: tuple[float, float], yaw: float, s
             ux, uz = _rot(pyaw, -ex, ez)       # Kimodo (x = character's left) -> Unity (x right)
             px, pz, pyaw = px + ux, pz + uz, pyaw - eh
         dur = _duration(name)
+        if clips is not None:  # where each clip sits on the shot clock and in the world (props / seats use it)
+            clips.append({"name": name, "t0": T, "dur": dur, "pos": (px, pz), "yaw": pyaw})
         base = {"clip": _stage_clip(_kimodo_source(name), name), "speed": 1, "loop": False,
                 "pos": [round(px, 4), 0, round(pz, 4)], "yaw": round(pyaw, 3)}
         last = k == len(motions) - 1
@@ -347,6 +417,44 @@ def _entry_path(end: tuple[float, float], end_yaw: float, side: str, dist: float
             "notes": [f"enters from the {side}: {dist} m walk in {walk_s:.1f} s, then holds"]}
 
 
+def world_to_clip(point, clip_pos, clip_yaw: float) -> tuple[float, float]:
+    """A world point [x, z] in a clip's own frame (generate_motion's root_path / seat convention: +Z = where the clip
+    starts facing, +X = the character's left), for a clip that starts at clip_pos facing clip_yaw (Unity degrees)."""
+    x, z = _vec(point)
+    ux, uz = _rot(-clip_yaw, x - clip_pos[0], z - clip_pos[1])
+    return round(-ux, 4), round(uz, 4)
+
+
+def chain_end(motions: list[str], pos, yaw: float) -> tuple[tuple[float, float], float]:
+    """World placement ((x, z), yaw) where a continue_from chain placed at pos/yaw ends: where the next clip starts."""
+    clips: list[dict] = []
+    resolve_segments(list(motions), _vec(pos), float(yaw), 0.0, clips=clips)
+    c = clips[-1]
+    ex, ez, eh = _end_placement(c["name"])
+    ux, uz = _rot(c["yaw"], -ex, ez)
+    return (c["pos"][0] + ux, c["pos"][1] + uz), c["yaw"] - eh
+
+
+def seat_option(hips_world, face_yaw: float, clip_pos, clip_yaw: float, t: list[float], height: float = 0.45,
+                furniture: str = "bench") -> dict:
+    """generate_motion `seat` for a clip starting at clip_pos/clip_yaw (world) that should sit with its hips at
+    hips_world facing face_yaw (world, Unity degrees) during t = [start, end] (clip seconds)."""
+    x, z = world_to_clip(hips_world, clip_pos, clip_yaw)
+    return {"t": list(t), "height": height, "x": x, "z": z, "heading_deg": round(-((face_yaw - clip_yaw + 180) % 360 - 180), 2),
+            "furniture": furniture}
+
+
+def seat_hips(furniture: dict, offset_x: float = 0.0) -> tuple[float, float]:
+    """Where the hips go on a furniture entry {type, at, yaw} (yaw = the way a seated person faces), offset_x metres
+    along the seat to the sitter's right (two people on one bench: -0.38 and +0.38)."""
+    cat = FURNITURE.get(furniture.get("type", "bench"), {})
+    cx, cz = _vec(furniture["at"])
+    a = math.radians(float(furniture.get("yaw", 0.0)))
+    fw, right = (math.sin(a), math.cos(a)), (math.cos(a), -math.sin(a))
+    back = cat.get("seat_back", 0.05)
+    return round(cx - fw[0] * back + right[0] * offset_x, 4), round(cz - fw[1] * back + right[1] * offset_x, 4)
+
+
 def path_to_root_path(world_points: list, start_yaw: float, seconds: list[float] | None = None, speed: float = 1.25) -> list[dict]:
     """World waypoints [[x, z], ...] (first = where the clip starts) -> generate_motion root_path in the clip's own
     frame (origin, facing +Z = start_yaw in the world; Promptimate +X = the character's left)."""
@@ -364,20 +472,216 @@ def path_to_root_path(world_points: list, start_yaw: float, seconds: list[float]
 # ---------------------------------------------------------------------------------------------------------------------
 # Spec resolution
 
-def _cast_entry(a: dict) -> dict:
+def load_cast_file(cast_file) -> dict:
+    """A cast file keeps the same characters across episodes: {"roles": {"maya": {"cast": "woman_casual", "height":
+    1.66, "build": 1.0, "props": ["phone"], "look": "..."}}}. `cast` is a catalogue name (or `model` a path); props are
+    what the character always carries (merged with inferred / per-shot props). Path, dict or None."""
+    if not cast_file:
+        return {}
+    if isinstance(cast_file, dict):
+        d = cast_file
+    else:
+        f = Path(cast_file)
+        if not f.is_absolute():
+            f = ROOT / f
+        d = json.loads(f.read_text(encoding="utf-8"))
+    return d.get("roles", d)
+
+
+def _all_cast() -> dict:
+    return {**CAST, **CAST_EXTRA}
+
+
+def _cast_entry(a: dict, roles: dict | None = None) -> dict:
     c = a.get("cast")
+    role = (roles or {}).get(c) if c else None
+    if role:  # a cast-file role: its own settings, actor keys still override
+        a = {**{k: v for k, v in role.items() if k not in ("props", "look")}, **{k: v for k, v in a.items() if k != "cast"},
+             "cast": role.get("cast")}
+        c = a.get("cast")
     if a.get("model"):
-        return {"model": a["model"], "skin": a.get("skin"), "height": float(a.get("height", 1.75))}
-    if not c:
-        c = "businessman"
-    if c.startswith("mixamo:"):
-        return {"model": f"Assets/Characters/Mixamo/{c.split(':', 1)[1]}.fbx", "height": float(a.get("height", 1.75))}
-    if c not in CAST:
-        raise ValueError(f"unknown cast {c!r}; one of {', '.join(list_cast())} (or give model: 'Assets/....fbx|.glb')")
-    e = dict(CAST[c])
-    if a.get("height"):
-        e["height"] = float(a["height"])
+        e = {"model": a["model"], "skin": a.get("skin"), "height": float(a.get("height", 1.75))}
+    else:
+        if not c:
+            c = "businessman"
+        if c.startswith("mixamo:"):
+            e = {"model": f"Assets/Characters/Mixamo/{c.split(':', 1)[1]}.fbx", "height": float(a.get("height", 1.75))}
+        else:
+            cat = _all_cast()
+            if c not in cat:
+                raise ValueError(f"unknown cast {c!r}; one of {', '.join(list_cast())} (or give model: 'Assets/....fbx|.glb', "
+                                 f"or a role from cast_file)")
+            e = dict(cat[c])
+            if a.get("height"):
+                e["height"] = float(a["height"])
+    if a.get("build"):
+        e["build"] = float(a["build"])
+    e["role_props"] = list(role.get("props") or []) if role else []
+    # Stylised hand meshes are much bigger than human hands (the finger bones aren't): props scale with them.
+    e.setdefault("prop_scale", 1.35 if ("/Quaternius/" in e["model"] or "/Kenney/" in e["model"]) else 1.0)
+    if a.get("prop_scale"):
+        e["prop_scale"] = float(a["prop_scale"])
     return e
+
+
+# --- props ----------------------------------------------------------------------------------------------------------
+
+PROP_WORDS = [  # (prop, regex on a lower-case clause); the first prop that matches a clause wins
+    ("phone", r"\b(phone|smartphone|cell ?phone|mobile|texts?|texting|calls? (someone|somebody)|on a call)\b"),
+    ("coffee", r"\b(coffee|takeaway|to-go cup)\b"),
+    ("cup", r"\b(cup|mug|tea|drinks?|drinking|sips?|sipping)\b"),
+    ("umbrella", r"\bumbrella\b"),
+    ("flashlight", r"\b(flashlight|flash light|torch)\b"),
+    ("sword", r"\b(sword|blade|katana|sabre|saber)\b"),
+    ("book", r"\b(book|reads?|reading|novel)\b"),
+    ("briefcase", r"\b(briefcase|suitcase)\b"),
+    ("bag", r"\b(bag|handbag|purse|shopping bag)\b"),
+    ("stick", r"\b(cane|walking stick|stick|staff)\b"),
+]
+
+
+def infer_props(clips: list[dict], merge_gap: float = 1.5) -> list[dict]:
+    """Props implied by the motion prompts ("a person holds a phone to their ear" -> phone, right hand) over the shot
+    time of the segments that mention them; the hand comes from the text (hands.py's side words), default right.
+    Spans of the same prop closer than merge_gap seconds are joined, so a prop doesn't blink between clips."""
+    import re
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import hands
+    found = []
+    for c in clips:
+        try:
+            meta = _motion_meta(c["name"])
+        except ValueError:
+            continue
+        given = meta.get("prompts_as_given") or [sg["prompt"] for sg in meta["segments"]]
+        total = sum(sg["frames"] for sg in meta["segments"]) or 1
+        scale = c["dur"] * 30.0 / total
+        off = 0
+        for sg, text in zip(meta["segments"], given):
+            low = (text or sg["prompt"]).lower()
+            for name, rx in PROP_WORDS:
+                m = re.search(rx, low)
+                if m:
+                    side = hands._side_near(low, m.start()) or "right"
+                    if side == "both":
+                        side = "right"
+                    found.append({"prop": name, "hand": side, "t": [round(c["t0"] + off * scale / 30.0, 3),
+                                                                     round(c["t0"] + (off + sg["frames"]) * scale / 30.0, 3)],
+                                  "why": f"'{m.group(0)}' in {c['name']}"})
+                    break
+            off += sg["frames"]
+    out: list[dict] = []
+    for f in sorted(found, key=lambda f: (f["prop"], f["hand"], f["t"][0])):
+        prev = out[-1] if out else None
+        if prev and prev["prop"] == f["prop"] and prev["hand"] == f["hand"] and f["t"][0] - prev["t"][1] <= merge_gap:
+            prev["t"][1] = max(prev["t"][1], f["t"][1])
+        else:
+            out.append(dict(f))
+    return out
+
+
+def _prop_entry(p, actor_start: float, scale: float = 1.0) -> dict:
+    if isinstance(p, str):
+        p = {"prop": p}
+    name = p.get("prop") or p.get("type") or p.get("id")
+    if p.get("model"):
+        cat = {"model": p["model"], "grip": "power", "size": 0.3, "grip_at": 0.5}
+    elif name in PROPS:
+        cat = PROPS[name]
+    else:
+        raise ValueError(f"unknown prop {name!r}; one of {', '.join(PROPS)} (or give model: 'Assets/....glb')")
+    if p.get("t") is not None:
+        t0, t1 = float(p["t"][0]), float(p["t"][1])
+    elif p.get("chain_t") is not None:
+        t0, t1 = float(p["chain_t"][0]) + actor_start, float(p["chain_t"][1]) + actor_start
+    else:
+        t0, t1 = -1e6, 1e6
+    hand = (p.get("hand") or cat.get("hand") or "right").lower()
+    if hand not in ("left", "right"):
+        raise ValueError(f"prop hand must be left or right, got {hand!r}")
+    out = {"id": p.get("id") or name, "model": cat["model"], "hand": hand, "start": round(t0, 3), "end": round(t1, 3),
+           "grip": p.get("grip", cat.get("grip", "power")), "size": float(p.get("size", cat.get("size", 0.3) * scale)),
+           "gripAt": float(p.get("grip_at", cat.get("grip_at", 0.5))),
+           "modelRot": [float(v) for v in p.get("model_rot", cat.get("model_rot", [0, 0, 0]))],
+           "offset": [float(v) for v in p.get("offset", cat.get("offset", [0, 0, 0]))],
+           "rot": [float(v) for v in p.get("rot", cat.get("rot", [0, 0, 0]))],
+           "fingers": p.get("fingers", cat.get("fingers", "grip")), "light": p.get("light", cat.get("light", "")) or ""}
+    if p.get("tint") or cat.get("tint"):
+        out["tint"] = [float(v) for v in (p.get("tint") or cat.get("tint"))]
+    return out
+
+
+# --- furniture and seats --------------------------------------------------------------------------------------------
+
+def _furniture_entry(f: dict, i: int) -> dict:
+    typ = f.get("type") or f.get("furniture") or "bench"
+    if typ not in FURNITURE and not f.get("model"):
+        raise ValueError(f"unknown furniture type {typ!r}; one of {', '.join(FURNITURE)} (or give model: 'Assets/....fbx')")
+    cat = FURNITURE.get(typ, {})
+    x, z = _vec(f.get("at", [0, 0]))
+    out = {"id": f.get("id") or f"{typ}{i}", "model": f.get("model") or cat["model"], "kit": f.get("kit", cat.get("kit", "")),
+           "scale": float(f.get("scale", cat.get("scale", 1.0))), "pos": [round(x, 4), 0.0, round(z, 4)],
+           "yaw": float(f.get("yaw", 0.0)) + float(cat.get("front_yaw", 0.0)), "seatHeight": float(f.get("seat_height", cat.get("seat_height", 0.0)) or 0.0),
+           "anchor": f.get("anchor", cat.get("anchor", "center")), "stretch": float(f.get("stretch", 1.0))}
+    for k in ("size", "color", "lamp"):
+        v = f.get(k, cat.get(k))
+        if v is not None:
+            out[k] = [float(u) for u in v]
+    out["_type"] = typ
+    out["_front_yaw"] = float(f.get("yaw", 0.0))  # the way a seated person faces
+    return out
+
+
+def _seat_from_clip(c: dict) -> dict | None:
+    """A clip generated with generate_motion's `seat` option: where (world) and when (shot time) it sits, from the
+    clip's actual hips over the seated span, plus the facing there."""
+    try:
+        meta = _motion_meta(c["name"])
+    except ValueError:
+        return None
+    seat = (meta.get("options") or {}).get("seat")
+    if not seat:
+        return None
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import constraints as Cn
+    import motion as M
+    root, rot = M.load(OUTPUT / c["name"])
+    a = max(0, min(len(root) - 1, round(seat["t"][0] * 30)))
+    b = max(a, min(len(root) - 1, round(seat["t"][1] * 30)))
+    mid = (a + b) // 2
+    hx, hz, h = Cn.frame_placement(root, rot, mid)
+    hx, hz = float(root[a:b + 1, 0].mean()), float(root[a:b + 1, 2].mean())
+    ux, uz = _rot(c["yaw"], -hx, hz)
+    wyaw = c["yaw"] - math.degrees(h)
+    return {"t": [round(c["t0"] + seat["t"][0], 3), round(c["t0"] + seat["t"][1], 3)],
+            "hips": (c["pos"][0] + ux, c["pos"][1] + uz), "yaw": wyaw, "height": float(seat.get("height", 0.45)),
+            "type": seat.get("furniture") or "bench", "clip": c["name"]}
+
+
+def _place_seats(actor_id: str, auto: list[dict], furniture: list[dict]) -> list[dict]:
+    """Seat spans for an actor: each auto seat sits on explicit furniture within 0.6 m of where it belongs, or on
+    furniture already added for another seat (shared bench), else new furniture of the seat's type is added there."""
+    out = []
+    for s in auto:
+        fw = (math.sin(math.radians(s["yaw"])), math.cos(math.radians(s["yaw"])))
+        back = FURNITURE.get(s["type"], {}).get("seat_back", 0.05)
+        cx, cz = s["hips"][0] + fw[0] * back, s["hips"][1] + fw[1] * back
+        best = None
+        for f in furniture:
+            d = math.dist((cx, cz), (f["pos"][0], f["pos"][2]))
+            limit = 0.6 if not f.get("_auto") else 1.2
+            same = not f.get("_auto") or (f["_type"] == s["type"] and abs((f["_front_yaw"] - s["yaw"] + 180) % 360 - 180) < 35)
+            if d < limit and same and (best is None or d < best[0]):
+                best = (d, f)
+        if best is None:
+            f = _furniture_entry({"type": s["type"], "at": [cx, cz], "yaw": s["yaw"], "seat_height": s["height"],
+                                  "id": f"seat_{actor_id}_{len(furniture)}"}, len(furniture))
+            f["_auto"] = True
+            furniture.append(f)
+        else:
+            f = best[1]
+        out.append({"furniture": f["id"], "start": s["t"][0], "end": s["t"][1], "_clip": s["clip"]})
+    return out
 
 
 def resolve(spec: dict) -> dict:
@@ -401,37 +705,99 @@ def resolve(spec: dict) -> dict:
     if stage_name not in STAGES:
         raise ValueError(f"stage must be one of {STAGES}")
     light = spec.get("lighting", "day")
-    light = light if isinstance(light, dict) else {"preset": light}
+    light = dict(light) if isinstance(light, dict) else {"preset": light}
+    if spec.get("weather"):
+        light.setdefault("weather", spec["weather"])
     if light.get("preset", "day") not in LIGHTING:
         raise ValueError(f"lighting must be one of {LIGHTING}")
+    if (light.get("weather") or "") not in WEATHER:
+        raise ValueError(f"weather must be one of {WEATHER}")
     actors_in = spec.get("actors") or []
     if not actors_in:
         raise ValueError("need at least one actor")
+    roles = load_cast_file(spec.get("cast_file"))
     for i, a in enumerate(actors_in):
         a.setdefault("id", "ABCDEFGH"[i] if i < 8 else f"actor{i}")
     placed = stage(actors_in)
+    furniture = [_furniture_entry(f, i) for i, f in enumerate(spec.get("furniture") or [])]
     actors, longest = [], 0.0
     for a in actors_in:
-        ce = _cast_entry(a)
+        ce = _cast_entry(a, roles)
         p = placed[a["id"]]
         motions = a.get("motion") or a.get("motions") or []
         if isinstance(motions, str):
             motions = [motions]
         pos2, yaw = tuple(p["pos"]), float(p["yaw"])
+        clips: list[dict] = []
+        a_start = float(a.get("start", a.get("time_offset", 0.0)))
         if motions:
-            unity_segs, end = resolve_segments(motions, pos2, yaw, float(a.get("start", a.get("time_offset", 0.0))),
-                                               loop_last=bool(a.get("loop", False)))
+            unity_segs, end = resolve_segments(motions, pos2, yaw, a_start, loop_last=bool(a.get("loop", False)), clips=clips)
             longest = max(longest, end)
         else:
             unity_segs = [{"clip": idle_clip(), "start": 0.0, "clipStart": 0.0, "speed": 1, "loop": True,
                            "pos": [pos2[0], 0, pos2[1]], "yaw": yaw}]
-        actors.append({"id": a["id"], "model": ce["model"], "skin": ce.get("skin") or "", "height": ce["height"],
-                       "pos": [pos2[0], 0, pos2[1]], "yaw": yaw, "segs": unity_segs,
-                       "footIK": bool(a.get("foot_ik", True)), "grounding": bool(a.get("grounding", True)),
-                       "_motions": motions})
+        # Props: explicit list (+ "auto" inside it), the role's own props, else inferred from the prompts.
+        given = a.get("props")
+        plist = list(given) if isinstance(given, list) else ([] if given is None else [given])
+        auto = given is None or given == "auto" or "auto" in plist
+        plist = [q for q in plist if q != "auto"]
+        inferred = infer_props(clips) if auto else []
+        names_given = {(q if isinstance(q, str) else (q.get("prop") or q.get("id"))) for q in plist}
+        plist += [r for r in ce["role_props"] if (r if isinstance(r, str) else r.get("prop")) not in names_given]
+        props = [_prop_entry(q, a_start, ce["prop_scale"]) for q in plist]
+        taken = {(q["id"], q["hand"]) for q in props}
+        busy_hands = {q["hand"] for q in props if q["start"] < -1e5}
+        for q in inferred:
+            if (q["prop"], q["hand"]) in taken or q["hand"] in busy_hands:
+                continue
+            e = _prop_entry({"prop": q["prop"], "hand": q["hand"], "t": q["t"]}, a_start, ce["prop_scale"])
+            e["_why"] = q["why"]
+            props.append(e)
+        # Seats: explicit `sit` entries plus clips generated with the seat option.
+        seats = []
+        for st in a.get("sit") or []:
+            t0, t1 = st["t"] if st.get("t") is not None else [st["chain_t"][0] + a_start, st["chain_t"][1] + a_start]
+            seats.append({"furniture": st["on"], "start": float(t0), "end": float(t1)})
+        if a.get("auto_seat", True):
+            auto_seats = [x for x in (_seat_from_clip(c) for c in clips) if x]
+            seats += _place_seats(a["id"], auto_seats, furniture)
+        actor = {"id": a["id"], "model": ce["model"], "skin": ce.get("skin") or "", "height": ce["height"],
+                 "pos": [pos2[0], 0, pos2[1]], "yaw": yaw, "segs": unity_segs,
+                 "footIK": bool(a.get("foot_ik", True)), "grounding": bool(a.get("grounding", True)),
+                 "_motions": motions}
+        if ce.get("build"):
+            actor["build"] = ce["build"]
+        if clips and a.get("metric_travel", True):  # root motion in metres whatever the character's size
+            best = max(clips, key=lambda c: math.hypot(*_end_placement(c["name"])[:2]))
+            dist = math.hypot(*_end_placement(best["name"])[:2])
+            idx = next((i for i, sg in enumerate(unity_segs) if Path(sg["clip"]).stem == best["name"] and sg.get("speed", 1) != 0), None)
+            if idx is not None and dist >= 0.3:
+                actor["travelCal"] = [idx, round(dist, 4)]
+        if props:
+            actor["props"] = props
+        if seats:
+            actor["seats"] = [{k: v for k, v in st.items() if not k.startswith("_")} for st in seats]
+        actors.append(actor)
+    ids = {f["id"] for f in furniture}
+    for a in actors:
+        for st in a.get("seats", []):
+            if st["furniture"] not in ids:
+                raise ValueError(f"actor {a['id']} sits on unknown furniture {st['furniture']!r}; furniture ids: {sorted(ids)}")
     seconds = float(spec.get("seconds") or min(max(longest, 2.0), 12.0))
     if not 0.5 <= seconds <= 30:
         raise ValueError("seconds must be 0.5-30")
+    for a in actors:  # seated spans: join back-to-back clips on the same seat, drop spans outside this shot
+        merged = []
+        for st in sorted(a.get("seats", []), key=lambda q: q["start"]):
+            if merged and merged[-1]["furniture"] == st["furniture"] and st["start"] - merged[-1]["end"] < 0.25:
+                merged[-1]["end"] = max(merged[-1]["end"], st["end"])
+            else:
+                merged.append(dict(st))
+        merged = [st for st in merged if st["end"] > 0.05 and st["start"] < seconds - 0.05]
+        if merged:
+            a["seats"] = merged
+        else:
+            a.pop("seats", None)
     cam = spec.get("camera", "medium")
     cam = cam if isinstance(cam, dict) else {"preset": cam}
     if cam.get("preset", "medium") not in CAMERAS:
@@ -449,11 +815,33 @@ def resolve(spec: dict) -> dict:
     lighting = {"preset": light.get("preset", "day"), "exposure": float(light.get("exposure", 0))}
     if light.get("key_yaw") is not None:
         lighting["keyYaw"] = float(light["key_yaw"])
-    return {"id": spec.get("name") or "shot", "width": w, "height": h, "fps": fps, "seconds": round(seconds, 3),
-            "supersample": {"draft": 1.0, "final": 1.5, "high": 2.0}.get(quality, 1.5),
-            "stage": stage_name, "seed": int(spec.get("seed", 0)), "lighting": lighting,
-            "actors": actors, "camera": cam_out, "reportEvery": 3, "format": "jpg" if quality == "draft" else "png",
-            "_aspect": aspect, "_quality": quality}
+    if light.get("weather"):
+        lighting["weather"] = light["weather"]
+        lighting["weatherAmount"] = float(light.get("weather_amount", 1.0))
+    if light.get("rim") is not None:
+        lighting["rim"] = float(light["rim"])
+    out = {"id": spec.get("name") or "shot", "width": w, "height": h, "fps": fps, "seconds": round(seconds, 3),
+           "supersample": {"draft": 1.0, "final": 1.5, "high": 2.0}.get(quality, 1.5),
+           "stage": stage_name, "seed": int(spec.get("seed", 0)), "lighting": lighting,
+           "actors": actors, "camera": cam_out, "reportEvery": 3, "format": "jpg" if quality == "draft" else "png",
+           "_aspect": aspect, "_quality": quality}
+    if furniture:
+        out["furniture"] = [{k: v for k, v in f.items() if not k.startswith("_")} for f in furniture]
+        out["_furniture_auto"] = [f["id"] for f in furniture if f.get("_auto")]
+    if spec.get("practicals"):
+        out["practicals"] = [_practical(q) for q in spec["practicals"]]
+    return out
+
+
+def _practical(q: dict) -> dict:
+    o = {"pos": [float(v) for v in q["pos"]], "intensity": float(q.get("intensity", 6)), "range": float(q.get("range", 8)),
+         "type": q.get("type", "point"), "angle": float(q.get("angle", 100)), "glow": bool(q.get("glow", True)),
+         "shadows": bool(q.get("shadows", False))}
+    if q.get("color"):
+        o["color"] = [float(v) for v in q["color"]]
+    if q.get("dir"):
+        o["dir"] = [float(v) for v in q["dir"]]
+    return o
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -526,6 +914,12 @@ def _submit(job: dict, timeout: float, log=_log) -> None:
     done = QUEUE / f"{jid}.done.json"
     done.unlink(missing_ok=True)
     os.replace(tmp, QUEUE / f"{jid}.job.json")
+    _wait(jid, timeout)
+
+
+def _wait(jid: str, timeout: float) -> None:
+    """Waits for a queued job's done file; raises on failure, a dead server or the timeout."""
+    done = QUEUE / f"{jid}.done.json"
     t0 = time.time()
     while time.time() - t0 < timeout:
         if done.exists():
@@ -556,6 +950,12 @@ def _key(job: dict) -> str:
         deps.add(STUDIO / a["model"])
         for s in a["segs"]:
             deps.add(STUDIO / s["clip"])
+        for pr in a.get("props", []):
+            if not pr["model"].startswith("procedural:"):
+                deps.add(STUDIO / pr["model"])
+    for f in job.get("furniture", []):
+        if f["model"] != "box":
+            deps.add(STUDIO / f["model"])
     for p in sorted(deps, key=str):
         try:
             st = p.stat()
@@ -568,13 +968,16 @@ def _key(job: dict) -> str:
     return h.hexdigest()[:16]
 
 
-def render(spec: dict, *, force: bool = False, keep_frames: bool = False, log=_log) -> dict:
-    """Render one shot. Returns {"mp4", "contact_sheet", "report", "validation", "cached", "seconds", ...}."""
+def _prepare(spec: dict, force: bool, log=_log) -> dict:
+    """Resolves a shot and its cache slot. Returns {"result": ...} for a cache hit, else the context to render it."""
     t0 = time.time()
     ensure_assets(log=log)
     job = resolve(json.loads(json.dumps(spec)))
     meta_actors = [{"id": a["id"], "motions": a.pop("_motions")} for a in job["actors"]]
     aspect, quality = job.pop("_aspect"), job.pop("_quality")
+    auto_furniture = job.pop("_furniture_auto", [])
+    inferred = [{"actor": a["id"], "prop": q["id"], "hand": q["hand"], "t": [q["start"], q["end"]], "why": q.pop("_why")}
+                for a in job["actors"] for q in a.get("props", []) if "_why" in q]
     key = _key(job)
     name = "".join(c if c.isalnum() or c in "-_" else "_" for c in (spec.get("name") or "shot"))[:40]
     out = CACHE / "renders" / f"{name}_{key}"
@@ -583,8 +986,12 @@ def render(spec: dict, *, force: bool = False, keep_frames: bool = False, log=_l
     if not force and result_file.exists() and mp4.exists():
         res = json.loads(result_file.read_text())
         res["cached"] = True
+        try:  # validation is cheap and may have changed since the render: re-check from the stored report
+            res["validation"] = validate(mp4, json.loads((out / "report.json").read_text()), job)
+        except Exception:
+            pass
         res["seconds_total"] = round(time.time() - t0, 2)
-        return res
+        return {"result": res}
     frames = out / "frames"
     if out.exists():
         shutil.rmtree(out, ignore_errors=True)
@@ -592,11 +999,14 @@ def render(spec: dict, *, force: bool = False, keep_frames: bool = False, log=_l
     job["id"] = f"{name}_{key}"
     job["outDir"] = str(frames).replace("\\", "/")
     (out / "shot.json").write_text(json.dumps(job, indent=1))
-    n_frames = max(1, round(job["seconds"] * job["fps"]))
-    with _lock:
-        t1 = time.time()
-        _submit(job, timeout=240 + n_frames * 3.0, log=log)
-        t_render = time.time() - t1
+    return {"job": job, "out": out, "mp4": mp4, "frames": frames, "result_file": result_file, "aspect": aspect,
+            "quality": quality, "meta_actors": meta_actors, "auto_furniture": auto_furniture, "inferred": inferred, "t0": t0,
+            "n_frames": max(1, round(job["seconds"] * job["fps"]))}
+
+
+def _finalize(c: dict, t_render: float, keep_frames: bool = False) -> dict:
+    """Encode, contact sheet, validation and the cached result for a rendered shot."""
+    job, out, mp4, frames, aspect, quality = c["job"], c["out"], c["mp4"], c["frames"], c["aspect"], c["quality"]
     report = json.loads((frames / "report.json").read_text())
     ext = "jpg" if job["format"] == "jpg" else "png"
     t2 = time.time()
@@ -614,15 +1024,80 @@ def render(spec: dict, *, force: bool = False, keep_frames: bool = False, log=_l
     val = validate(mp4, report, job)
     res = {"mp4": str(mp4), "contact_sheet": str(sheet), "report": str(out / "report.json"), "shot_json": str(out / "shot.json"),
            "validation": val, "cached": False, "width": job["width"], "height": job["height"], "fps": job["fps"],
-           "seconds": job["seconds"], "frames": n_frames, "aspect": aspect, "quality": quality,
+           "seconds": job["seconds"], "frames": c["n_frames"], "aspect": aspect, "quality": quality,
            "stage": job["stage"], "lighting": job["lighting"]["preset"], "camera": job["camera"]["preset"],
            "actors": [{"id": a["id"], "model": a["model"], "pos": a["pos"], "yaw": a["yaw"],
                        "segments": [{"clip": Path(s["clip"]).stem, "start": s["start"], "pos": s["pos"], "yaw": s["yaw"]} for s in a["segs"]],
-                       "motions": m["motions"]} for a, m in zip(job["actors"], meta_actors)],
+                       "motions": m["motions"]} for a, m in zip(job["actors"], c["meta_actors"])],
            "timing_s": {"unity": round(t_render, 2), "encode": round(t_encode, 2), "unity_breakdown": report.get("timing")}}
-    res["seconds_total"] = round(time.time() - t0, 2)
-    result_file.write_text(json.dumps(res, indent=1))
+    if c["inferred"]:
+        res["props_inferred"] = c["inferred"]
+    if job.get("furniture"):
+        res["furniture"] = report.get("furniture", [])
+        res["furniture_auto"] = c["auto_furniture"]
+    res["seconds_total"] = round(time.time() - c["t0"], 2)
+    c["result_file"].write_text(json.dumps(res, indent=1))
     return res
+
+
+def render(spec: dict, *, force: bool = False, keep_frames: bool = False, log=_log) -> dict:
+    """Render one shot. Returns {"mp4", "contact_sheet", "report", "validation", "cached", "seconds", ...}."""
+    c = _prepare(spec, force, log)
+    if "result" in c:
+        return c["result"]
+    with _lock:
+        t1 = time.time()
+        _submit(c["job"], timeout=240 + c["n_frames"] * 3.0, log=log)
+        t_render = time.time() - t1
+    return _finalize(c, t_render, keep_frames)
+
+
+def render_many(specs: list[dict], *, force: bool = False, keep_frames: bool = False, workers: int = 4, log=_log) -> list[dict]:
+    """Render a whole shot list. All uncached shots are queued on the warm Unity server at once (no round trip
+    between shots), and each finished shot is encoded, contact-sheeted and validated on a thread pool while Unity
+    renders the next one. Results come back in the order of `specs`; a failed shot returns {"error": ...}."""
+    from concurrent.futures import ThreadPoolExecutor
+    t0 = time.time()
+    ctx = []
+    for sp in specs:
+        try:
+            ctx.append(_prepare(sp, force, log))
+        except Exception as e:  # a bad spec must not sink the others
+            ctx.append({"result": {"error": f"{type(e).__name__}: {e}", "name": sp.get("name")}})
+    todo = [c for c in ctx if "job" in c]
+    results: dict[int, object] = {}
+    with _lock, ThreadPoolExecutor(max(1, workers)) as pool:
+        if todo:
+            ensure_server(log=log)
+        for c in todo:  # enqueue everything; the server takes jobs oldest first
+            jid = c["job"]["id"]
+            (QUEUE / f"{jid}.done.json").unlink(missing_ok=True)
+            tmp = QUEUE / f"{jid}.tmp"
+            tmp.write_text(json.dumps(c["job"]))
+            os.replace(tmp, QUEUE / f"{jid}.job.json")
+            time.sleep(0.02)  # distinct creation times keep the order
+        prev = time.time()
+        for c in todo:
+            try:
+                _wait(c["job"]["id"], timeout=240 + c["n_frames"] * 3.0)
+                t_render = time.time() - prev
+                prev = time.time()
+                results[id(c)] = pool.submit(_finalize, c, t_render, keep_frames)
+            except Exception as e:
+                prev = time.time()
+                results[id(c)] = {"error": f"{type(e).__name__}: {e}", "name": c["job"]["id"]}
+        out = []
+        for c in ctx:
+            if "result" in c:
+                out.append(c["result"])
+                continue
+            r = results[id(c)]
+            try:
+                out.append(r.result() if hasattr(r, "result") else r)
+            except Exception as e:
+                out.append({"error": f"{type(e).__name__}: {e}", "name": c["job"]["id"]})
+    log(f"render_many: {len(specs)} shots ({len(todo)} rendered) in {time.time() - t0:.1f}s")
+    return out
 
 
 def _pick(report: dict, n: int) -> list[dict]:
@@ -752,10 +1227,52 @@ def validate(mp4: Path, report: dict, job: dict) -> dict:
             warns.append(f"{a['id']}: sinks {-miny[0] * 100:.0f} cm into the floor at times")
         if st["screen_height_mean"] < 0.08:
             warns.append(f"{a['id']}: tiny in frame ({st['screen_height_mean']:.0%} of the frame height)")
+    props_v, seats_v = {}, {}
     for ra in report.get("actors", []):
         if ra.get("maxHipStepM", 0) > 0.3:
             fails.append(f"{ra['id']}: hips jump {ra['maxHipStepM']:.2f} m between frames (clip join or placement)")
-    return {"passed": not fails, "failures": fails, "warnings": warns, "video": p, "actors": per}
+        # Props: follow the hand (pivot fixed in the hand's frame) and stay out of the holder's head and body.
+        for pr in ra.get("props", []):
+            key = f"{ra['id']}.{pr['id']}"
+            props_v[key] = pr
+            if not pr.get("samples"):
+                continue
+            if pr["handDriftCm"] > 1.0:
+                fails.append(f"{key}: doesn't follow the hand (drifts {pr['handDriftCm']:.1f} cm in the hand's frame)")
+            # body = capsules (head, torso, thighs), good to ~2-3 cm on stylised rigs: > 8 cm is a real pass-through
+            if pr["maxPenetrationCm"] > 8 and pr["overThreeCmShare"] > 0.1:
+                fails.append(f"{key}: passes {pr['maxPenetrationCm']:.0f} cm into the {pr['worstPart']} "
+                             f"({pr['overThreeCmShare']:.0%} of samples over 3 cm)")
+            if pr.get("maxPushCm", 0) > 5:
+                warns.append(f"{key}: held up to {pr['maxPushCm']:.0f} cm away from the hand to keep it out of the body")
+            if pr["maxPenetrationCm"] > 8 and pr["overThreeCmShare"] > 0.1:
+                pass
+            elif pr["maxPenetrationCm"] > 3:
+                warns.append(f"{key}: touches the {pr['worstPart']} (up to {pr['maxPenetrationCm']:.1f} cm in, "
+                             f"{pr['overThreeCmShare']:.0%} of samples over 3 cm)")
+        # Seats: the body rests on the seat (after the render-time contact fix), over the seat, feet planted.
+        for si, st in enumerate(ra.get("seats", [])):
+            key = f"{ra['id']}@{st['furniture']}" + (f"#{si + 1}" if len(ra.get("seats", [])) > 1 else "")
+            seats_v[key] = st
+            if not st.get("samples"):
+                warns.append(f"{key}: seated span not in this shot")
+                continue
+            if abs(st["gapAfterMedianCm"]) > 3:
+                fails.append(f"{key}: seat contact off by {st['gapAfterMedianCm']:.1f} cm (median) after correction")
+            if st["hipsToSeatXZMedianCm"] > 22:  # seat-centre depth itself is only known to ~8 cm (backrests, cushions)
+                fails.append(f"{key}: hips {st['hipsToSeatXZMedianCm']:.0f} cm from the seat centre (median)")
+            elif st["hipsToSeatXZMedianCm"] > 15:
+                warns.append(f"{key}: hips {st['hipsToSeatXZMedianCm']:.0f} cm from the seat centre (median)")
+            if st["gapBeforeMaxAbsCm"] > 15:
+                warns.append(f"{key}: motion sat {st['gapBeforeMaxAbsCm']:.0f} cm off the seat at worst (render corrects up to 15 cm)")
+            if max(st["leftFootDriftCm"], st["rightFootDriftCm"]) > 6:
+                warns.append(f"{key}: feet move up to {max(st['leftFootDriftCm'], st['rightFootDriftCm']):.0f} cm while seated")
+    out = {"passed": not fails, "failures": fails, "warnings": warns, "video": p, "actors": per}
+    if props_v:
+        out["props"] = props_v
+    if seats_v:
+        out["seats"] = seats_v
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------------------

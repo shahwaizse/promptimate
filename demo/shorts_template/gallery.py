@@ -1,6 +1,7 @@
-"""Renders every camera preset and every lighting preset on one two-person scene and tiles them into labelled
-gallery images (demo/shorts_template/build/gallery/*.png). Also a quick regression check for the shot renderer:
-fails if any render's validation fails.
+"""Renders every camera preset, every lighting preset, the night moods (clear / rain / fog / rain+fog), every held
+prop and the cast on a two-person scene and tiles them into labelled gallery images
+(demo/shorts_template/build/gallery/*.png). Also a quick regression check for the shot renderer: fails if any
+render's validation fails.
 
     .venv\\Scripts\\python.exe demo\\shorts_template\\gallery.py [--aspect 9:16] [--quality draft]
 """
@@ -29,6 +30,10 @@ CAMS = [("wide", {"preset": "wide"}), ("medium", {"preset": "medium", "subject":
         ("follow", {"preset": "follow", "subject": "ava"}), ("push_in", {"preset": "push_in", "subject": "ava"}),
         ("orbit", {"preset": "orbit"}), ("low_angle", {"preset": "low_angle", "subject": "ava"}),
         ("top_down", {"preset": "top_down"}), ("two_shot", {"preset": "two_shot", "subject": "leo", "target": "ava"})]
+MOODS = ["", "rain", "fog", "rain_fog"]
+PROP_TILES = [("phone", "leo"), ("coffee", "leo"), ("cup", "ava"), ("bag", "leo"), ("briefcase", "leo"),
+              ("sword", "ava"), ("book", "leo"), ("flashlight", "ava"), ("umbrella", "leo"), ("stick", "leo"),
+              ("baton", "ava")]
 LIGHTS = [("day", "park"), ("golden_hour", "street"), ("night_street", "street"), ("interior_warm", "interior"),
           ("studio", "studio")]
 
@@ -85,7 +90,63 @@ def main():
         if not r["validation"]["passed"]:
             fails.append((label, r["validation"]["failures"]))
         print(label, times[label], "s", r["validation"]["failures"], r["validation"]["warnings"], flush=True)
+    moods, propt = [], []
+    for w in MOODS:
+        label = "night " + (w or "clear")
+        if a.only and a.only not in label:
+            continue
+        t0 = time.time()
+        sc = scene(name=f"gal_{tag}_mood_{w or 'clear'}", camera={"preset": "two_shot", "subject": "leo", "target": "ava"},
+                   stage="street", lighting={"preset": "night_street", "weather": w, "key_yaw": -40, "rim": 1.0},
+                   aspect=a.aspect, quality=a.quality, resolution=a.resolution,
+                   furniture=[{"id": "bench", "type": "bench", "at": [0, 1.4], "yaw": 180, "stretch": 1.6},
+                              {"id": "lamp", "type": "street_lamp", "at": [1.9, 1.6], "yaw": -90}])
+        r = shots.render(sc, keep_frames=True)
+        times[label] = round(time.time() - t0, 1)
+        moods.append((f"{label}  ({'ok' if r['validation']['passed'] else 'FAIL'})", r))
+        if not r["validation"]["passed"]:
+            fails.append((label, r["validation"]["failures"]))
+        print(label, times[label], "s", r["validation"]["failures"], r["validation"]["warnings"], flush=True)
+    for prop, who in PROP_TILES:
+        label = "prop " + prop
+        if a.only and a.only not in label:
+            continue
+        t0 = time.time()
+        sc = scene(name=f"gal_{tag}_prop_{prop}", camera={"preset": "wide", "subject": who, "distance": 0.62},
+                   stage="studio", lighting="studio", aspect=a.aspect, quality=a.quality, resolution=a.resolution)
+        for x in sc["actors"]:
+            x["props"] = [{"prop": prop, "hand": "right"}] if x["id"] == who else []
+        r = shots.render(sc, keep_frames=True)
+        times[label] = round(time.time() - t0, 1)
+        pv = (r["validation"].get("props") or {}).get(f"{who}.{prop}", {})
+        propt.append((f"{prop}  pen {pv.get('maxPenetrationCm', '?')} cm, drift {pv.get('handDriftCm', '?')} cm", r))
+        if not r["validation"]["passed"]:
+            fails.append((label, r["validation"]["failures"]))
+        print(label, times[label], "s", r["validation"]["failures"], r["validation"]["warnings"], flush=True)
     out = HERE / "build" / "gallery"
+    if moods:
+        print(tile(moods, out / f"night_moods_{tag}.png", 4))
+    if propt:
+        print(tile(propt, out / f"props_{tag}.png", 6))
+    if not a.only or "cast" in a.only:
+        names = list(shots.CAST)[:5] + list(shots.CAST_EXTRA)
+        n = len(names)
+        r = shots.render({"name": "gal_cast", "aspect": "16:9", "stage": "studio", "lighting": "studio", "quality": a.quality,
+                          "seconds": 1.0, "camera": {"preset": "explicit", "pos": [0, 1.2, -19.5], "look_at": [0, 0.85, 0], "fov": 30},
+                          "actors": [{"id": f"c{i}", "cast": c, "at": [round((i - (n - 1) / 2) * 0.82, 3), 0], "yaw": 180}
+                                     for i, c in enumerate(names)]}, keep_frames=True)
+        from PIL import Image, ImageDraw
+        fr = sorted((Path(r["mp4"]).parent / "frames").glob("f*.*"))
+        im = Image.open(fr[-1]).convert("RGB")
+        rep_ = json.loads(Path(r["report"]).read_text())["frames"][-1]["actors"]
+        canvas = Image.new("RGB", (im.width, im.height + 60), (16, 16, 20))
+        canvas.paste(im, (0, 0))
+        d = ImageDraw.Draw(canvas)
+        for k, (c, ra) in enumerate(zip(names, rep_)):
+            x = (ra["bbox"][0] + ra["bbox"][2]) / 2 * im.width
+            d.text((x - 3.2 * len(c), im.height + 8 + 18 * (k % 2)), c, fill=(235, 235, 235))
+        canvas.save(out / "cast.png")
+        print(out / "cast.png", r["validation"]["failures"])
     if cams:
         print(tile(cams, out / f"cameras_{tag}.png", 5))
     if lights:

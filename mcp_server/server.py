@@ -103,6 +103,57 @@ class Waypoint(BaseModel):
     z: float = Field(description="Metres, + = the character's initial facing direction")
 
 
+# ----- seat option (sitting on furniture of a given height; constraints.Constraints.seat) -----
+class Seat(BaseModel):
+    t: list[float] = Field(description="[start, end] seconds of the seated span (the clip should already be sitting at "
+                                       "start: give the sit-down ~1-1.5 s before it)")
+    height: float = Field(0.45, ge=0.2, le=1.0, description="Seat top height in metres (chair/bench 0.45, sofa 0.42, "
+                                                            "low ledge 0.35, bar stool 0.75)")
+    x: float | None = Field(None, description="Seat position in metres (clip frame like root_path: +X = the character's "
+                                              "initial left, +Z = initial facing). Omitted = wherever the model sits")
+    z: float | None = Field(None, description="See x")
+    heading_deg: float | None = Field(None, description="Facing while seated, degrees relative to the initial facing "
+                                                        "(+ = turned left). Omitted = free")
+    furniture: str | None = Field(None, description="What is sat on, for render_shot to place it (bench, chair, sofa, "
+                                                    "stool, ledge, ...); recorded in the meta")
+
+
+def _seat_constraints(cons, seat: "Seat", gframes: int, pre: int):
+    """Adds the seated span to the constraint set (created if None); returns (cons, (f0, f1))."""
+    t0, t1 = (list(seat.t) + [None])[:2]
+    if t1 is None or t1 <= t0:
+        raise ValueError("seat.t must be [start, end] with end > start")
+    f0 = max(0, min(gframes - 1, round(t0 * motion.FPS) + pre))
+    f1 = max(f0, min(gframes - 1, round(t1 * motion.FPS) + pre))
+    cons = cons if cons is not None else C.Constraints(gframes)
+    cons.seat(f0, f1, seat.height, seat.x, seat.z,
+              None if seat.heading_deg is None else float(np.radians(seat.heading_deg)))
+    return cons, (f0, f1)
+
+
+def _seat_check(out_dir: Path, seat: "Seat") -> dict:
+    """How well the final clip sits: hips height vs seat + offset, hips position vs (x, z), feet planted (height and
+    drift over the span), measured over the seated span minus 0.2 s at each end."""
+    root, rot = motion.load(out_dir)
+    pos = motion.fk(root, rot)
+    a = max(0, round(seat.t[0] * motion.FPS) + 6)
+    b = min(len(root) - 1, round(seat.t[1] * motion.FPS) - 6)
+    if b <= a:
+        return {"ok": False, "note": "seated span outside the clip"}
+    want = seat.height + C.SEAT_HIPS_OFFSET
+    hy = root[a:b + 1, 1]
+    feet = pos[a:b + 1][:, [motion.NAMES.index("LeftFoot"), motion.NAMES.index("RightFoot")]]
+    drift = float(np.linalg.norm(feet[:, :, [0, 2]] - feet[:1, :, [0, 2]], axis=-1).max())
+    out = {"hips_target_m": round(want, 3), "hips_median_m": round(float(np.median(hy)), 3),
+           "hips_err_max_cm": round(float(np.abs(hy - want).max()) * 100, 1),
+           "feet_height_max_m": round(float(feet[:, :, 1].max()), 3), "feet_drift_max_cm": round(drift * 100, 1)}
+    if seat.x is not None and seat.z is not None:
+        out["hips_xz_err_max_cm"] = round(float(np.hypot(root[a:b + 1, 0] - seat.x, root[a:b + 1, 2] - seat.z).max()) * 100, 1)
+    out["ok"] = out["hips_err_max_cm"] < 6 and out.get("hips_xz_err_max_cm", 0) < 10 and out["feet_height_max_m"] < 0.2
+    return out
+# ----- end seat option -----
+
+
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:40] or "motion"
 
@@ -300,7 +351,7 @@ def generate_motion(segments: list[MotionSegment], name: str | None = None, seed
                     takes: int | None = None, clean: bool = True, loop: bool = False, in_place: bool = False,
                     root_path: list[Waypoint] | None = None, auto_stop: bool = True,
                     start_pose: str = "free", end_pose: str = "free", continue_from: str | None = None,
-                    speed: float = 1.0, unity_check: str = "background") -> list:
+                    speed: float = 1.0, unity_check: str = "background", seat: Seat | None = None) -> list:
     """Generate a humanoid motion clip from one or more text segments (played in order, blended).
 
     Returns stats, automatic checks, output paths (.kimodo dropped into the Unity project, imported as a Humanoid
@@ -320,6 +371,10 @@ def generate_motion(segments: list[MotionSegment], name: str | None = None, seed
     speed: playback speed of the result (0.5-2.0). The model tops out around 3 m/s, so for a sprint use the run
     prompt with speed 1.3-1.5; for slow motion use 0.5-0.8. The clip keeps the requested duration.
     unity_check: "background" (default; result lands in meta.json, see get_motion_preview), "sync" or "off".
+    seat: sit on something of a given height ({"t": [start, end], "height": 0.45, "x": .., "z": ..}): holds the hips
+    at seat height (and at x/z, facing heading_deg) over the seated span. Without it 'sits on a chair' usually ends on
+    the floor. Prompt the sit-down before `start` ('a person sits down', then 'a person sits and ...'); render_shot
+    places matching furniture there automatically (seat.furniture, default bench).
     """
     if not segments:
         raise ValueError("need at least one segment")
@@ -331,8 +386,10 @@ def generate_motion(segments: list[MotionSegment], name: str | None = None, seed
     speed = float(speed)
     if not 0.5 <= speed <= 2.0:
         raise ValueError("speed must be between 0.5 and 2.0")
-    if speed != 1.0 and (loop or continue_from or root_path):
-        raise ValueError("speed can't be combined with loop, continue_from or root_path yet")
+    if speed != 1.0 and (loop or continue_from or root_path or seat):
+        raise ValueError("speed can't be combined with loop, continue_from, root_path or seat yet")
+    if seat is not None and (loop or in_place):
+        raise ValueError("seat can't be combined with loop or in_place")
     # wording the model follows measurably better (intent.rewrite); the user's prompt is kept in the meta
     given = [s.prompt.strip() for s in segments]
     segs = [Segment(intent.rewrite(p), max(2, min(300, round(s.seconds * speed * motion.FPS))))
@@ -375,9 +432,14 @@ def generate_motion(segments: list[MotionSegment], name: str | None = None, seed
             feat = C.pose_features(*start_target)
             for t in range(min(C.POSE_WINDOW, gframes)):
                 cons.pose(t, feat)
+    seat_span = None
+    if seat is not None:
+        cons, seat_span = _seat_constraints(cons, seat, gframes, pre)
     boundaries = list(np.cumsum([s.frames for s in segs])[:-1]) if len(segs) > 1 else None
 
     holds = _auto_holds(gen_segs) if auto_stop and not root_path and not in_place else []
+    if seat_span:  # the seat already pins the seated span; holds there would pull it back to pass 1's spot
+        holds = [(a, min(b, seat_span[0] - 1)) for a, b in holds if a < seat_span[0] - 5]
     # Holds that start after the first segment are applied by the engine in the same pass (it knows where the
     # previous segment ended), so sequences like walk -> stop -> wave need no second "locate, then hold" pass.
     engine_holds = []
@@ -457,6 +519,9 @@ def generate_motion(segments: list[MotionSegment], name: str | None = None, seed
                      root_path=[w.model_dump() for w in root_path] if root_path else None, unity_check=unity_check,
                      start_pose=start_pose, end_pose=end_pose, continue_from=continue_from, speed=speed)
     meta["generation"]["total_gen_seconds"] = gen_seconds
+    if seat is not None:
+        meta["options"]["seat"] = seat.model_dump()
+        meta["seat_check"] = _seat_check(out_dir, seat)
     if any(g != s.prompt for g, s in zip(given, segs)):
         meta["prompts_as_given"] = given
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2))
@@ -577,6 +642,9 @@ def use_take(name: str, take: int) -> list:
                     end_pose=opts.get("end_pose", "free"), continue_from=opts.get("continue_from"),
                     speed=opts.get("speed", 1.0))
     new["takes"], new["chosen_take"] = meta["takes"], take
+    if opts.get("seat"):  # seat option: keep it (render_shot reads it) and re-measure on the new take
+        new["options"]["seat"] = opts["seat"]
+        new["seat_check"] = _seat_check(out_dir, Seat(**opts["seat"]))
     if "prompts_as_given" in meta:
         new["prompts_as_given"] = meta["prompts_as_given"]
     (out_dir / "meta.json").write_text(json.dumps(new, indent=2))
@@ -672,8 +740,8 @@ import shots  # noqa: E402
 
 class ShotActor(BaseModel):
     id: str = Field(description="Short id used by the camera and by other actors, e.g. 'leo'")
-    cast: str | None = Field(None, description="Starter cast: businessman, adventurer, punk, beach, farmer, kenney_skater_f, "
-                                               "kenney_skater_m, kenney_criminal, kenney_cyborg (or mixamo:<name> locally)")
+    cast: str | None = Field(None, description="A cast member (stage_actors lists them: businessman, woman_casual, man_suit, "
+                                               "kid_girl, ...), a role from cast_file, or mixamo:<name> locally")
     model: str | None = Field(None, description="Instead of cast: a model in the render project, 'Assets/....fbx|.glb'")
     motion: list[str] | str | None = Field(None, description="Promptimate motion name, or several played back to back "
                                                            "(a continue_from chain). Omitted = stands in the idle pose")
@@ -691,6 +759,13 @@ class ShotActor(BaseModel):
                                                      "generated with the root_path stage_actors returns)")
     enter_distance: float = Field(4.0, description="Walk-in distance in metres for enter_from")
     height: float | None = Field(None, description="Override the character's height in metres")
+    build: float | None = Field(None, description=">1 = heavier build (body width), e.g. 1.15")
+    props: list[str | dict] | str | None = Field(None, description="Held props: names (phone, cup, coffee, bag, briefcase, sword, "
+        "book, flashlight, umbrella, stick, baton) or {prop, hand: right|left, t: [start, end] shot seconds | chain_t: [..] "
+        "seconds on the actor's motion chain, offset/rot/size/grip overrides}. Omitted = inferred from the motion prompts "
+        "('holds a phone to their ear' -> phone, right hand); [] = none; include 'auto' to add inferred ones")
+    sit: list[dict] | None = Field(None, description="Seated spans on furniture: [{on: furniture id, t: [start, end]}]. Clips "
+        "generated with generate_motion's seat option sit automatically (furniture is added there if the shot has none)")
 
 
 class ShotCamera(BaseModel):
@@ -713,19 +788,27 @@ class ShotCamera(BaseModel):
     follow: str | None = Field(None, description="explicit: actor whose hips the look-at tracks")
 
 
-def _shot_spec(actors, camera, stage, lighting, aspect, resolution, seconds, fps, quality, name, seed, key_yaw):
+def _shot_spec(actors, camera, stage, lighting, aspect, resolution, seconds, fps, quality, name, seed, key_yaw,
+               weather=None, furniture=None, practicals=None, cast_file=None, rim=None):
     cam = {"preset": camera} if isinstance(camera, str) else {k: v for k, v in camera.model_dump().items() if v is not None}
-    return {"actors": [{k: v for k, v in a.model_dump().items() if v is not None} for a in actors], "camera": cam,
-            "stage": stage, "lighting": {"preset": lighting, **({"key_yaw": key_yaw} if key_yaw is not None else {})},
-            "aspect": aspect, "resolution": resolution, "seconds": seconds, "fps": fps, "quality": quality,
-            "name": name, "seed": seed}
+    light = {"preset": lighting, **({"key_yaw": key_yaw} if key_yaw is not None else {}),
+             **({"weather": weather} if weather else {}), **({"rim": rim} if rim is not None else {})}
+    spec = {"actors": [{k: v for k, v in a.model_dump().items() if v is not None} for a in actors], "camera": cam,
+            "stage": stage, "lighting": light, "aspect": aspect, "resolution": resolution, "seconds": seconds, "fps": fps,
+            "quality": quality, "name": name, "seed": seed}
+    for k, v in (("furniture", furniture), ("practicals", practicals), ("cast_file", cast_file)):
+        if v:
+            spec[k] = v
+    return spec
 
 
 @mcp.tool()
 async def render_shot(actors: list[ShotActor], camera: ShotCamera | str = "medium", stage: str = "street",
                       lighting: str = "day", aspect: str = "9:16", resolution: str | None = None,
                       seconds: float | None = None, fps: int = 30, quality: str = "final", name: str | None = None,
-                      seed: int = 0, key_yaw: float | None = None) -> list:
+                      seed: int = 0, key_yaw: float | None = None, weather: str | None = None,
+                      furniture: list[dict] | None = None, practicals: list[dict] | None = None,
+                      cast_file: str | None = None, rim: float | None = None) -> list:
     """Render a shot of Promptimate motions on characters, in Unity (URP: soft shadows, AO, ACES, bloom), to MP4.
 
     For storyline shorts (aspect 9:16) and previs/animatics (16:9). Give each actor a cast member and the motion
@@ -736,6 +819,14 @@ async def render_shot(actors: list[ShotActor], camera: ShotCamera | str = "mediu
     The default 'auto' side keeps the camera on the audience side, so cuts between presets respect the 180-degree rule.
     stage: street | interior | park | studio | void. lighting: day | golden_hour | night_street | interior_warm |
     studio. key_yaw fixes the key light direction (same lighting across the shots of a scene).
+    weather: rain | fog | rain_fog (rain streaks, wet glossy ground, haze and light cones under lamps); rim: rim
+    light strength (night: ~1). furniture: [{id, type: bench|bench_cushion|chair|chair_cushion|sofa|sofa_long|
+    lounge_chair|stool|ledge|crate|street_lamp, at: [x, z], yaw (the way a seated person faces), seat_height,
+    stretch}]; street lamps light the scene at night. practicals: extra lights [{pos: [x,y,z], color, intensity, range,
+    type: point|spot}]. Props per actor (phone, cup, coffee, bag, briefcase, sword, book, flashlight, umbrella, stick,
+    baton) are inferred from the motion prompts unless given; validation checks they follow the hand and stay out of
+    the head/body, and that seated actors rest on the seat with planted feet. cast_file: a JSON of recurring roles
+    (demo/shorts_template/casts/town.json) so the same characters persist across episodes.
     resolution: e.g. '720p' (default: 1080 on the short side). quality: draft (fast) | final | high.
     seconds: defaults to the length of the longest motion chain (max 12).
     Returns the MP4 path, validation (resolution/length, every character in frame, not hidden, on the ground, no jumps
@@ -744,7 +835,8 @@ async def render_shot(actors: list[ShotActor], camera: ShotCamera | str = "mediu
     Identical shots come from the cache instantly. The first render starts a Unity render server (about 30 s; a few
     minutes the very first time while assets import), which stays warm for 15 minutes.
     """
-    spec = _shot_spec(actors, camera, stage, lighting, aspect, resolution, seconds, fps, quality, name, seed, key_yaw)
+    spec = _shot_spec(actors, camera, stage, lighting, aspect, resolution, seconds, fps, quality, name, seed, key_yaw,
+                      weather, furniture, practicals, cast_file, rim)
     # Runs in a worker thread: a render takes seconds to minutes and must not block the stdio session.
     res = await anyio.to_thread.run_sync(lambda: shots.render(spec))
     return [json.dumps(res, indent=2), Image(path=res["contact_sheet"])]
@@ -757,7 +849,12 @@ def stage_actors(actors: list[ShotActor]) -> str:
     to pass to generate_motion, so the generated walk ends exactly at 'at'. Also lists the available cast."""
     placed = shots.stage([{k: v for k, v in a.model_dump().items() if v is not None} for a in actors])
     return json.dumps({"placements": placed, "cast": shots.list_cast(), "stages": shots.STAGES,
-                       "lighting": shots.LIGHTING, "cameras": shots.CAMERAS}, indent=2)
+                       "lighting": shots.LIGHTING, "weather": shots.WEATHER[1:], "cameras": shots.CAMERAS,
+                       "props": {k: {"grip": v["grip"], "license": v["license"]} for k, v in shots.PROPS.items()},
+                       "furniture": {k: {"seat_height": v.get("seat_height")} for k, v in shots.FURNITURE.items()},
+                       "seat_helper": "to sit on furniture: generate_motion(..., seat={t:[start,end], height, x, z, "
+                                      "heading_deg}) with x/z/heading in the clip's frame; shots.seat_option computes them"},
+                      indent=2)
 # ===== END render_shot tools =========================================================================================
 
 

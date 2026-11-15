@@ -1,0 +1,14 @@
+{
+  "note": "Recurring cast for the example shorts (shots.py cast_file). Each role maps to a catalogue character (shots.list_cast()) with its own height/build and the props it always carries. Use the role names as `cast` in render_shot actors.",
+  "roles": {
+    "nora": {"cast": "woman_casual", "height": 1.66, "look": "young woman, 20s, dark bob, mint t-shirt; always on her phone"},
+    "walt": {"cast": "man_suit", "height": 1.78, "build": 1.08, "look": "older man, 60s, grey hair, black suit; never without a coffee",
+             "props": [{"prop": "coffee", "hand": "right"}]},
+    "jun": {"cast": "man", "height": 1.80, "look": "young man, 20s, t-shirt; the passer-by"},
+    "leo": {"cast": "adventurer", "height": 1.78, "look": "lost traveller with a backpack (Wrong Turn)"},
+    "ava": {"cast": "punk", "height": 1.70, "look": "local, red leather jacket (Wrong Turn)"},
+    "mia": {"cast": "kid_girl", "height": 1.2, "look": "kid, ~8"},
+    "rosa": {"cast": "redhead_woman", "height": 1.63, "look": "red-haired woman, green dress"},
+    "big_tom": {"cast": "kenney_survivor_m", "height": 1.82, "build": 1.15, "look": "heavy-set man, survivor jacket"}
+  }
+}
