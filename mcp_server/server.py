@@ -857,6 +857,12 @@ def stage_actors(actors: list[ShotActor]) -> str:
                       indent=2)
 # ===== END render_shot tools =========================================================================================
 
+# ===== BEGIN world tools (mcp_server/world_tools.py: build_world, light_world, describe_world, render_world_shot) =====
+import world_tools  # noqa: E402
+
+world_tools.register(mcp, sys.modules[__name__])
+# ===== END world tools ================================================================================================
+
 
 if __name__ == "__main__":
     if os.environ.get("PROMPTIMATE_PREWARM", "1") != "0":

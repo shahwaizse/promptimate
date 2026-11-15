@@ -1,0 +1,154 @@
+{
+ "room": {
+  "size": [
+   4.47,
+   3.78
+  ],
+  "height": 2.9,
+  "floor": {
+   "tags": [
+    "noir",
+    "1970s",
+    "vintage"
+   ]
+  },
+  "walls": {
+   "tags": [
+    "noir",
+    "1970s",
+    "vintage"
+   ]
+  }
+ },
+ "openings": [
+  {
+   "type": "window",
+   "wall": "north",
+   "at": 0.5,
+   "width": 1.5,
+   "height": 1.5,
+   "sill": 0.85,
+   "blinds": true,
+   "rainy": true
+  },
+  {
+   "type": "door",
+   "wall": "south",
+   "at": 0.2,
+   "width": 0.92,
+   "height": 2.1,
+   "open": 0
+  }
+ ],
+ "items": [
+  {
+   "id": "desk",
+   "cat": "desk",
+   "against": "north",
+   "user_faces": "room",
+   "at": 0.5
+  },
+  {
+   "id": "desk_chair",
+   "cat": "chair",
+   "at_desk": "desk",
+   "prefer": "armchair_victorian"
+  },
+  {
+   "id": "visitor_chair",
+   "cat": "chair",
+   "in_front_of": "desk",
+   "facing": "desk",
+   "count": 2,
+   "gap": 0.55
+  },
+  {
+   "id": "desk_lamp",
+   "cat": "lamp_desk",
+   "on": "desk",
+   "side": "left",
+   "light": {
+    "on": true
+   }
+  },
+  {
+   "id": "phone",
+   "cat": "phone",
+   "on": "desk",
+   "side": "right"
+  },
+  {
+   "id": "cabinet",
+   "cat": "cabinet",
+   "against": "west",
+   "at": 0.7
+  },
+  {
+   "id": "bookshelf",
+   "cat": "bookshelf",
+   "against": "east",
+   "at": 0.35
+  },
+  {
+   "id": "coat_rack",
+   "cat": "coat_rack",
+   "corner": "sw"
+  },
+  {
+   "id": "fan",
+   "cat": "ceiling_fan",
+   "ceiling": true,
+   "above": "desk"
+  },
+  {
+   "id": "frame",
+   "cat": "frame",
+   "on_wall": "west",
+   "above": "cabinet"
+  },
+  {
+   "id": "clock",
+   "cat": "clock",
+   "on_wall": "east",
+   "height": 2.1
+  },
+  {
+   "id": "plant",
+   "cat": "plant",
+   "corner": "se"
+  },
+  {
+   "id": "ashtray",
+   "cat": "ashtray",
+   "on": "desk",
+   "side": "right"
+  }
+ ],
+ "clutter": 0.7,
+ "lighting": {
+  "window_light": "street",
+  "time": "night",
+  "weather": "rain",
+  "mood": "noir",
+  "haze": 0.5
+ },
+ "camera": {
+  "focus": "desk",
+  "move": "push_in"
+ },
+ "description": "a cramped 1970s detective office at night, rain on the window, a desk lamp, cigarette smoke, venetian blinds",
+ "style": [
+  "office",
+  "noir",
+  "1970s",
+  "vintage"
+ ],
+ "effects": [
+  {
+   "type": "smoke",
+   "source": "ashtray"
+  }
+ ],
+ "seed": 1,
+ "name": "office"
+}

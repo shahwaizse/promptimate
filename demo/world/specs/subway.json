@@ -1,0 +1,195 @@
+{
+ "room": {
+  "size": [
+   24,
+   9.0
+  ],
+  "height": 4.2,
+  "floor": "terrazzo",
+  "walls": "subway_tiles",
+  "ceiling": "concrete_wall",
+  "trench": {
+   "wall": "north",
+   "width": 3.4,
+   "depth": 1.25
+  },
+  "columns": {
+   "count": 4,
+   "offset": 2.2
+  },
+  "edge_strip": true
+ },
+ "openings": [
+  {
+   "type": "arch",
+   "wall": "south",
+   "at": 0.25,
+   "width": 2.6,
+   "height": 2.7
+  },
+  {
+   "type": "arch",
+   "wall": "south",
+   "at": 0.75,
+   "width": 2.6,
+   "height": 2.7
+  }
+ ],
+ "items": [
+  {
+   "id": "bench",
+   "cat": "bench",
+   "against": "south",
+   "at": 0.5,
+   "prefer": "bench_painted"
+  },
+  {
+   "id": "bench2",
+   "cat": "bench",
+   "against": "south",
+   "at": 0.08,
+   "prefer": "bench_painted"
+  },
+  {
+   "id": "bench3",
+   "cat": "bench",
+   "against": "south",
+   "at": 0.92,
+   "prefer": "bench_painted"
+  },
+  {
+   "id": "payphone",
+   "cat": "payphone",
+   "on_wall": "south",
+   "at": 0.38
+  },
+  {
+   "id": "camera1",
+   "cat": "camera",
+   "on_wall": "south",
+   "at": 0.62
+  },
+  {
+   "id": "utility",
+   "cat": "utility",
+   "against": "west",
+   "at": 0.25
+  },
+  {
+   "id": "clock",
+   "cat": "clock",
+   "on_wall": "south",
+   "at": 0.5,
+   "height": 3.0
+  },
+  {
+   "id": "sign_station",
+   "cat": "sign",
+   "proc": "sign",
+   "on_wall": "north",
+   "at": 0.5,
+   "height": 2.4,
+   "size": [
+    3.2,
+    0.7,
+    0.08
+   ],
+   "color": [
+    0.9,
+    0.9,
+    0.85
+   ],
+   "emissive": 0.9
+  },
+  {
+   "id": "sign_a",
+   "cat": "sign",
+   "proc": "sign",
+   "on_wall": "north",
+   "at": 0.15,
+   "height": 2.4,
+   "size": [
+    2.0,
+    0.6,
+    0.08
+   ],
+   "color": [
+    0.85,
+    0.82,
+    0.75
+   ],
+   "emissive": 0.7
+  },
+  {
+   "id": "sign_b",
+   "cat": "sign",
+   "proc": "sign",
+   "on_wall": "north",
+   "at": 0.85,
+   "height": 2.4,
+   "size": [
+    2.0,
+    0.6,
+    0.08
+   ],
+   "color": [
+    0.85,
+    0.82,
+    0.75
+   ],
+   "emissive": 0.7
+  },
+  {
+   "id": "wet_sign",
+   "cat": "sign",
+   "prefer": "wet_floor_sign",
+   "near": "bench",
+   "dist": 3.0
+  },
+  {
+   "id": "trash",
+   "cat": "trash",
+   "corner": "sw"
+  },
+  {
+   "id": "trash2",
+   "cat": "trash",
+   "against": "south",
+   "at": 0.66
+  },
+  {
+   "id": "lights",
+   "cat": "lamp_ceiling",
+   "prefer": "fluorescent_panel",
+   "grid": [
+    6,
+    2
+   ],
+   "light": {
+    "on": true
+   }
+  }
+ ],
+ "clutter": 0.4,
+ "camera": {
+  "focus": "bench",
+  "move": "dolly",
+  "establish": "along"
+ },
+ "lighting": {
+  "time": "night",
+  "window_light": "none",
+  "weather": "clear",
+  "mood": "eerie"
+ },
+ "description": "an abandoned subway platform at night",
+ "style": [
+  "abandoned",
+  "subway",
+  "station",
+  "public"
+ ],
+ "effects": [],
+ "seed": 1,
+ "name": "subway"
+}

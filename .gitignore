@@ -72,3 +72,28 @@ bench/results/
 # --- Roblox bridge: generated clips ---
 roblox/out/
 *.rbxlx.lock
+
+# --- SystemLab (text-to-ragdoll prototype): local characters, generated clips/settings, renders ---
+unity/SystemLab/Assets/Characters/
+unity/SystemLab/Assets/Characters.meta
+unity/SystemLab/Assets/Promptimate/Generated/
+unity/SystemLab/Assets/Promptimate/Generated.meta
+unity/SystemLab/Assets/SystemLab/Generated/
+unity/SystemLab/Assets/SystemLab/Generated.meta
+unity/SystemLab/ProjectSettings/*
+!unity/SystemLab/ProjectSettings/ProjectVersion.txt
+unity/SystemLab/Packages/packages-lock.json
+demo/ragdoll/build/
+
+# --- WorldLab (text-to-world): downloaded CC0 assets, generated clips/settings, renders ---
+unity/WorldLab/Assets/WorldAssets/
+unity/WorldLab/Assets/WorldAssets.meta
+unity/WorldLab/Assets/ThirdParty/
+unity/WorldLab/Assets/ThirdParty.meta
+unity/WorldLab/Assets/Promptimate/Generated/
+unity/WorldLab/Assets/Promptimate/Generated.meta
+unity/WorldLab/Assets/ShotStudio/Generated/
+unity/WorldLab/Assets/WorldLab/Generated/
+unity/WorldLab/ProjectSettings/*
+!unity/WorldLab/ProjectSettings/ProjectVersion.txt
+demo/world/build/

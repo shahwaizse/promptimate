@@ -1,0 +1,194 @@
+{
+ "room": {
+  "size": [
+   6.4,
+   5.2
+  ],
+  "height": 2.7,
+  "floor": {
+   "tags": [
+    "scandinavian",
+    "cozy",
+    "light"
+   ]
+  },
+  "walls": {
+   "tags": [
+    "scandinavian",
+    "cozy",
+    "light"
+   ]
+  },
+  "ceiling": "white_plaster"
+ },
+ "openings": [
+  {
+   "type": "window",
+   "wall": "north",
+   "at": 0.33,
+   "width": 1.6,
+   "height": 1.7,
+   "sill": 0.55,
+   "curtains": true
+  },
+  {
+   "type": "window",
+   "wall": "north",
+   "at": 0.75,
+   "width": 1.6,
+   "height": 1.7,
+   "sill": 0.55,
+   "curtains": true
+  },
+  {
+   "type": "door",
+   "wall": "east",
+   "at": 0.82,
+   "width": 0.9,
+   "height": 2.05
+  }
+ ],
+ "items": [
+  {
+   "id": "sofa",
+   "cat": "sofa",
+   "against": "south",
+   "at": 0.45,
+   "prefer": "sofa_large"
+  },
+  {
+   "id": "coffee_table",
+   "cat": "coffee_table",
+   "in_front_of": "sofa",
+   "gap": 0.45
+  },
+  {
+   "id": "armchair",
+   "cat": "armchair",
+   "beside": "coffee_table",
+   "side": "right",
+   "facing": "coffee_table",
+   "prefer": "lounge_chair_midcentury"
+  },
+  {
+   "id": "rug",
+   "cat": "rug",
+   "under": [
+    "sofa",
+    "coffee_table",
+    "armchair"
+   ],
+   "mat": {
+    "tags": [
+     "scandinavian",
+     "cozy",
+     "light",
+     "rug"
+    ]
+   }
+  },
+  {
+   "id": "fireplace",
+   "cat": "fireplace",
+   "against": "west",
+   "at": 0.5,
+   "light": {
+    "on": true
+   }
+  },
+  {
+   "id": "side_table",
+   "cat": "side_table",
+   "beside": "sofa",
+   "side": "left"
+  },
+  {
+   "id": "floor_lamp",
+   "cat": "lamp_floor",
+   "beside": "sofa",
+   "side": "right",
+   "light": {
+    "on": true
+   }
+  },
+  {
+   "id": "shelves",
+   "cat": "bookshelf",
+   "against": "east",
+   "at": 0.35
+  },
+  {
+   "id": "pillows",
+   "cat": "pillows",
+   "on": "sofa"
+  },
+  {
+   "id": "pendant",
+   "cat": "lamp_ceiling",
+   "ceiling": true,
+   "above": "coffee_table",
+   "light": {
+    "on": false
+   }
+  },
+  {
+   "id": "plant",
+   "cat": "plant",
+   "corner": "ne"
+  },
+  {
+   "id": "plant2",
+   "cat": "plant",
+   "corner": "sw"
+  },
+  {
+   "id": "frames",
+   "cat": "frame",
+   "on_wall": "south",
+   "above": "sofa",
+   "count": 2
+  },
+  {
+   "id": "candles",
+   "cat": "candle",
+   "on": "coffee_table",
+   "count": 2,
+   "light": {
+    "on": true
+   }
+  },
+  {
+   "id": "basket",
+   "cat": "basket",
+   "beside": "fireplace",
+   "side": "left"
+  },
+  {
+   "id": "candles",
+   "cat": "candle",
+   "on": "coffee_table",
+   "count": 3,
+   "light": {
+    "on": true
+   }
+  }
+ ],
+ "clutter": 0.55,
+ "camera": {
+  "focus": "coffee_table",
+  "move": "dolly"
+ },
+ "lighting": {
+  "time": "morning",
+  "weather": "snow",
+  "mood": "cozy"
+ },
+ "description": "a cozy Scandinavian living room on a winter morning, snow outside, a fireplace and candles",
+ "style": [
+  "scandinavian",
+  "cozy"
+ ],
+ "effects": [],
+ "seed": 1,
+ "name": "living"
+}

@@ -1,0 +1,98 @@
+{
+ "room": {
+  "size": [
+   6.0,
+   5.0
+  ],
+  "height": 3.2,
+  "floor": "concrete_floor_worn",
+  "walls": {
+   "tags": [
+    "industrial",
+    "abandoned"
+   ]
+  }
+ },
+ "openings": [
+  {
+   "type": "window",
+   "wall": "north",
+   "at": 0.5,
+   "width": 2.0,
+   "height": 1.2,
+   "sill": 1.4
+  },
+  {
+   "type": "door",
+   "wall": "south",
+   "at": 0.2,
+   "width": 1.0,
+   "height": 2.2
+  }
+ ],
+ "items": [
+  {
+   "id": "bench",
+   "cat": "desk",
+   "prefer": "desk_wooden",
+   "against": "north",
+   "user_faces": "wall"
+  },
+  {
+   "id": "stool",
+   "cat": "stool",
+   "at_desk": "bench"
+  },
+  {
+   "id": "lamp",
+   "cat": "lamp_desk",
+   "on": "bench",
+   "light": {
+    "on": true
+   }
+  },
+  {
+   "id": "shelves",
+   "cat": "shelving",
+   "against": "east",
+   "count": 2
+  },
+  {
+   "id": "rack",
+   "cat": "shelving",
+   "against": "west"
+  },
+  {
+   "id": "barrels",
+   "cat": "barrel",
+   "corner": "sw",
+   "count": 2
+  },
+  {
+   "id": "light",
+   "cat": "lamp_ceiling",
+   "prefer": "ceiling_lamp_industrial",
+   "ceiling": true,
+   "light": {
+    "on": true
+   }
+  }
+ ],
+ "clutter": 0.7,
+ "camera": {
+  "focus": "bench",
+  "move": "dolly"
+ },
+ "lighting": {
+  "time": "golden_hour",
+  "weather": "clear",
+  "mood": "eerie"
+ },
+ "description": "a dusty abandoned workshop at golden hour, light pouring through the high window",
+ "style": [
+  "abandoned"
+ ],
+ "effects": [],
+ "seed": 1,
+ "name": "workshop"
+}
