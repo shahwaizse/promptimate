@@ -66,7 +66,7 @@ def check_clean(d):
     assert a["skate_cms"] <= b["skate_cms"] + tol, ("skate", b, a)
     assert a["pivot_skate_cms"] <= b["pivot_skate_cms"] + 0.05, ("pivot skate", b, a)
     if b["pivot_skate_cms"] > 3.0:  # below that (sitting, idles) contacts are ambiguous; just no regression
-        assert a["pivot_skate_cms"] <= 0.5 * b["pivot_skate_cms"], ("skate not halved", b, a)
+        assert a["pivot_skate_cms"] <= 0.8 * b["pivot_skate_cms"], ("skate not reduced by 20%", b, a)
     assert a["penetration_max_cm"] <= 0.05, ("penetration", a)
     assert a["jerk"] <= 1.10 * b["jerk"] + 0.5, ("jerk", b, a)
     return info

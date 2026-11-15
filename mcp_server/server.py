@@ -488,6 +488,10 @@ def _assemble(out_dir: Path, name: str, segs, prompt_text: str, best: dict, resu
         pp["loop"] = {k: li[k] for k in ("frames", "seconds", "seam_before", "seam_after", "loop_offset_xz_m")
                       if k in li}
     elif clean:
+        if not re.search(r"(crawl|roll|slides?|drags?|scoots?|wriggles?)", prompt_text, re.I):
+            root, si = postprocess.settle_low(root, rot)
+            if si:
+                pp["settle_low"] = si
         root, rot, ci = postprocess.clean(root, rot, contacts=contacts,
                                           segment_boundaries=[round(b / speed) for b in np.cumsum([s.frames for s in segs])[:-1]])
         pp["clean"] = {k: ci[k] for k in ("ground_offset_m", "before", "after") if k in ci}

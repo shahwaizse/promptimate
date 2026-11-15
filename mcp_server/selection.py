@@ -59,6 +59,7 @@ def score_takes(takes: list[dict], segments: list[tuple[str, int]], prompt_text:
             "intent": 12.0 * float(np.sum(1.0 - np.array(exp_vals))) if exp_vals else 0.0,
             "late_start": 2.0 * max(0.0, onset_s(t["pos"]) - 0.8) if action else 0.0,
             "too_still": 4.0 * (1.0 - en / emax) if action else 0.0,
+            "low_slide": 0.5 * low_slide_m(t["pos"]),  # tie-breaker only: settle_low removes most of it
         }
         t["score_parts"] = {k: round(v, 3) for k, v in parts.items() if v}
         t["score"] = round(sum(parts.values()), 3)
@@ -91,3 +92,10 @@ def idle_tail_hint(pos: np.ndarray, segments: list[tuple[str, int]]) -> str | No
                 f"wanted, regenerate with the last segment ~{max(1.5, end - sum(f for _, f in segments[:-1]) / FPS + 0.5):.1f} s, "
                 "or add a segment for what happens next (e.g. the same action again).")
     return None
+
+
+def low_slide_m(pos: np.ndarray, low_m: float = 0.4) -> float:
+    """Metres the hips travel horizontally while sitting/lying on the floor (they shouldn't)."""
+    low = pos[1:, 0, 1] < low_m
+    step = np.linalg.norm(np.diff(pos[:, 0, [0, 2]], axis=0), axis=1)
+    return float(step[low].sum())

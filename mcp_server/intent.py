@@ -38,6 +38,11 @@ def segment_expect(prompt: str, seconds: float, is_first: bool = True) -> dict:
     # locomotion and direction
     if _has(p, r"\b(in place|on the spot|without moving)\b"):
         e["travel_max"] = 1.0
+    elif not _has(p, r"\b(walks?|walking|jogs?|jogging|runs?|running|sprints?|steps?|moves?|crawls?|skips?|marches?|"
+                     r"strolls?|staggers?|sneaks?|dashes?|leaves?|away|across|"
+                     r"turns? around|chases?|dances?|falls?|stumbles?|leaps?|lunges?|storms? off|exits?|enters?)\b"):
+        # an action without any travel word (kick, punch, wave, throw, clap, bow...) should stay roughly in place
+        e["travel_max"] = 1.2
     if _has(p, r"\bturns? around\b"):
         e["turn_min_deg"] = 120
     elif _has(p, r"\bturns?\b[^,.]*\b(left|right)\b") and not _has(p, r"\b(walks?|runs?|jogs?)\b"):

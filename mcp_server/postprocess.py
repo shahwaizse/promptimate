@@ -31,6 +31,8 @@ FLOOR = {"heel": ANKLE_FLOOR, "toe": TOE_FLOOR}
 # contact detection (height above that joint's floor height, 3D speed) with hysteresis
 ENTER_H, EXIT_H = 0.015, 0.030       # m
 ENTER_V, EXIT_V = 0.30, 0.60         # m/s
+ENTER_V_FAST, EXIT_V_FAST = 1.0, 1.6  # m/s, while the hips move faster than FAST_GAIT_MS (jog/run/sprint)
+FAST_GAIT_MS = 1.8
 MIN_CONTACT = 3                      # frames
 BLEND = 5                            # frames of ease-in/out around each locked span
 
@@ -185,14 +187,17 @@ def _speed(p, fps):
     return s
 
 
-def _hysteresis(h, s):
+def _hysteresis(h, s, fast=None):
+    """fast: per-frame bool, body moving at running speed: a planted foot of a fast gait slides quicker than a
+    walking one (that sliding is exactly what foot locking fixes), so the speed thresholds are relaxed there."""
     out = np.zeros(len(h), bool)
     on = False
     for f in range(len(h)):
+        ev, xv = (ENTER_V_FAST, EXIT_V_FAST) if fast is not None and fast[f] else (ENTER_V, EXIT_V)
         if on:
-            on = not (h[f] > EXIT_H or s[f] > EXIT_V)
+            on = not (h[f] > EXIT_H or s[f] > xv)
         else:
-            on = h[f] < ENTER_H and s[f] < ENTER_V
+            on = h[f] < ENTER_H and s[f] < ev
         out[f] = on
     return out
 
@@ -217,10 +222,12 @@ def _clean_mask(m, min_len=MIN_CONTACT, gap=2):
 def detect_contacts(pos, fps=FPS):
     """Per foot and joint ('left_heel', 'left_toe', ...) boolean contact masks (F,)."""
     out = {}
+    fast = _speed(pos[:, 0] * np.array([1.0, 0.0, 1.0]), fps) > FAST_GAIT_MS
+    fast = np.convolve(fast.astype(float), np.ones(9), "same") > 4    # smooth over the stride
     for side, (_, _, ank, toe) in LEGS.items():
         for part, j in (("heel", ank), ("toe", toe)):
             h = pos[:, j, 1] - FLOOR[part]
-            out[f"{side}_{part}"] = _clean_mask(_hysteresis(h, _speed(pos[:, j], fps)))
+            out[f"{side}_{part}"] = _clean_mask(_hysteresis(h, _speed(pos[:, j], fps), fast))
     return out
 
 
@@ -824,3 +831,28 @@ def body_floor(root, rot, sigma=3.0):
     lift = np.maximum(lift, need)
     root[:, 1] += lift
     return root.astype(np.float32), lift
+
+
+LOW_HIPS_M = 0.4     # hips below this = sitting / lying on the floor (crawling stays above)
+
+
+def settle_low(root, rot=None, keep=0.1, min_frames=10):
+    """Damp horizontal drift while the character sits or lies on the floor (hips below LOW_HIPS_M for at least
+    min_frames): the model sometimes slides the whole body along the floor there. Root x/z velocity is scaled by
+    `keep` inside those spans (eased over BLEND frames); motion before and after is kept, only shifted.
+    Don't use for crawling / rolling prompts. Returns (root, info)."""
+    root = np.asarray(root, np.float64).copy()
+    low = root[:, 1] < LOW_HIPS_M
+    mask = np.zeros(len(root), bool)
+    for s, e in spans(low):
+        if e - s >= min_frames:
+            mask[s:e] = True
+    if not mask.any():
+        return root.astype(np.float32), {}
+    w = 1.0 - (1.0 - keep) * _ramp(mask)
+    v = np.diff(root[:, [0, 2]], axis=0)
+    before = float(np.linalg.norm(v[mask[1:]], axis=1).sum())
+    xz = np.vstack([root[:1, [0, 2]], root[:1, [0, 2]] + np.cumsum(v * w[1:, None], axis=0)])
+    root[:, [0, 2]] = xz
+    after = float(np.linalg.norm(np.diff(xz, axis=0)[mask[1:]], axis=1).sum())
+    return root.astype(np.float32), {"low_frames": int(mask.sum()), "low_slide_m": [round(before, 3), round(after, 3)]}
