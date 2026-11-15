@@ -129,7 +129,7 @@ def main() -> None:
     ap.add_argument("--engine-dir", default=None, help="kimodo.cpp build dir (default: KimodoWorker default)")
     ap.add_argument("--steps", type=int, default=30)
     ap.add_argument("--text-cfg", type=float, default=None, help="text guidance weight (patched engine only)")
-    ap.add_argument("--tier", default=None, choices=["smoke", "standard", "full"],
+    ap.add_argument("--tier", default=None, choices=["smoke", "smoke2", "standard", "full"],
                     help="suite size (bench/tiers.py); --prompts/--seeds override it")
     ap.add_argument("--seeds", default=None, help="comma-separated seeds (default: tier's, else 0,1)")
     ap.add_argument("--prompts", default=None, help="comma-separated prompt ids (default: tier's, else all)")

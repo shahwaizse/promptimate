@@ -45,13 +45,26 @@ Hugging Face) into `models/`, and prints the next steps. Everything stays inside
    friend and waves"*. The clips appear in `Assets/Promptimate/Generated/` and import as Humanoid animation clips. GLB and BVH copies
    are also written to `output/`.
 
+## Using the clips in Unity
+
+- Put a clip in an Animator state, a Timeline track or your own PlayableGraph. When you add a Promptimate clip to an
+  Animator state, **Foot IK** is switched on for that state (once; untick it if you don't want it). With Foot IK, the
+  clip's IK goal curves keep the feet on the generated foot path on characters with other proportions. Without it,
+  planted feet slide 3-7x more on typical Mixamo/Kenney characters, and they sink into the floor when sitting.
+  *Tools > Promptimate > Enable Foot IK On Promptimate States* applies this to existing controllers.
+- Optional: add **Promptimate Grounding** (*Add Component > Promptimate*) to a character. After the Animator runs, it
+  raises the hips when the seat would go through the floor (fuller bodies sitting or squatting), and lifts soles and
+  fingertips that would go below it. It calibrates from the character's own mesh when you add it.
+- The importer also writes finger poses inferred from the prompt ("points", "punches", "waves", "claps", "holds") on
+  top of a relaxed hand, for characters that have finger bones (Inspector: *Hand Poses From Prompt*).
+
 ## MCP tools
 
 The server id is `kimodo-motion`.
 
 | Tool | What it does |
 |---|---|
-| `generate_motion(segments[{prompt, seconds}], name?, seed, steps=30, takes=3, clean=true, loop=false, in_place=false, root_path?, auto_stop=true, text_cfg?, transition_frames=5, unity_check="background")` | Generates a clip from one or more blended text segments. Makes 3 variations by default and keeps the cleanest, locks the feet to the ground, holds the character still where the text says it stops, and can make seamless loops, in-place clips or follow a root path. Returns stats, checks, a preview sheet (plus a takes sheet) and file paths. |
+| `generate_motion(segments[{prompt, seconds}], name?, seed, steps=30, takes=3, clean=true, loop=false, in_place=false, root_path?, auto_stop=true, start_pose="free", end_pose="free", continue_from?, speed=1.0, text_cfg?, transition_frames=10, unity_check="background")` | Generates a clip from one or more blended text segments. Makes 3 variations by default and keeps the one that best does what the prompt asks, locks the feet to the ground, holds the character still where the text says it stops, adds finger poses the text implies (point, fist, wave, clap, grip), and can make seamless loops, in-place clips, follow a root path, start or end in a shared idle pose, continue from an earlier clip, or retime the result (`speed`). Returns stats, checks, a preview sheet (plus a takes sheet) and file paths. |
 | `use_take(name, take)` | Switches a multi-take result to another variation. |
 | `validate_in_unity(names?, self_test)` | Re-runs headless Unity validation. With `self_test` it also runs the negative controls. |
 | `list_motions(limit)` | Lists earlier results. |
@@ -62,7 +75,9 @@ See [`mcp_server/README.md`](mcp_server/README.md) for environment variables and
 
 ## Limitations
 
-- **Body only.** There are no fingers and no facial animation. The SOMA model outputs a 30-joint body skeleton.
+- **Body only.** The SOMA model outputs a 30-joint body skeleton: no finger or facial animation. Hands get a relaxed
+  pose, plus a point, fist, open, flat or grip pose where the prompt implies one (inferred from the text, not
+  generated).
 - **Constraints:** root paths, "stop here" holds and seamless loops are supported (through a small patch to
   kimodo.cpp, see `scripts/kimodo-promptimate.patch`). Hand and foot targets aren't exposed yet.
 - **Prompt-following is imperfect.** Unusual actions can come out generic. Each call makes several variations and

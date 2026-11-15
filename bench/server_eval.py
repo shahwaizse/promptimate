@@ -40,11 +40,15 @@ def parse_opt(kv: str):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", required=True)
-    ap.add_argument("--tier", default=None, choices=["smoke", "standard", "full"])
+    ap.add_argument("--tier", default=None, choices=["smoke", "smoke2", "standard", "full"])
     ap.add_argument("--prompts", default=None)
     ap.add_argument("--seeds", default=None)
     ap.add_argument("--opt", action="append", default=[])
+    ap.add_argument("--rescore", action="store_true",
+                    help="no generation: recompute metrics for the clips of an existing run --name (after metric changes)")
     args = ap.parse_args()
+    if args.rescore:
+        return rescore(args.name)
     suite = json.loads((ROOT / "bench" / "prompts.json").read_text())
     suite = suite["prompts"] if isinstance(suite, dict) else suite
     sys.path.insert(0, str(ROOT / "bench"))
@@ -73,6 +77,24 @@ def main() -> None:
                          "auto_holds_s": meta["generation"].get("auto_holds_s"), "metrics": m})
             print(f"{p['id']:22} s{seed} wall={wall:5.1f}s exp={m.get('expectation_score')} "
                   f"skate={m['skate_speed_cms']} end_speed={m['root_end_speed_ms']}", flush=True)
+    write(args.name, opts, rows)
+    server.worker.stop()
+
+
+def rescore(name: str) -> None:
+    path = ROOT / "bench" / "results" / f"server_{name}.json"
+    res = json.loads(path.read_text())
+    suite = {p["id"]: p for p in json.loads((ROOT / "bench" / "prompts.json").read_text())["prompts"]}
+    for r in res["rows"]:
+        p, d = suite[r["id"]], Path(r["dir"])
+        root, rot = motion.load(d)
+        frames = [round(s["seconds"] * motion.FPS) for s in p["segments"]]
+        r["metrics"] = metrics.compute(root, rot, expect=p.get("expect"), segment_expect=p.get("segment_expect"),
+                                       segment_frames=frames)
+    write(name, res["opts"], res["rows"])
+
+
+def write(name: str, opts: dict, rows: list) -> None:
     keys = ["expectation_score", "expectation_pass_rate", "skate_speed_cms", "jerk_mean", "pop_frames",
             "root_end_speed_ms"]
     summary = {k: round(float(np.mean([r["metrics"].get(k, np.nan) for r in rows])), 4) for k in keys}
@@ -80,10 +102,9 @@ def main() -> None:
     by_prompt = {pid: round(float(np.mean([r["metrics"].get("expectation_score", np.nan)
                                            for r in rows if r["id"] == pid])), 3)
                  for pid in dict.fromkeys(r["id"] for r in rows)}
-    res = {"name": args.name, "opts": opts, "summary": summary, "by_prompt": by_prompt, "rows": rows}
-    (ROOT / "bench" / "results" / f"server_{args.name}.json").write_text(json.dumps(res, indent=2))
+    res = {"name": name, "opts": opts, "summary": summary, "by_prompt": by_prompt, "rows": rows}
+    (ROOT / "bench" / "results" / f"server_{name}.json").write_text(json.dumps(res, indent=2))
     print(json.dumps({"summary": summary, "by_prompt": by_prompt}, indent=2))
-    server.worker.stop()
 
 
 if __name__ == "__main__":

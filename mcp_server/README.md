@@ -17,7 +17,7 @@ point `KIMODO_ENGINE_DIR` at any folder that contains `kmd-generate.exe`.
 ## Tools
 | Tool | What it does |
 |---|---|
-| `generate_motion(segments[{prompt, seconds}], seed, steps=30, takes=3, clean=true, loop=false, in_place=false, root_path?, auto_stop=true, text_cfg?, transition_frames=5, name?, unity_check="background")` | Generates the motion and returns stats, checks, a preview sheet and (for several takes) a takes sheet. Writes raw `.f32` (plus the engine's `foot_contacts.f32`) to `output/<name>/take<k>/` and the cleaned result to `output/<name>/`, GLB and BVH in the background, and drops `<name>.kimodo` into `$UNITY_PROJECT/Assets/Promptimate/Generated/`. |
+| `generate_motion(segments[{prompt, seconds}], seed, steps=30, takes=3, clean=true, loop=false, in_place=false, root_path?, auto_stop=true, start_pose="free", end_pose="free", continue_from?, speed=1.0, text_cfg?, transition_frames=10, name?, unity_check="background")` | Generates the motion and returns stats, checks, a preview sheet and (for several takes) a takes sheet. Writes raw `.f32` (plus the engine's `foot_contacts.f32`) to `output/<name>/take<k>/` and the cleaned result to `output/<name>/`, GLB and BVH in the background, and drops `<name>.kimodo` into `$UNITY_PROJECT/Assets/Promptimate/Generated/`. |
 | `use_take(name, take)` | Switch a multi-take result to another take |
 | `validate_in_unity(names?, self_test)` | Headless Unity bake and verify (also runs in the background after each generation unless `unity_check="off"`) |
 | `list_motions`, `get_motion_preview(name)` | Browse earlier results |
@@ -42,8 +42,11 @@ Timing on a mid-range 8 GB GPU: about 2.5 s per 5 s clip at 30 steps once warm; 
 1. Each take: one engine pass. If the text says the character stops (a later segment with "stops", "stands still",
    "in place", or "X then stops") or `loop=true`, a second pass with the same seed adds constraints: the hips are held
    where the first pass reached, and/or the last frame is pinned to the first frame's pose.
-2. The take with the best automatic score (check failures, glitches, foot skating, floating, jerk) is chosen.
-3. Post-processing (`postprocess.py`): foot contacts (heuristic + the engine's predicted contacts) are locked with
+2. The take that best does what the prompt asks is chosen (`selection.py`): prompt-derived checks from `intent.py`
+   (e.g. "stands up" must end standing, "punches with the right hand" must extend the right arm), a late-start and a
+   too-still penalty for action prompts, and real defects (check failures, pops, floating, penetration). Known-weak
+   phrasings are reworded first (`intent.rewrite`; the original prompt is kept in `prompts_as_given`).
+3. Post-processing (`postprocess.py`): optional retime (`speed`), foot contacts (heuristic + the engine's predicted contacts) are locked with
    two-bone leg IK, the floor offset is removed, loops get a seamless seam, `in_place` removes travel.
 4. Outputs, the preview sheet (`render.py`), then GLB/BVH export and headless Unity validation in the background.
 

@@ -2,12 +2,15 @@
 
 smoke    6 prompts x 1 seed: one per failure mode we care about (locomotion, stop, gesture, full-body, sequences).
          ~15-30 s warm through run_bench; use for every iteration.
-standard all 18 prompts x 2 seeds.
-full     all 18 prompts x 3 seeds: final numbers only.
+standard all prompts x 2 seeds.
+full     all prompts x 3 seeds: final numbers only.
 """
 SMOKE = ["walk", "walk_stop", "wave", "jump", "seq_walk_stop_wave", "seq_jog_jump"]
+# One prompt per new category from the 50-prompt expansion (game set + cinematic), for quick checks of those areas.
+SMOKE2 = ["strafe_left", "punch", "death_fall", "pick_up", "phone_call", "seq_wave_goodbye_leave"]
 TIERS = {
     "smoke": {"prompts": SMOKE, "seeds": [0]},
+    "smoke2": {"prompts": SMOKE2, "seeds": [0]},
     "standard": {"prompts": None, "seeds": [0, 1]},
     "full": {"prompts": None, "seeds": [0, 1, 2]},
 }

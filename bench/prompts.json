@@ -1,69 +1,795 @@
 {
-  "_doc": "Promptimate benchmark suite. Each prompt: id, category, segments [{prompt, seconds}], expect (whole clip) and optional segment_expect (one dict or null per segment). Expectation keys and their meaning are in mcp_server/metrics.py:expectation_checks. Distances in metres, speeds in m/s, angles in degrees.",
-  "prompts": [
-    {"id": "walk", "category": "locomotion",
-     "segments": [{"prompt": "a person walks forward", "seconds": 5}],
-     "expect": {"forward_min": 4.0, "turn_max_deg": 30, "hands_up_max_frac": 0.1, "stays_upright": 1.4}},
-    {"id": "jog", "category": "locomotion",
-     "segments": [{"prompt": "a person jogs forward", "seconds": 5}],
-     "expect": {"forward_min": 7.0, "mean_speed_min": 1.8, "turn_max_deg": 30}},
-    {"id": "run", "category": "locomotion",
-     "segments": [{"prompt": "a person runs forward fast", "seconds": 5}],
-     "expect": {"forward_min": 10.0, "mean_speed_min": 2.5, "airborne_frames_min": 10, "turn_max_deg": 30}},
-    {"id": "walk_backward", "category": "locomotion",
-     "segments": [{"prompt": "a person walks backward", "seconds": 5}],
-     "expect": {"backward_min": 2.0, "turn_max_deg": 45}},
-    {"id": "turn_around", "category": "locomotion",
-     "segments": [{"prompt": "a person walks forward, turns around and walks back", "seconds": 6}],
-     "expect": {"turn_min_deg": 150, "travel_max": 3.0}},
-    {"id": "walk_stop", "category": "stop",
-     "segments": [{"prompt": "a person walks forward then stops and stands still", "seconds": 5}],
-     "expect": {"forward_min": 1.5, "ends_stationary": 0.15}},
-    {"id": "wave", "category": "gesture",
-     "segments": [{"prompt": "a person waves with their right hand", "seconds": 5}],
-     "expect": {"right_hand_up_frac": 0.4, "travel_max": 0.5}},
-    {"id": "point", "category": "gesture",
-     "segments": [{"prompt": "a person points forward with their right arm", "seconds": 4}],
-     "expect": {"right_arm_extended_frac": 0.3, "travel_max": 0.5}},
-    {"id": "clap", "category": "gesture",
-     "segments": [{"prompt": "a person claps their hands", "seconds": 4}],
-     "expect": {"clap_count_min": 3, "travel_max": 0.5}},
-    {"id": "jump", "category": "fullbody",
-     "segments": [{"prompt": "a person jumps up in place", "seconds": 4}],
-     "expect": {"hips_rise_min": 0.15, "airborne_frames_min": 6, "travel_max": 1.0}},
-    {"id": "crouch", "category": "fullbody",
-     "segments": [{"prompt": "a person squats down and stands back up", "seconds": 5}],
-     "expect": {"hips_drop_min": 0.35, "hips_end_min": 0.85, "travel_max": 0.5}},
-    {"id": "sit_floor", "category": "fullbody",
-     "segments": [{"prompt": "a person sits down on the floor", "seconds": 6}],
-     "expect": {"hips_drop_min": 0.6, "hips_end_max": 0.45, "travel_max": 1.0}},
-    {"id": "kick", "category": "fullbody",
-     "segments": [{"prompt": "a person kicks forward with their right leg", "seconds": 4}],
-     "expect": {"foot_raise_min": 0.45, "travel_max": 1.0}},
-    {"id": "sad_walk", "category": "stylized",
-     "segments": [{"prompt": "a person walks forward slowly and sadly with their head down", "seconds": 6}],
-     "expect": {"forward_min": 1.5, "mean_speed_max": 0.9, "head_low_max": 1.53}},
-    {"id": "zombie", "category": "stylized",
-     "segments": [{"prompt": "a person walks forward like a zombie with both arms stretched out in front", "seconds": 6}],
-     "expect": {"forward_min": 1.0, "mean_speed_max": 1.0, "arms_forward_frac": 0.5}},
-    {"id": "seq_walk_stop_wave", "category": "sequence",
-     "segments": [{"prompt": "a person walks forward", "seconds": 3},
-                  {"prompt": "a person stops and stands still", "seconds": 2.5},
-                  {"prompt": "a person waves with their right hand", "seconds": 3}],
-     "segment_expect": [{"forward_min": 2.0},
-                        {"ends_stationary": 0.2, "travel_max": 0.8},
-                        {"right_hand_up_frac": 0.3, "travel_max": 0.5}]},
-    {"id": "seq_jog_jump", "category": "sequence",
-     "segments": [{"prompt": "a person jogs forward", "seconds": 3},
-                  {"prompt": "a person jumps up and down in place", "seconds": 3}],
-     "segment_expect": [{"forward_min": 3.5},
-                        {"hips_rise_min": 0.12, "airborne_frames_min": 4, "travel_max": 1.0}]},
-    {"id": "seq_sit_stand", "category": "sequence",
-     "segments": [{"prompt": "a person walks forward", "seconds": 3},
-                  {"prompt": "a person sits down on the floor", "seconds": 3},
-                  {"prompt": "a person stands up from the floor", "seconds": 3}],
-     "segment_expect": [{"forward_min": 2.0},
-                        {"hips_end_max": 0.5},
-                        {"hips_end_min": 0.85}]}
-  ]
+ "_doc": "Promptimate benchmark suite. Each prompt: id, category, segments [{prompt, seconds}], expect (whole clip) and optional segment_expect (one dict or null per segment). Expectation keys and their meaning are in mcp_server/metrics.py:expectation_checks. Distances in metres, speeds in m/s, angles in degrees.",
+ "prompts": [
+  {
+   "id": "walk",
+   "category": "locomotion",
+   "segments": [
+    {
+     "prompt": "a person walks forward",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "forward_min": 4.0,
+    "turn_max_deg": 30,
+    "hands_up_max_frac": 0.1,
+    "stays_upright": 1.4
+   }
+  },
+  {
+   "id": "jog",
+   "category": "locomotion",
+   "segments": [
+    {
+     "prompt": "a person jogs forward",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "forward_min": 7.0,
+    "mean_speed_min": 1.8,
+    "turn_max_deg": 30
+   }
+  },
+  {
+   "id": "run",
+   "category": "locomotion",
+   "segments": [
+    {
+     "prompt": "a person runs forward fast",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "forward_min": 10.0,
+    "mean_speed_min": 2.5,
+    "airborne_frames_min": 10,
+    "turn_max_deg": 30
+   }
+  },
+  {
+   "id": "walk_backward",
+   "category": "locomotion",
+   "segments": [
+    {
+     "prompt": "a person walks backward",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "backward_min": 2.0,
+    "turn_max_deg": 45
+   }
+  },
+  {
+   "id": "turn_around",
+   "category": "locomotion",
+   "segments": [
+    {
+     "prompt": "a person walks forward, turns around and walks back",
+     "seconds": 6
+    }
+   ],
+   "expect": {
+    "turn_min_deg": 150,
+    "travel_max": 3.0
+   }
+  },
+  {
+   "id": "walk_stop",
+   "category": "stop",
+   "segments": [
+    {
+     "prompt": "a person walks forward then stops and stands still",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "forward_min": 1.5,
+    "ends_stationary": 0.15
+   }
+  },
+  {
+   "id": "wave",
+   "category": "gesture",
+   "segments": [
+    {
+     "prompt": "a person waves with their right hand",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "right_hand_up_frac": 0.4,
+    "travel_max": 0.5
+   }
+  },
+  {
+   "id": "point",
+   "category": "gesture",
+   "segments": [
+    {
+     "prompt": "a person points forward with their right arm",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "right_arm_extended_frac": 0.3,
+    "travel_max": 0.5
+   }
+  },
+  {
+   "id": "clap",
+   "category": "gesture",
+   "segments": [
+    {
+     "prompt": "a person claps their hands",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "clap_count_min": 3,
+    "travel_max": 0.5
+   }
+  },
+  {
+   "id": "jump",
+   "category": "fullbody",
+   "segments": [
+    {
+     "prompt": "a person jumps up in place",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "hips_rise_min": 0.15,
+    "airborne_frames_min": 6,
+    "travel_max": 1.0
+   }
+  },
+  {
+   "id": "crouch",
+   "category": "fullbody",
+   "segments": [
+    {
+     "prompt": "a person squats down and stands back up",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "hips_drop_min": 0.35,
+    "hips_end_min": 0.85,
+    "travel_max": 0.5,
+    "hips_start_min": 0.8
+   }
+  },
+  {
+   "id": "sit_floor",
+   "category": "fullbody",
+   "segments": [
+    {
+     "prompt": "a person sits down on the floor",
+     "seconds": 6
+    }
+   ],
+   "expect": {
+    "hips_drop_min": 0.6,
+    "hips_end_max": 0.45,
+    "travel_max": 1.0
+   }
+  },
+  {
+   "id": "kick",
+   "category": "fullbody",
+   "segments": [
+    {
+     "prompt": "a person kicks forward with their right leg",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "foot_raise_min": 0.45,
+    "travel_max": 1.0
+   }
+  },
+  {
+   "id": "sad_walk",
+   "category": "stylized",
+   "segments": [
+    {
+     "prompt": "a person walks forward slowly and sadly with their head down",
+     "seconds": 6
+    }
+   ],
+   "expect": {
+    "forward_min": 1.5,
+    "mean_speed_max": 0.9,
+    "head_low_max": 1.53
+   }
+  },
+  {
+   "id": "zombie",
+   "category": "stylized",
+   "segments": [
+    {
+     "prompt": "a person walks forward like a zombie with both arms stretched out in front",
+     "seconds": 6
+    }
+   ],
+   "expect": {
+    "forward_min": 1.0,
+    "mean_speed_max": 1.0,
+    "arms_forward_frac": 0.5
+   }
+  },
+  {
+   "id": "seq_walk_stop_wave",
+   "category": "sequence",
+   "segments": [
+    {
+     "prompt": "a person walks forward",
+     "seconds": 3
+    },
+    {
+     "prompt": "a person stops and stands still",
+     "seconds": 2.5
+    },
+    {
+     "prompt": "a person waves with their right hand",
+     "seconds": 3
+    }
+   ],
+   "segment_expect": [
+    {
+     "forward_min": 2.0
+    },
+    {
+     "ends_stationary": 0.2,
+     "travel_max": 0.8
+    },
+    {
+     "right_hand_up_frac": 0.3,
+     "travel_max": 0.5
+    }
+   ]
+  },
+  {
+   "id": "seq_jog_jump",
+   "category": "sequence",
+   "segments": [
+    {
+     "prompt": "a person jogs forward",
+     "seconds": 3
+    },
+    {
+     "prompt": "a person jumps up and down in place",
+     "seconds": 3
+    }
+   ],
+   "segment_expect": [
+    {
+     "forward_min": 3.5
+    },
+    {
+     "hips_rise_min": 0.12,
+     "airborne_frames_min": 4,
+     "travel_max": 1.0
+    }
+   ]
+  },
+  {
+   "id": "seq_sit_stand",
+   "category": "sequence",
+   "segments": [
+    {
+     "prompt": "a person walks forward",
+     "seconds": 3
+    },
+    {
+     "prompt": "a person sits down on the floor",
+     "seconds": 3
+    },
+    {
+     "prompt": "a person stands up from the floor",
+     "seconds": 3
+    }
+   ],
+   "segment_expect": [
+    {
+     "forward_min": 2.0
+    },
+    {
+     "hips_end_max": 0.5
+    },
+    {
+     "hips_end_min": 0.85
+    }
+   ]
+  },
+  {
+   "id": "strafe_left",
+   "category": "game_loco",
+   "segments": [
+    {
+     "prompt": "a person side steps to the left while facing forward",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "left_min": 1.0,
+    "turn_max_deg": 30
+   }
+  },
+  {
+   "id": "strafe_right",
+   "category": "game_loco",
+   "segments": [
+    {
+     "prompt": "a person side steps to the right while facing forward",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "right_min": 1.0,
+    "turn_max_deg": 30
+   }
+  },
+  {
+   "id": "crouch_walk",
+   "category": "game_loco",
+   "segments": [
+    {
+     "prompt": "a person walks forward in a crouch",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "forward_min": 1.5,
+    "hips_low_frac": [
+     0.75,
+     0.6
+    ]
+   }
+  },
+  {
+   "id": "sprint",
+   "category": "game_loco",
+   "segments": [
+    {
+     "prompt": "a person sprints forward",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "mean_speed_min": 4.0,
+    "airborne_frames_min": 6
+   }
+  },
+  {
+   "id": "turn_left_90",
+   "category": "game_loco",
+   "segments": [
+    {
+     "prompt": "a person turns ninety degrees to the left in place",
+     "seconds": 3
+    }
+   ],
+   "expect": {
+    "turn_min_deg": 60,
+    "turn_max_deg": 120,
+    "travel_max": 0.8
+   }
+  },
+  {
+   "id": "walk_turn_right",
+   "category": "game_loco",
+   "segments": [
+    {
+     "prompt": "a person walks forward and turns right",
+     "seconds": 6
+    }
+   ],
+   "expect": {
+    "forward_min": 1.0,
+    "turn_min_deg": 45
+   }
+  },
+  {
+   "id": "idle_breathe",
+   "category": "game_idle",
+   "segments": [
+    {
+     "prompt": "a person stands still and breathes",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "travel_max": 0.3,
+    "stays_upright": 1.4
+   }
+  },
+  {
+   "id": "idle_look_around",
+   "category": "game_idle",
+   "segments": [
+    {
+     "prompt": "a person stands and looks around",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "travel_max": 0.5,
+    "stays_upright": 1.4
+   }
+  },
+  {
+   "id": "idle_impatient",
+   "category": "game_idle",
+   "segments": [
+    {
+     "prompt": "a person stands impatiently and taps their foot",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "travel_max": 0.5
+   }
+  },
+  {
+   "id": "punch",
+   "category": "game_combat",
+   "segments": [
+    {
+     "prompt": "a person throws a punch with their right fist",
+     "seconds": 3
+    }
+   ],
+   "expect": {
+    "right_arm_extended_frac": 0.05,
+    "travel_max": 1.0
+   }
+  },
+  {
+   "id": "sword_swing",
+   "category": "game_combat",
+   "segments": [
+    {
+     "prompt": "a person swings a sword with both hands",
+     "seconds": 3
+    }
+   ],
+   "expect": {
+    "travel_max": 1.2,
+    "stays_upright": 1.2
+   }
+  },
+  {
+   "id": "block",
+   "category": "game_combat",
+   "segments": [
+    {
+     "prompt": "a person raises both arms to block a hit",
+     "seconds": 3
+    }
+   ],
+   "expect": {
+    "both_hands_up_frac": 0.2,
+    "travel_max": 0.8
+   }
+  },
+  {
+   "id": "hit_reaction",
+   "category": "game_combat",
+   "segments": [
+    {
+     "prompt": "a person gets hit in the stomach and stumbles backward",
+     "seconds": 3
+    }
+   ],
+   "expect": {
+    "backward_min": 0.2
+   }
+  },
+  {
+   "id": "death_fall",
+   "category": "game_combat",
+   "segments": [
+    {
+     "prompt": "a person gets shot and falls to the ground",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "hips_end_max": 0.35
+   }
+  },
+  {
+   "id": "throw",
+   "category": "game_combat",
+   "segments": [
+    {
+     "prompt": "a person throws a ball with their right hand",
+     "seconds": 3
+    }
+   ],
+   "expect": {
+    "right_hand_up_frac": 0.05,
+    "travel_max": 1.2
+   }
+  },
+  {
+   "id": "pick_up",
+   "category": "game_interact",
+   "segments": [
+    {
+     "prompt": "a person bends down and picks something up from the floor",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "hips_drop_min": 0.25,
+    "hips_end_min": 0.85
+   }
+  },
+  {
+   "id": "push",
+   "category": "game_interact",
+   "segments": [
+    {
+     "prompt": "a person pushes a heavy object forward with both hands",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "arms_forward_frac": 0.4,
+    "forward_min": 0.3
+   }
+  },
+  {
+   "id": "dance",
+   "category": "emote",
+   "segments": [
+    {
+     "prompt": "a person dances happily",
+     "seconds": 6
+    }
+   ],
+   "expect": {
+    "travel_max": 2.0,
+    "stays_upright": 1.2
+   }
+  },
+  {
+   "id": "cheer",
+   "category": "emote",
+   "segments": [
+    {
+     "prompt": "a person cheers with both arms raised above their head",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "both_hands_up_frac": 0.3
+   }
+  },
+  {
+   "id": "bow",
+   "category": "emote",
+   "segments": [
+    {
+     "prompt": "a person bows politely",
+     "seconds": 3
+    }
+   ],
+   "expect": {
+    "head_drop_min": 0.25,
+    "travel_max": 0.6
+   }
+  },
+  {
+   "id": "sit_head_in_hands",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person sits on the floor and puts their head in their hands",
+     "seconds": 6
+    }
+   ],
+   "expect": {
+    "hips_end_max": 0.5,
+    "hand_near_head_frac": 0.2
+   }
+  },
+  {
+   "id": "phone_call",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person holds a phone to their ear and talks",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "hand_near_head_frac": 0.4,
+    "travel_max": 1.0
+   }
+  },
+  {
+   "id": "sneak",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person sneaks forward slowly on tiptoes",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "forward_min": 0.8,
+    "mean_speed_max": 1.0
+   }
+  },
+  {
+   "id": "drunk_walk",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person staggers forward drunkenly",
+     "seconds": 6
+    }
+   ],
+   "expect": {
+    "forward_min": 1.0,
+    "stays_upright": 1.2
+   }
+  },
+  {
+   "id": "fall_to_knees",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person falls to their knees in despair",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "hips_end_max": 0.65,
+    "travel_max": 1.0
+   }
+  },
+  {
+   "id": "collapse",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person faints and collapses to the ground",
+     "seconds": 4
+    }
+   ],
+   "expect": {
+    "hips_end_max": 0.35
+   }
+  },
+  {
+   "id": "crawl",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person crawls forward on hands and knees",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "forward_min": 0.6,
+    "hips_low_frac": [
+     0.6,
+     0.6
+    ]
+   }
+  },
+  {
+   "id": "stretch",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person stretches their arms above their head and yawns",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "both_hands_up_frac": 0.15,
+    "travel_max": 0.6
+   }
+  },
+  {
+   "id": "shiver",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person hugs themselves and shivers from the cold",
+     "seconds": 5
+    }
+   ],
+   "expect": {
+    "travel_max": 0.6,
+    "stays_upright": 1.3
+   }
+  },
+  {
+   "id": "seq_wave_goodbye_leave",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person waves goodbye with their right hand",
+     "seconds": 3
+    },
+    {
+     "prompt": "a person turns around and walks away",
+     "seconds": 4
+    }
+   ],
+   "segment_expect": [
+    {
+     "right_hand_up_frac": 0.2,
+     "travel_max": 0.8
+    },
+    {
+     "turn_min_deg": 120,
+     "travel_min": 1.5
+    }
+   ]
+  },
+  {
+   "id": "seq_argue_storm_off",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person argues angrily, gesturing with both arms",
+     "seconds": 4
+    },
+    {
+     "prompt": "a person turns and storms off quickly",
+     "seconds": 3
+    }
+   ],
+   "segment_expect": [
+    {
+     "travel_max": 1.0
+    },
+    {
+     "travel_min": 1.5
+    }
+   ]
+  },
+  {
+   "id": "seq_sit_wait_stand_leave",
+   "category": "cinematic",
+   "segments": [
+    {
+     "prompt": "a person sits down on the floor",
+     "seconds": 3
+    },
+    {
+     "prompt": "a person sits and waits",
+     "seconds": 3
+    },
+    {
+     "prompt": "a person stands up and walks forward",
+     "seconds": 4
+    }
+   ],
+   "segment_expect": [
+    {
+     "hips_end_max": 0.55
+    },
+    {
+     "hips_end_max": 0.55,
+     "travel_max": 0.5
+    },
+    {
+     "hips_end_min": 0.85,
+     "travel_min": 1.0
+    }
+   ]
+  }
+ ]
 }
