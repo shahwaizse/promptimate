@@ -37,7 +37,15 @@ GPU_LOCK = ROOT / "logs" / "gpu.lock"
 # copies; a second resident copy spills into shared memory and everything slows down ~20x).
 RELEASE_REQUEST = ROOT / "logs" / "gpu.release_request"
 IDLE_UNLOAD_S = float(os.environ.get("KIMODO_IDLE_UNLOAD_S", "600"))
-TEXT_RELEASE_S = float(os.environ.get("KIMODO_TEXT_RELEASE_S", "20"))  # idle seconds before freeing the text encoder
+TEXT_RELEASE_S = float(os.environ.get("KIMODO_TEXT_RELEASE_S", "180"))  # idle seconds before freeing the text encoder
+TEXT_RELEASE_OVERRIDE = ROOT / "logs" / "motiond.text_release_s"   # optional live override (seconds)
+
+
+def text_release_s() -> float:
+    try:
+        return float(TEXT_RELEASE_OVERRIDE.read_text().strip())
+    except (OSError, ValueError):
+        return TEXT_RELEASE_S
 IDLE_OVERRIDE = ROOT / "logs" / "motiond.idle_s"   # optional file with seconds; re-read live (e.g. low-RAM nights)
 
 
@@ -105,7 +113,7 @@ class KimodoWorker:
                 requested = False
             # low-memory mode: free the text encoder after a short idle period (motion model stays warm)
             if (self.alive() and not getattr(self, "_text_released", True)
-                    and time.time() - self.last_used > TEXT_RELEASE_S):
+                    and time.time() - self.last_used > text_release_s()):
                 if self.lock.acquire(blocking=False):
                     try:
                         if self.alive():
