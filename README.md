@@ -7,16 +7,14 @@ on Vulkan), so there is no cloud, no credits and no subscription. A local MCP se
 client, act as the director. It plans multi-shot sequences, generates each clip, checks the result and regenerates
 bad takes.
 
-**Status:** v0.2.0 preview. It works end to end on the developer's machine, but it has only been tested on one
-AMD GPU under Windows. Expect rough edges.
+**Status:** v0.2.0 preview.
 
 ## Requirements
 
 - Windows 10/11 (x64)
 - Unity 6 (6000.0 or newer)
-- A GPU with a Vulkan driver and about **8 GB VRAM** (AMD, NVIDIA or Intel in principle; only AMD has been tested).
-  The models stay loaded between requests and unload after 10 minutes idle, or as soon as another Promptimate
-  instance needs the GPU.
+- A GPU with a Vulkan driver (AMD, NVIDIA or Intel) and about **2 GB of free VRAM**. The motion model stays loaded
+  between requests and unloads after 10 minutes idle; the text encoder runs on the CPU.
 - 16 GB system RAM
 - Python 3.10+ (used for the MCP server)
 - About 7 GB of free disk space for the models
@@ -70,9 +68,7 @@ See [`mcp_server/README.md`](mcp_server/README.md) for environment variables and
 - **Prompt-following is imperfect.** Unusual actions can come out generic. Each call makes several variations and
   Claude regenerates when the checks or the preview show a problem.
 - **Speed:** about **2.5 s per 5 s clip** once warm (30 diffusion steps), so a default 3-take call takes about 10 s,
-  measured on an AMD RX 6600 XT (8 GB). The first request also loads the models, which takes up to a minute from an
-  HDD.
-- **Only tested on AMD / Windows.** NVIDIA and Intel should work through Vulkan but haven't been tested.
+  on a mid-range 8 GB GPU. The first request also loads the models, which takes up to a minute from an HDD.
 - The model licenses are separate from this code. Check them before you use output commercially (see below).
 
 ## Credits

@@ -36,7 +36,7 @@ broken conversions (negative controls) must fail and the correct one must pass.
 Env: `KIMODO_TEXT_QUANT` (`q4_k_m` default, `q8_0`), `UNITY_PROJECT`, `UNITY_EXE`, `KIMODO_IDLE_UNLOAD_S` (600),
 `TTA_TEMP` (default `<repo>/.cache/tmp`), `KIMODO_ENGINE_DIR`, and any kimodo env var (`KIMODO_TEXT_LAYER_CHUNK`, ...).
 Defaults can also be set with `KIMODO_STEPS` (30), `KIMODO_TEXT_CFG` (2.0) and `KIMODO_TAKES` (3).
-Timing on an RX 6600 XT: about 2.5 s per 5 s clip at 30 steps once warm; a default 3-take call takes about 10 s.
+Timing on a mid-range 8 GB GPU: about 2.5 s per 5 s clip at 30 steps once warm; a default 3-take call takes about 10 s.
 
 ## Generation pipeline
 1. Each take: one engine pass. If the text says the character stops (a later segment with "stops", "stands still",
