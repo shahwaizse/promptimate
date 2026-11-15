@@ -121,6 +121,14 @@ def retarget(root: np.ndarray, rot: np.ndarray) -> dict:
     return {"rot": out, "root": lt / SOMA_HIP_HEIGHT}
 
 
+def _contacts(root: np.ndarray, rot: np.ndarray) -> list[int]:
+    import postprocess
+    c = postprocess.detect_contacts(motion.fk(root, rot).astype(np.float64))
+    left = c["left_heel"] | c["left_toe"]
+    right = c["right_heel"] | c["right_toe"]
+    return [int(l) | (int(r) << 1) for l, r in zip(left, right)]
+
+
 def export(motion_dir: Path, out_path: Path, name: str = "", loop: bool = False) -> Path:
     """Write the Roblox clip JSON for a Promptimate motion folder (raw f32 files)."""
     root, rot = motion.load(Path(motion_dir))
@@ -133,6 +141,9 @@ def export(motion_dir: Path, out_path: Path, name: str = "", loop: bool = False)
         # rot[f] = [x,y,z,w for each part in `parts` order]; root[f] = [x,y,z] in hip heights (y = hips height)
         "rot": [[float(v) for p in ORDER for v in q[p][f]] for f in range(F)],
         "root": [[round(float(v), 4) for v in rt["root"][f]] for f in range(F)],
+        # foot contacts per frame: bit 1 = left planted, bit 2 = right planted (the player pins planted feet
+        # with leg IK on the R15 rig, since its proportions would otherwise bring foot sliding back)
+        "contacts": _contacts(root, rot),
     }
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

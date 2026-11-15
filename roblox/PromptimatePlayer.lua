@@ -18,7 +18,7 @@ local HttpService = game:GetService("HttpService")
 
 export type Clip = {
 	name: string, fps: number, frames: number, loop: boolean, parts: { string },
-	rot: { { number } }, root: { { number } },
+	rot: { { number } }, root: { { number } }, contacts: { number }?,
 }
 
 local MOTORS: { [string]: { parent: string, motor: string } } = {
@@ -142,6 +142,7 @@ function Player.new(character: Model, clip: Clip, opts: { origin: CFrame?, speed
 	self.time = 0
 	self.playing = false
 	self.Ended = Instance.new("BindableEvent")
+	self:_precomputeLocks()
 	return self
 end
 
@@ -190,32 +191,143 @@ function Player:_sample(t: number)
 	return world, self.origin * CFrame.new(hips * self.scale)
 end
 
-function Player:_apply(t: number)
-	local world, hipsWorld = self:_sample(t)
+-- Root CFrame and every part's target CFrame for given world rotations (pure math, no instance writes)
+function Player:_chain(world, hipsWorld: CFrame)
 	-- HumanoidRootPart: on the ground under the hips, yawed like the pelvis (so follow cameras keep working)
 	local look = (world.LowerTorso * Vector3.new(0, 0, -1)) * Vector3.new(1, 0, 1)
 	if look.Magnitude < 1e-3 then
 		look = self.origin.LookVector
 	end
-	local rootPos = Vector3.new(hipsWorld.X, hipsWorld.Y - self.rootToHips, hipsWorld.Z)
 	local rootPos0 = self.origin.Position + Vector3.new(0, self.scale - self.rootToHips, 0)
-	local rootCF = CFrame.lookAt(Vector3.new(rootPos.X, rootPos0.Y, rootPos.Z), Vector3.new(rootPos.X, rootPos0.Y, rootPos.Z) + look.Unit)
-	self.rootPart.CFrame = rootCF
-	-- Root motor carries the full hips placement relative to the HumanoidRootPart
+	local p = Vector3.new(hipsWorld.X, rootPos0.Y, hipsWorld.Z)
+	local rootCF = CFrame.lookAt(p, p + look.Unit)
 	local targets: { [string]: CFrame } = { HumanoidRootPart = rootCF }
 	targets.LowerTorso = CFrame.new(hipsWorld.Position) * world.LowerTorso
+	local transforms = {}
 	for _, name in ORDER do
 		local joint = self.motors[name] :: any
 		local c0, c1 = jointC0(joint), jointC1(joint)
 		local parentCF = targets[MOTORS[name].parent]
 		if name == "LowerTorso" then
-			joint.Transform = (parentCF * c0):Inverse() * targets.LowerTorso * c1
+			transforms[name] = (parentCF * c0):Inverse() * targets.LowerTorso * c1
 		else
 			-- rotation-only transform: joint positions come from the rig
 			local rot = rotationOnly(parentCF * c0):Inverse() * world[name] * rotationOnly(c1)
-			joint.Transform = rot
+			transforms[name] = rot
 			targets[name] = parentCF * c0 * rot * c1:Inverse()
 		end
+	end
+	return rootCF, targets, transforms
+end
+
+local LEGS = {
+	{ upper = "LeftUpperLeg", lower = "LeftLowerLeg", hip = "LeftHipRigAttachment", knee = "LeftKneeRigAttachment",
+		ankle = "LeftAnkleRigAttachment", bit = 1 },
+	{ upper = "RightUpperLeg", lower = "RightLowerLeg", hip = "RightHipRigAttachment", knee = "RightKneeRigAttachment",
+		ankle = "RightAnkleRigAttachment", bit = 2 },
+}
+
+-- Ankle world position of a leg from chain targets
+function Player:_ankle(targets, leg): Vector3
+	return (targets[leg.lower] * (self.parts[leg.lower]:FindFirstChild(leg.ankle) :: Attachment).CFrame).Position
+end
+
+-- Foot locking on this rig: planted spans (clip.contacts) pin the ankle where it touched down. R15 proportions
+-- differ from the source skeleton, so without this, feet that were pinned in the source drift on the avatar.
+function Player:_precomputeLocks()
+	local clip = self.clip
+	if not clip.contacts then
+		return
+	end
+	local n = clip.frames
+	local ankles = {}
+	for f = 0, n - 1 do
+		local world, hips = self:_sample(f / clip.fps)
+		local _, targets = self:_chain(world, hips)
+		ankles[f] = { self:_ankle(targets, LEGS[1]), self:_ankle(targets, LEGS[2]) }
+	end
+	self.locks = {}
+	local BLEND = 4
+	for li, leg in LEGS do
+		local planted = {}
+		for f = 0, n - 1 do
+			planted[f] = bit32.band(clip.contacts[f + 1] or 0, leg.bit) ~= 0
+		end
+		local target, weight = {}, {}
+		local f = 0
+		while f < n do
+			if planted[f] then
+				local s = f
+				while f < n and planted[f] do
+					f += 1
+				end
+				local e = f - 1
+				local pin = ankles[s][li]
+				for g = math.max(0, s - BLEND), math.min(n - 1, e + BLEND) do
+					local w = 1
+					if g < s then
+						w = 1 - (s - g) / (BLEND + 1)
+					elseif g > e then
+						w = 1 - (g - e) / (BLEND + 1)
+					end
+					w = w * w * (3 - 2 * w)   -- smoothstep
+					if not weight[g] or w > weight[g] then
+						weight[g], target[g] = w, pin
+					end
+				end
+			else
+				f += 1
+			end
+		end
+		self.locks[li] = { target = target, weight = weight }
+	end
+end
+
+-- Two-bone IK on one leg: rotate the upper and lower leg so the ankle reaches `goal` (knee stays in its plane)
+function Player:_legIK(world, targets, leg, goal: Vector3)
+	local up, lo = self.parts[leg.upper], self.parts[leg.lower]
+	local H = (targets[leg.upper] * (up:FindFirstChild(leg.hip) :: Attachment).CFrame).Position
+	local K = (targets[leg.upper] * (up:FindFirstChild(leg.knee) :: Attachment).CFrame).Position
+	local A = self:_ankle(targets, leg)
+	local L1, L2 = (K - H).Magnitude, (A - K).Magnitude
+	local toGoal = goal - H
+	local d = math.clamp(toGoal.Magnitude, math.abs(L1 - L2) + 1e-3, L1 + L2 - 1e-3)
+	local dir = toGoal.Unit
+	local pole = (K - H) - dir * (K - H):Dot(dir)
+	if pole.Magnitude < 1e-4 then
+		pole = (world.LowerTorso * Vector3.new(0, 0, -1)) - dir * (world.LowerTorso * Vector3.new(0, 0, -1)):Dot(dir)
+	end
+	pole = pole.Unit
+	local a = (L1 * L1 + d * d - L2 * L2) / (2 * d)
+	local h = math.sqrt(math.max(L1 * L1 - a * a, 0))
+	local K2 = H + dir * a + pole * h
+	local A2 = H + dir * d
+	world[leg.upper] = arc((K - H).Unit, (K2 - H).Unit) * world[leg.upper]
+	world[leg.lower] = arc((A - K).Unit, (A2 - K2).Unit) * world[leg.lower]
+end
+
+function Player:_apply(t: number)
+	local world, hipsWorld = self:_sample(t)
+	local rootCF, targets, transforms = self:_chain(world, hipsWorld)
+	if self.locks then
+		local f = math.clamp(math.floor(t * self.clip.fps + 0.5), 0, self.clip.frames - 1)
+		local changed = false
+		for li, leg in LEGS do
+			local lk = self.locks[li]
+			local w = lk.weight[f]
+			if w and w > 0 then
+				local A = self:_ankle(targets, leg)
+				self:_legIK(world, targets, leg, A:Lerp(lk.target[f], w))
+				changed = true
+			end
+		end
+		if changed then
+			rootCF, targets, transforms = self:_chain(world, hipsWorld)
+		end
+	end
+	self.rootPart.CFrame = rootCF
+	for _, name in ORDER do
+		(self.motors[name] :: any).Transform = transforms[name]
 	end
 	self.targets = targets
 end
