@@ -65,3 +65,6 @@ AGENTS.md
 demo/shared/*.md
 demo/shared/*.json
 demo/clips_summary.json
+
+# --- Benchmark output (generated clips, renders) ---
+bench/results/
