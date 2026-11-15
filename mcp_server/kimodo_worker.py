@@ -37,6 +37,15 @@ GPU_LOCK = ROOT / "logs" / "gpu.lock"
 # copies; a second resident copy spills into shared memory and everything slows down ~20x).
 RELEASE_REQUEST = ROOT / "logs" / "gpu.release_request"
 IDLE_UNLOAD_S = float(os.environ.get("KIMODO_IDLE_UNLOAD_S", "600"))
+TEXT_RELEASE_S = float(os.environ.get("KIMODO_TEXT_RELEASE_S", "20"))  # idle seconds before freeing the text encoder
+IDLE_OVERRIDE = ROOT / "logs" / "motiond.idle_s"   # optional file with seconds; re-read live (e.g. low-RAM nights)
+
+
+def idle_unload_s() -> float:
+    try:
+        return float(IDLE_OVERRIDE.read_text().strip())
+    except (OSError, ValueError):
+        return IDLE_UNLOAD_S
 
 
 @contextlib.contextmanager
@@ -94,10 +103,24 @@ class KimodoWorker:
                 requested = RELEASE_REQUEST.stat().st_mtime > self.last_used
             except OSError:
                 requested = False
+            # low-memory mode: free the text encoder after a short idle period (motion model stays warm)
+            if (self.alive() and not getattr(self, "_text_released", True)
+                    and time.time() - self.last_used > TEXT_RELEASE_S):
+                if self.lock.acquire(blocking=False):
+                    try:
+                        if self.alive():
+                            self.proc.stdin.write("RELEASE_TEXT\n")
+                            self.proc.stdin.flush()
+                            self.proc.stdout.readline()
+                            self._text_released = True
+                    except OSError:
+                        pass
+                    finally:
+                        self.lock.release()
             if requested or n % 15 == 0:
                 if self.lock.acquire(blocking=False):  # never interrupt a running generation
                     try:
-                        if self.alive() and (requested or time.time() - self.last_used > IDLE_UNLOAD_S):
+                        if self.alive() and (requested or time.time() - self.last_used > idle_unload_s()):
                             self.stop()
                     finally:
                         self.lock.release()
@@ -116,6 +139,11 @@ class KimodoWorker:
         # Text encoder on the CPU (Promptimate engine): encoding a prompt takes ~0.6 s there and is cached per prompt,
         # and it leaves the GPU to the motion model (~1.1 GB VRAM total instead of ~6 GB, room for Unity).
         env.setdefault("KIMODO_TEXT_BACKEND", "cpu")
+        # Low-memory mode: the ~5 GB text encoder is loaded only for prompts that aren't cached and released right
+        # after encoding; embeddings persist on disk. Engine RAM between encodes drops from ~6.5 GB to ~1.5 GB,
+        # which matters when Unity/Roblox Studio run alongside on a 16 GB machine. (Ignored by older engines.)
+        env.setdefault("KIMODO_TEXT_LAZY", "1")
+        env.setdefault("KIMODO_EMBED_CACHE_DIR", str(ROOT / ".cache" / "embeddings"))
         env.setdefault("KIMODO_TEXT_LAYER_CHUNK", "32")  # (only matters if the encoder runs on the GPU)
         # The motion graph cache keeps per-stage allocators that make larger graphs (constrained batch-3 passes,
         # 10 s clips) 3-5x slower on this driver; without it a plain 5 s clip is ~10% slower. Net win.
@@ -169,6 +197,7 @@ class KimodoWorker:
             reply = self.proc.stdout.readline().strip()
             dt = time.time() - t0
             self.last_used = time.time()
+            self._text_released = False
         if not reply:
             code = self.proc.poll()
             self.proc = None

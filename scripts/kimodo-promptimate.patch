@@ -1,7 +1,7 @@
 From e3c3a60680e29dc19b7ae807383f072494b48683 Mon Sep 17 00:00:00 2001
 From: promptimate <noreply@localhost>
 Date: Sun, 15 Nov 2026 16:44:50 +0500
-Subject: [PATCH 1/2] Promptimate patches: 2-branch CFG without constraints, V2
+Subject: [PATCH 1/3] Promptimate patches: 2-branch CFG without constraints, V2
  server options (cfg, ccfg, constraints), foot contacts output, motion-first
  load order, prompt embedding cache, KIMODO_TEXT_BACKEND
 
@@ -366,7 +366,7 @@ index 6dbf6da..078bcd3 100644
 From 40f4fa8fa90774369f1fe1b26bf3bd795d36b50a Mon Sep 17 00:00:00 2001
 From: promptimate <noreply@localhost>
 Date: Sun, 15 Nov 2026 19:40:36 +0500
-Subject: [PATCH 2/2] Promptimate: dynamic in-sequence holds (holds= V2 option)
+Subject: [PATCH 2/3] Promptimate: dynamic in-sequence holds (holds= V2 option)
 
 ---
  include/kimodo/kimodo.hpp |  4 ++++
@@ -490,6 +490,185 @@ index 078bcd3..2635e82 100644
          if(constrained){
              normalize(observed);
              auto sampled=sample_motion_from_noise_conditioned(weights,segment.initial_noise,segment.embedding,observed,mask,heading,sampled_frames,steps,text_weight,constraint_weight);
+-- 
+2.54.0.windows.1
+
+
+From 4570e83ff23cf9c6002d6afa105538647a5786b3 Mon Sep 17 00:00:00 2001
+From: promptimate <noreply@localhost>
+Date: Mon, 16 Nov 2026 02:36:10 +0500
+Subject: [PATCH 3/3] Promptimate: low-memory text encoder (KIMODO_TEXT_LAZY,
+ KIMODO_EMBED_CACHE_DIR, RELEASE_TEXT)
+
+---
+ include/kimodo/kimodo.hpp |  2 ++
+ src/generate.cpp          |  6 ++++
+ src/model.cpp             | 73 ++++++++++++++++++++++++++++++++++-----
+ 3 files changed, 73 insertions(+), 8 deletions(-)
+
+diff --git a/include/kimodo/kimodo.hpp b/include/kimodo/kimodo.hpp
+index 10f5677..f6c0f5d 100644
+--- a/include/kimodo/kimodo.hpp
++++ b/include/kimodo/kimodo.hpp
+@@ -58,6 +58,8 @@ public:
+         std::span<const prompt_segment> segments, unsigned transition_frames,
+         unsigned steps, std::uint64_t seed, float text_cfg, float constraint_cfg,
+         const motion_constraints &constraints) const;
++    // Promptimate: free the text encoder (low-memory mode reloads it on the next uncached prompt).
++    void release_text() const;
+     ~model();
+     model(const model &) = delete;
+     model &operator=(const model &) = delete;
+diff --git a/src/generate.cpp b/src/generate.cpp
+index 33ae47a..60d21f5 100644
+--- a/src/generate.cpp
++++ b/src/generate.cpp
+@@ -63,6 +63,12 @@ int main(int argc, char **argv) try {
+         if (!model) throw std::runtime_error(model.error());
+         std::string line;
+         while (std::getline(std::cin, line)) {
++            if (!line.empty() && line.back() == '\r') line.pop_back();
++            if (line == "RELEASE_TEXT") {   // Promptimate: host is idle, free the text encoder
++                (*model)->release_text();
++                std::cout << "OK\t0\t0\n" << std::flush;
++                continue;
++            }
+             try {
+                 auto fields = split_fields(line);
+                 // Promptimate: "V2 [key=value ...] -- <legacy fields>". Keys: cfg (text
+diff --git a/src/model.cpp b/src/model.cpp
+index cd91189..5ba7dab 100644
+--- a/src/model.cpp
++++ b/src/model.cpp
+@@ -14,6 +14,8 @@
+ #include <algorithm>
+ #include <cstdio>
+ #include <cstdlib>
++#include <filesystem>
++#include <fstream>
+ #include <string_view>
+ #include <map>
+ #include <mutex>
+@@ -26,7 +28,12 @@ struct model::impl {
+     const detail::skeleton_spec *skeleton = nullptr;
+ #ifdef KIMODO_HAVE_GGML
+     mutable std::unique_ptr<detail::ggml_motion_weights> weights;
+-    std::unique_ptr<detail::llm_text_encoder> text;
++    mutable std::unique_ptr<detail::llm_text_encoder> text;
++    // Promptimate low-memory mode (KIMODO_TEXT_LAZY=1): the ~5 GB text encoder is loaded only when a prompt
++    // isn't cached and released right after encoding; KIMODO_EMBED_CACHE_DIR keeps embeddings on disk.
++    std::string text_path;
++    bool text_lazy = false;
++    bool text_release_now = false;
+     mutable std::mutex inference_mutex;
+     // Promptimate: prompt -> embedding cache so re-rolls / multi-take requests skip the LLM encoder.
+     mutable std::mutex embedding_mutex;
+@@ -34,6 +41,11 @@ struct model::impl {
+ #endif
+ };
+ model::model(std::unique_ptr<impl> state) : impl_(std::move(state)) {}
++void model::release_text() const {
++#ifdef KIMODO_HAVE_GGML
++    if (!impl_->text_path.empty()) impl_->text.reset();
++#endif
++}
+ model::~model() = default;
+ 
+ std::expected<std::unique_ptr<model>, std::string> model::load(std::string_view motion_path, std::string_view text_path) {
+@@ -55,7 +67,12 @@ std::expected<std::unique_ptr<model>, std::string> model::load(std::string_view
+         if (!loaded) return std::unexpected(loaded.error());
+         state->weights = std::move(*loaded);
+     }
+-    if (!text_path.empty()) {
++    state->text_path = std::string(text_path);
++    const char *lazy = std::getenv("KIMODO_TEXT_LAZY");
++    state->text_lazy = lazy && std::string_view(lazy) == "1";
++    const char *rel = std::getenv("KIMODO_TEXT_RELEASE");
++    state->text_release_now = rel && std::string_view(rel) == "immediate";
++    if (!text_path.empty() && !state->text_lazy) {
+         auto text = detail::llm_text_encoder::load(text_path);
+         if (!text) return std::unexpected(text.error());
+         state->text = std::move(*text);
+@@ -70,8 +87,14 @@ std::expected<motion_data, std::string> model::generate_text(
+     std::string_view utf8_prompt, unsigned frames, unsigned steps, std::uint64_t seed,
+     float text_cfg, float constraint_cfg) const {
+ #ifdef KIMODO_HAVE_GGML
+-    if (!impl_->text) return std::unexpected("model was loaded without a native text bundle");
++    if (!impl_->text && impl_->text_path.empty()) return std::unexpected("model was loaded without a native text bundle");
++    if (!impl_->text) {   // low-memory mode
++        auto text = detail::llm_text_encoder::load(impl_->text_path);
++        if (!text) return std::unexpected(text.error());
++        impl_->text = std::move(*text);
++    }
+     auto embedding = impl_->text->encode(utf8_prompt);
++    if (impl_->text_lazy && impl_->text_release_now) impl_->text.reset();
+     if (!embedding) return std::unexpected(embedding.error());
+     return generate_embedding(*embedding, frames, steps, seed, text_cfg, constraint_cfg);
+ #else
+@@ -144,8 +167,16 @@ std::expected<motion_data, std::string> model::generate_text_sequence(
+     unsigned steps, std::uint64_t seed, float text_cfg, float constraint_cfg,
+     const motion_constraints &constraints) const {
+ #ifdef KIMODO_HAVE_GGML
+-    if (!impl_->text) return std::unexpected("model was loaded without a native text bundle");
++    if (!impl_->text && impl_->text_path.empty()) return std::unexpected("model was loaded without a native text bundle");
+     if (segments.empty() || segments.size() > 16) return std::unexpected("sequence requires 1..16 prompt segments");
++    const char *cache_dir_env = std::getenv("KIMODO_EMBED_CACHE_DIR");
++    const std::string cache_dir = cache_dir_env ? cache_dir_env : "";
++    auto cache_file = [&](const std::string &prompt) {
++        std::uint64_t h = 1469598103934665603ULL;   // FNV-1a 64 of prompt + text bundle path
++        for (unsigned char c : prompt + "\x1f" + impl_->text_path) { h ^= c; h *= 1099511628211ULL; }
++        char name[32]; std::snprintf(name, sizeof name, "%016llx.f32", static_cast<unsigned long long>(h));
++        return std::filesystem::path(cache_dir) / name;
++    };
+     if (steps == 0 || steps > 1000 || transition_frames == 0 || transition_frames > 60)
+         return std::unexpected("invalid sequence sampling parameters");
+     std::vector<std::array<float, embedding_width>> embeddings;
+@@ -163,15 +194,41 @@ std::expected<motion_data, std::string> model::generate_text_sequence(
+                 continue;
+             }
+         }
+-        auto embedding=impl_->text->encode(segment.prompt);
+-        if (!embedding) return std::unexpected(embedding.error());
+-        embeddings.push_back(*embedding);
++        std::array<float, embedding_width> emb{};
++        bool have = false;
++        if (!cache_dir.empty()) {
++            std::ifstream in(cache_file(segment.prompt), std::ios::binary);
++            if (in && in.read(reinterpret_cast<char *>(emb.data()), sizeof(float) * embedding_width)) {
++                have = true;
++                if (detail::profile_enabled()) std::fprintf(stderr, "profile text.encode cache=disk\n");
++            }
++        }
++        if (!have) {
++            if (!impl_->text) {   // low-memory mode: load the encoder only now
++                auto text = detail::llm_text_encoder::load(impl_->text_path);
++                if (!text) return std::unexpected(text.error());
++                impl_->text = std::move(*text);
++            }
++            auto embedding=impl_->text->encode(segment.prompt);
++            if (!embedding) return std::unexpected(embedding.error());
++            emb = *embedding;
++            if (!cache_dir.empty()) {
++                std::error_code ec;
++                std::filesystem::create_directories(cache_dir, ec);
++                std::ofstream out(cache_file(segment.prompt), std::ios::binary);
++                out.write(reinterpret_cast<const char *>(emb.data()), sizeof(float) * embedding_width);
++            }
++        }
++        embeddings.push_back(emb);
+         {
+             const std::lock_guard cache_lock(impl_->embedding_mutex);
+             if (impl_->embedding_cache.size() >= 512) impl_->embedding_cache.clear();
+-            impl_->embedding_cache.emplace(segment.prompt, *embedding);
++            impl_->embedding_cache.emplace(segment.prompt, emb);
+         }
+     }
++    // release right away only if asked to (KIMODO_TEXT_RELEASE=immediate); otherwise the host sends RELEASE_TEXT
++    // when idle, so a burst of new prompts doesn't reload the ~5 GB encoder each time
++    if (impl_->text_lazy && impl_->text_release_now && impl_->text) impl_->text.reset();
+     const std::lock_guard inference_lock(impl_->inference_mutex);
+     // Initialize and warm the quantized text backend before the F32 motion
+     // backend applies its process-wide Vulkan parity flags. This preserves
 -- 
 2.54.0.windows.1
 
