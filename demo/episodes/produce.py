@@ -147,7 +147,9 @@ def pace(ep, out_dir: Path) -> None:
         v = ln.get("voice") or voice
         p = tts(ln["text"], v, speed, out_dir / "vo" / f"l{k:02d}_{v}_{hashlib.sha1((ln['text'] + str(speed)).encode()).hexdigest()[:8]}.wav")
         d = duration(p)
-        t0 = float(ln["at"]) if isinstance(ln.get("at"), (int, float)) else (t + (ln.get("gap", 0.12) if k else 0))
+        prev_txt = (ep.LINES[k - 1]["text"] if isinstance(ep.LINES[k - 1], dict) else ep.LINES[k - 1][1]) if k else ""
+        breath = 0.35 if prev_txt.rstrip().endswith(("!", "?", "…", "...")) else 0.22   # a breath between sentences
+        t0 = float(ln["at"]) if isinstance(ln.get("at"), (int, float)) else (t + (ln.get("gap", breath) if k else 0))
         marks[ln.get("id") or f"L{k}"] = (t0, t0 + d)
         lines.append((round(t0, 3), ln["text"]) + ((ln["voice"],) if ln.get("voice") else ()))
         t = t0 + d
@@ -434,6 +436,7 @@ def _main():
         log("package", _RT.install())       # pushes changed player/director code to Studio
         t = time.time()
         cams = [RR.CameraCue(**c) for c in ep.CAMERAS]
+        RR.cover.cut_times = sorted(ln[0] for ln in ep.LINES)     # coverage cuts on the sentence starts
         r = RR.record(cams, name=a.episode, quality="final", end=getattr(ep, "LENGTH", None))
         info = json.loads(r[0])
         for w in info.get("camera_warnings", [])[:8]:

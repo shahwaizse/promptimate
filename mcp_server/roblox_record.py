@@ -137,8 +137,25 @@ def cover(cues, t_end: float, target: float | None = None):
             continue
         n = max(2, round(dur / target))
         step = dur / n
+        starts = [c.start + j * step for j in range(n)]
+        # cut on the narration's sentence starts when there are some inside the shot (viewers expect a new
+        # picture with each new line); even splits otherwise
+        marks = [m for m in (cover.cut_times or []) if c.start + 0.9 <= m <= end - 0.9]
+        if marks:
+            picked = [c.start]
+            for m in marks:
+                if m - picked[-1] >= 1.1 and end - m >= 0.9:
+                    picked.append(m)
+            # a long gap between sentence starts still gets an even split inside it
+            full = []
+            for k2, a0 in enumerate(picked):
+                a1 = picked[k2 + 1] if k2 + 1 < len(picked) else end
+                m2 = max(1, round((a1 - a0) / (target * 1.25)))
+                full += [a0 + (a1 - a0) * q / m2 for q in range(m2)]
+            starts = full
+            n = len(starts)
         for j in range(n):
-            u = {"start": round(c.start + j * step, 3), "cover": False}
+            u = {"start": round(starts[j], 3), "cover": False}
             if j > 0:
                 if c.with_:      # two-shot -> single of subject -> two-shot -> single of the other -> ...
                     m = j % 4
@@ -158,6 +175,9 @@ def cover(cues, t_end: float, target: float | None = None):
                     u["name"] = f"{c.name} /{j + 1}"
             out.append(c.model_copy(update=u))
     return out
+
+
+cover.cut_times = None
 
 
 def frame_subjects(cues, t_end: float):
@@ -458,28 +478,43 @@ def image_qa(cues, perf, size, t_end):
     rect = FG.calibrate(studio(), vp)
     studio().luau(FG.HIDE_NAMES)
     out, notes = list(cues), []
+
+    def badness(c, pos, look, fov, t):
+        """0 = readable; adds the flat-colour share, +1 when the subject's head is outside the frame, +1 when its head
+        and body are both hidden behind something."""
+        im = FG.portrait(studio(), rect, vp, list(pos), list(look), fov, seek_t=t, out=(270, 480))
+        bl = _blank(im)
+        sc = max(0.0, bl - BLANK_MAX) * 4 + (bl > BLANK_MAX)
+        r = studio().luau_json(f"return _G.PromptimateDirector.camcheck({t:.3f}, game:GetService('HttpService'):JSONDecode("
+                               f"{long_str(json.dumps([{'pos': list(map(float, pos)), 'look': list(map(float, look)), 'fov': fov, 'subjects': [c.subject], 'r': 0.6}]))}))")[0]
+        v = (r.get("subjects") or {}).get(c.subject)
+        if v:
+            u, w, z = _project(np.asarray(pos, float), np.asarray(look, float), fov, size, v["head"])
+            if z <= 0 or not (0.03 < u < 0.97 and 0.03 < w < 0.92):
+                sc += 1
+            if v.get("blocked", 0) >= 2:
+                sc += 1
+        return sc, bl
     for i, cand in alts.items():
         c = out[i]
         b = out[i + 1].start if i + 1 < len(out) else t_end
         t = (c.start + b) / 2
         _k, _c, pos, look, fov = camera(out, perf, t)
-        im = FG.portrait(studio(), rect, vp, list(pos), list(look), fov, seek_t=t, out=(270, 480))
-        sc = _blank(im)
-        if sc <= BLANK_MAX:
+        sc, bl = badness(c, pos, look, fov, t)
+        if sc <= 0:
             continue
         best = (sc, None)
-        for pos2, look2, fov2 in cand:
-            im2 = FG.portrait(studio(), rect, vp, list(pos2), list(look2), fov2, seek_t=t, out=(270, 480))
-            sc2 = _blank(im2)
+        for pos2, look2, fov2 in cand[:5]:
+            sc2, _ = badness(c, pos2, look2, fov2, t)
             if sc2 < best[0]:
                 best = (sc2, (pos2, look2, fov2))
-            if sc2 <= BLANK_MAX:
+            if sc2 <= 0:
                 break
         if best[1]:
             pos2, look2, fov2 = best[1]
             out[i] = c.model_copy(update={"pos": [round(v, 3) for v in pos2], "look": [round(v, 3) for v in look2],
                                           "fov": fov2})
-        notes.append(f"{c.name or c.start}: frame {sc:.2f} flat -> {best[0]:.2f}")
+        notes.append(f"{c.name or c.start}: bad {sc:.2f} (flat {bl:.2f}) -> {best[0]:.2f}")
     studio().luau(FG.RESTORE_NAMES)
     return out, notes
 
