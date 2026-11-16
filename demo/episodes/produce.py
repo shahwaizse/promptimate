@@ -149,6 +149,9 @@ def pace(ep, out_dir: Path) -> None:
         d = duration(p)
         prev_txt = (ep.LINES[k - 1]["text"] if isinstance(ep.LINES[k - 1], dict) else ep.LINES[k - 1][1]) if k else ""
         breath = 0.35 if prev_txt.rstrip().endswith(("!", "?", "…", "...")) else 0.22   # a breath between sentences
+        txt_k = ln["text"] if isinstance(ln, dict) else ln[1]
+        if len(txt_k.split()) <= 2:
+            breath = 0.45                     # a beat before a one- or two-word reveal ("Zero." "Forty-eight.")
         t0 = float(ln["at"]) if isinstance(ln.get("at"), (int, float)) else (t + (ln.get("gap", breath) if k else 0))
         marks[ln.get("id") or f"L{k}"] = (t0, t0 + d)
         lines.append((round(t0, 3), ln["text"]) + ((ln["voice"],) if ln.get("voice") else ()))
@@ -175,8 +178,9 @@ def pace(ep, out_dir: Path) -> None:
         if hasattr(ep, name):
             setattr(ep, name, res(getattr(ep, name)))
     ep.LINES = lines
-    if not hasattr(ep, "LENGTH") or ep.LENGTH is None:
-        ep.LENGTH = round(t + float(getattr(ep, "TAIL", 1.2)), 2)
+    tail = float(getattr(ep, "TAIL", 1.6))
+    if not hasattr(ep, "LENGTH") or ep.LENGTH is None or float(ep.LENGTH) < t + tail:
+        ep.LENGTH = round(t + tail, 2)        # never cut off mid-line: hold the last shot after the last word
     log(f"paced: {len(lines)} lines, narration ends {t:.1f}s, length {ep.LENGTH}s")
 
 
