@@ -174,6 +174,7 @@ def frame_subjects(cues, t_end: float):
         if c.with_:
             q.append([c.with_, t])
     poses = studio().luau_json(POSE_LUAU.replace("__Q__", long_str(json.dumps(q))))
+    frame_subjects.alts = {}
     k = 0
     out = list(cues)
     for i, c in todo:
@@ -205,6 +206,7 @@ def frame_subjects(cues, t_end: float):
             "return H:JSONEncode(out)")
         res = runs[len(runs) // 2]
         best, best_score = 0, 1e9
+        ranked = []
         for j in range(len(cams)):
             score = 0.0
             for run in runs:     # the shot is judged over its length, not one instant (arms move)
@@ -224,8 +226,11 @@ def frame_subjects(cues, t_end: float):
             score += 4 if pitch > 40 else 1.5 if pitch > 28 else 0              # looking down on hats
             ang, lift, sz = cands[j]
             score += abs(ang - c.angle) / 25 * 0.5 + abs(lift) * 3 + (2.5 if sz != c.shot else 0)
+            ranked.append((score, j))
             if score < best_score:
                 best, best_score = j, score
+        ranked.sort()
+        frame_subjects.alts[i] = [_cam_for(pose, other, cands[j][2], cands[j][0], cands[j][1]) for _, j in ranked[1:8]]
         if os.environ.get("PROMPTIMATE_FRAME_DEBUG"):
             r = res[best]
             print(f"frame {c.name or c.start}: angle {cands[best]} score {best_score:.1f} fg {r.get('fg', 0):.2f} "
@@ -427,6 +432,56 @@ def frame(cues, perf, t, size, vp, draft, cid, state):
             state["fov"] = row["fov"]
         imgs.append(_capture(f"{cid}_{i}", pos, row["look"]))
     return imgs, rows
+
+
+def _blank(im) -> float:
+    """Share of the frame taken by its single most common colour (coarse): ~1 for a camera inside a hat, a throne
+    or a body (one flat colour fills the frame), ~0.2-0.4 for a readable shot."""
+    a = np.asarray(im.convert("RGB").resize((72, 128)), dtype=np.int32) // 43
+    keys = a[:, :, 0] * 36 + a[:, :, 1] * 6 + a[:, :, 2]
+    return float(np.bincount(keys.ravel()).max() / keys.size)
+
+
+BLANK_MAX = 0.5
+
+
+def image_qa(cues, perf, size, t_end):
+    """Look at each subject shot's actual picture (mid-shot frame): when one flat colour fills most of it (camera inside
+    a prop, a hat, a body), the next-best framing candidates are tried until one is readable."""
+    alts = getattr(frame_subjects, "alts", {})
+    fast = _fast_setup(size)
+    if not fast or not alts:
+        return cues, []
+    FG = fast["FG"]
+    vp = _viewport()
+    FG.pin_studio(True)
+    rect = FG.calibrate(studio(), vp)
+    studio().luau(FG.HIDE_NAMES)
+    out, notes = list(cues), []
+    for i, cand in alts.items():
+        c = out[i]
+        b = out[i + 1].start if i + 1 < len(out) else t_end
+        t = (c.start + b) / 2
+        _k, _c, pos, look, fov = camera(out, perf, t)
+        im = FG.portrait(studio(), rect, vp, list(pos), list(look), fov, seek_t=t, out=(270, 480))
+        sc = _blank(im)
+        if sc <= BLANK_MAX:
+            continue
+        best = (sc, None)
+        for pos2, look2, fov2 in cand:
+            im2 = FG.portrait(studio(), rect, vp, list(pos2), list(look2), fov2, seek_t=t, out=(270, 480))
+            sc2 = _blank(im2)
+            if sc2 < best[0]:
+                best = (sc2, (pos2, look2, fov2))
+            if sc2 <= BLANK_MAX:
+                break
+        if best[1]:
+            pos2, look2, fov2 = best[1]
+            out[i] = c.model_copy(update={"pos": [round(v, 3) for v in pos2], "look": [round(v, 3) for v in look2],
+                                          "fov": fov2})
+        notes.append(f"{c.name or c.start}: frame {sc:.2f} flat -> {best[0]:.2f}")
+    studio().luau(FG.RESTORE_NAMES)
+    return out, notes
 
 
 def shot_sheet(cues, perf, size, t_end, out: Path) -> Path:
@@ -702,8 +757,16 @@ def record(shots: list[CameraCue], start: float = 0.0, end: float | None = None,
     if os.environ.get("PROMPTIMATE_RBX_COVER", "1") != "0":
         shots = cover(shots, t_end)
     shots = frame_subjects(shots, t_end)
+    qa_notes = []
+    if os.environ.get("PROMPTIMATE_RBX_IMAGE_QA", "1") != "0":
+        try:
+            shots, qa_notes = image_qa(shots, perf, size, t_end)
+        except Exception as e:
+            qa_notes = [f"image QA skipped: {e}"[:200]]
     warns, _ = check_cameras(shots, perf, size, t_end)
     out = {"shots": len(shots), "seconds": round(t_end - start, 2)}
+    if qa_notes:
+        out["image_qa"] = qa_notes[:20]
     if warns:
         out["camera_warnings"] = warns[:16] + ([f"+{len(warns) - 16} more"] if len(warns) > 16 else [])
     res = []

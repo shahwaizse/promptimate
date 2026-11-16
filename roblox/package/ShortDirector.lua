@@ -542,6 +542,20 @@ function D.camcheck(t: number, cams)
 				end
 			end
 		end
+		-- too close to any character (a head, a hat, an arm right at the lens fills the frame)
+		for _, q in workspace:GetPartBoundsInRadius(pos, 1.2, op) do
+			if visible(q) then
+				local m = q:FindFirstAncestorOfClass("Model")
+				while m and not m:FindFirstChildOfClass("Humanoid") do m = m.Parent and m.Parent:FindFirstAncestorOfClass("Model") end
+				if m then
+					local lp = q.CFrame:PointToObjectSpace(pos)
+					local s2 = q.Size / 2 + Vector3.new(1, 1, 1) * 1.0
+					if math.abs(lp.X) <= s2.X and math.abs(lp.Y) <= s2.Y and math.abs(lp.Z) <= s2.Z then
+						near[m.Name .. ".closeup"] = true
+					end
+				end
+			end
+		end
 		local nl = {}
 		for k in near do table.insert(nl, k) end
 		local subs = {}

@@ -438,6 +438,8 @@ def _main():
         info = json.loads(r[0])
         for w in info.get("camera_warnings", [])[:8]:
             log("   cam!", w)
+        for w in info.get("image_qa", []):
+            log("   qa:", w)
         while True:
             time.sleep(3)
             st = json.loads(RR.record([], job=info["job"])[0])
@@ -454,7 +456,7 @@ def _main():
         total = duration(silent)
         wav, placed, credits = mix(ep, total, out)
         cap = getattr(ep, "CAPTIONS", {})
-        captions.size = cap.get("size", 92)
+        captions.size = max(cap.get("size", 92), 84)   # two blind judges: captions read too small below this
         captions.keywords = getattr(ep, "KEYWORDS", ())
         captions.pos = cap.get("pos", "top")
         ass = captions(placed, out / "captions.ass", titles=getattr(ep, "TITLES", []), highlight=cap.get("highlight", True),
