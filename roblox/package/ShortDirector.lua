@@ -264,6 +264,20 @@ local function buildFx(kind: string)
 			b.Size = Vector3.new(1.7, 1.7, 1.7); b:SetAttribute("Offset", o); b.Parent = m
 		end
 	end
+	if kind == "rain" or kind == "snow" then
+		-- falling drops as parts placed from story time (a particle sprite is a star and stretches with the rolled
+		-- recording camera; these read as rain/snow and play the same live and frame by frame)
+		for i = 1, (kind == "rain") and 22 or 18 do
+			local d = Instance.new("Part"); d.Name = "Drop" .. i; d.Anchored = true; d.CanCollide = false; d.CanQuery = false
+			d.Material = Enum.Material.SmoothPlastic; d.Color = spec.color; d.CastShadow = false
+			if kind == "rain" then d.Size = Vector3.new(0.07, 0.55, 0.07); d.Transparency = 0.15
+			else d.Shape = Enum.PartType.Ball; d.Size = Vector3.new(0.22, 0.22, 0.22) end
+			d:SetAttribute("Seed", i)
+			d.Parent = m
+		end
+		m.Parent = fxFolder()
+		return m
+	end
 	local e = Instance.new("ParticleEmitter")
 	e.Rate = spec.rate; e.Speed = NumberRange.new(spec.speed); e.Lifetime = NumberRange.new(spec.life)
 	e.Size = NumberSequence.new(spec.size); e.EmissionDirection = spec.dir; e.SpreadAngle = Vector2.new(8, 8)
@@ -304,17 +318,29 @@ local function poseFx(t: number)
 			continue
 		end
 		local e = m.Source:FindFirstChildOfClass("ParticleEmitter")
+		local cloudy = f.kind == "rain" or f.kind == "snow"
 		if on and head then
-			local top = head.Position + Vector3.new(0, (f.kind == "rain" or f.kind == "snow") and 3.2 or 0.6, 0)
+			local top = head.Position + Vector3.new(0, cloudy and 3.0 or 0.6, 0)
 			m.Source.CFrame = CFrame.new(top)
+			local fall = (f.kind == "rain") and 9 or 1.6       -- studs per second
+			local span = 2.6                                   -- from the cloud down past the head
 			for _, b in m:GetChildren() do
-				if b.Name:sub(1, 4) == "Puff" then b.Transparency = 0; b.CFrame = CFrame.new(top + b:GetAttribute("Offset")) end
+				if b.Name:sub(1, 4) == "Puff" then
+					b.Transparency = 0; b.CFrame = CFrame.new(top + b:GetAttribute("Offset"))
+				elseif b.Name:sub(1, 4) == "Drop" then
+					local k = b:GetAttribute("Seed")
+					local ox, oz = math.sin(k * 12.9898) * 1.1, math.cos(k * 78.233) * 1.1
+					local ph = ((t * fall / span) + (k * 0.6180339) % 1) % 1
+					local wob = (f.kind == "snow") and math.sin(t * 2 + k) * 0.25 or 0
+					b.Transparency = (f.kind == "rain") and 0.15 or 0
+					b.CFrame = CFrame.new(top + Vector3.new(ox + wob, -0.6 - ph * span, oz))
+				end
 			end
-			e.Enabled = true
+			if e then e.Enabled = true end
 		else
-			e.Enabled = false
+			if e then e.Enabled = false end
 			for _, b in m:GetChildren() do
-				if b.Name:sub(1, 4) == "Puff" then b.Transparency = 1 end
+				if b.Name:sub(1, 4) == "Puff" or b.Name:sub(1, 4) == "Drop" then b.Transparency = 1 end
 			end
 		end
 	end
