@@ -228,6 +228,8 @@ FX = [
     {"actor": "Grandpa", "kind": "sparkle", "show": [["@ran", "@laughed.end"]]},
     {"actor": "Grandpa", "kind": "confetti", "show": [["@birthday", "@birthday.end"]]},
     {"actor": "Grandpa2", "kind": "sparkle", "show": [["@twist", "@twist+1.6"]]},
+    {"actor": "Grandpa", "kind": "label", "show": [["@wish", "@wish.end", "AGE 80"], ["@birthday", "@birthday.end", "AGE 80"]]},
+    {"actor": "GrandpaR", "kind": "label", "show": [["@turtle", "@turtle.end", "NIGHT 1"], ["@the", "@the.end", "NIGHT 2"], ["@what", "@what.end", "NIGHT 3"]]},
 ]
 MUSIC = {"query": "funny", "pick": 2, "from": 0, "gain": 0.45}
 SFX = [("@rule+1.4", "yawn", 0.5), ("@how+0.6", "meow", 0.7), ("@small+0.8", "snore", 0.5), ("@small+2.4", "dinosaur roar", 0.6),

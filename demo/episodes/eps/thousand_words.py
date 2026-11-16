@@ -216,9 +216,11 @@ HIDE = [["Workspace", "Sets", n] for n in ("PaidBench", "SaleChair0", "SaleChair
         ["Workspace", "Sets", "TimmyRoom", "Poster"]]
 PROPS = [{"path": p, "show": []} for p in HIDE]
 FX = [
-    {"actor": "Timmy", "kind": "rain", "show": [["@dumb", "@away.end"]]},
     {"actor": "Mom", "kind": "sparkle", "show": [["@gave", "@mouth.end"]]},
     {"actor": "Mom", "kind": "hearts", "show": [["@laughed", "@left.end"]]},
+    {"actor": "Timmy", "kind": "label", "show": [["@me+2.4", "@me.end", "1000 WORDS"]]},
+    {"actor": "Mom", "kind": "label", "show": [["@mom+1.2", "@since.end", "0 WORDS"], ["@gave", "@mouth.end", "1000 WORDS"], ["@left", "@left.end", "984 WORDS"]]},
+    {"actor": "Preston", "kind": "label", "show": [["@found", "@found.end", "50K WORDS"]]},
 ]
 MUSIC = {"query": "piano", "pick": 0, "from": 0, "gain": 0.45}
 SFX = [("@click+2.6", "click", 0.7), ("@click+3.0", "click", 0.7), ("@click+3.4", "click", 0.7), ("@hi", "pop", 0.5),

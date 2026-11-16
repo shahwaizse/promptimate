@@ -245,6 +245,8 @@ FX = [
     {"actor": "PrestonA", "kind": "sparkle", "show": [["@swap", "@swap.end"], ["@back", "@back.end"]]},
     {"actor": "Mom", "kind": "confetti", "show": [["@pop", "@isamom.end"]]},
     {"actor": "PrestonB", "kind": "confetti", "show": [["@pop", "@isamom.end"]]},
+    {"actor": "TimmyB", "kind": "label", "show": [["@me+1.4", "@me.end", "POOREST"]]},
+    {"actor": "PrestonA", "kind": "label", "show": [["@trip+1.8", "@trip.end", "RICHEST"]]},
 ]
 MUSIC = {"query": "happy", "pick": 1, "from": 0, "gain": 0.45}
 SFX = [("@rule+1.0", "gasp", 0.5), ("@flash+1.6", "pop", 0.7), ("@cat+0.8", "meow", 0.6), ("@cat+3.0", "groan", 0.5),

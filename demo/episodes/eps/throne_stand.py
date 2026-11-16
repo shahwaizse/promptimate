@@ -222,11 +222,12 @@ HIDE = [["Workspace", "Sets", n] for n in ("PaidBench", "SaleChair0", "SaleChair
         ["Workspace", "Sets", "TimmyRoom", "Poster"]]
 PROPS = [{"path": p, "show": []} for p in HIDE]
 FX = [
-    {"actor": "PrestonM", "kind": "rain", "show": [["@gone", "@notruck.end"]]},
     {"actor": "TimmyM", "kind": "sparkle", "show": [["@notruck+1.2", "@notruck.end"]]},
     {"actor": "Man", "kind": "confetti", "show": [["@newrules", "@newrules.end"]]},
     {"actor": "Lady", "kind": "confetti", "show": [["@newrules", "@newrules.end"]]},
     {"actor": "LeoS", "kind": "confetti", "show": [["@newrules", "@newrules.end"]]},
+    {"actor": "PrestonM", "kind": "label", "show": [["@rule", "@longest", "KING"], ["@longest", "@longest.end", "3 YEARS"], ["@longest.end", "@jumped", "KING"], ["@jumped", "@notruck.end", "JUST A GUY"]]},
+    {"actor": "TimmyM", "kind": "label", "show": [["@notruck+1.2", "@both", "KING"], ["@both", "@nobody.end", "JUST A GUY"]]},
 ]
 MUSIC = {"query": "funny", "pick": 1, "from": 0, "gain": 0.45}
 SFX = [("@rule+0.6", "fanfare", 0.5), ("@seat+2.4", "pop", 0.5), ("@shortest+2.0", "sneeze", 0.6), ("@legend", "construction", 0.4),

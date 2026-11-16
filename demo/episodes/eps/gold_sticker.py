@@ -238,6 +238,9 @@ FX = [
     {"actor": "Preston", "kind": "sparkle", "show": [["@preston", "@preston.end"]]},
     {"actor": "Timmy", "kind": "sparkle", "show": [["@suit+2.2", "@suit.end"]]},
     {"actor": "Leo", "kind": "sparkle", "show": [["@ding2", "@everyone.end"], ["@count+1.4", "@count.end"], ["@twist.end-1.2", "@twist.end"]]},
+    {"actor": "Leo", "kind": "label", "show": [["@leo", "@pigeons.end", "★ 0"], ["@count+1.4", "@count.end", "★ 47"], ["@twist.end-1.2", "@twist.end", "★ 48"]]},
+    {"actor": "Preston", "kind": "label", "show": [["@preston", "@preston.end", "★ 200"]]},
+    {"actor": "Timmy", "kind": "label", "show": [["@me", "@me.end", "★ 6"], ["@fewest", "@busy.end", "★ 0"]]},
 ]
 MUSIC = {"query": "happy", "pick": 2, "from": 0, "gain": 0.45}
 SFX = [("@rule+1.2", "ding", 0.6), ("@ding+1.0", "ding", 0.7), ("@fake.end-1.0", "slide whistle", 0.5),

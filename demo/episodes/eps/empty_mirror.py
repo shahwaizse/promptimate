@@ -227,6 +227,8 @@ FX = [
     {"actor": "Mom", "kind": "sparkle", "show": [["@smile", "@mine.end"]]},
     {"actor": "Mom", "kind": "hearts", "show": [["@uncovered", "@uncovered.end"]]},
     {"actor": "TimmyB", "kind": "sparkle", "show": [["@twist+1.4", "@twist.end"]]},
+    {"actor": "Mom", "kind": "label", "show": [["@covered.end-1.6", "@covered.end", "9 DAYS"]]},
+    {"actor": "TimmyR", "kind": "label", "show": [["@stare", "@stare.end", "9 HOURS"]]},
 ]
 MUSIC = {"query": "mysterious", "pick": 0, "from": 0, "gain": 0.45}
 SFX = [("@rule+2.6", "whoosh", 0.5), ("@how+0.6", "shimmer", 0.5), ("@small+2.0", "boing", 0.6), ("@legend+1.2", "horse neigh", 0.6),

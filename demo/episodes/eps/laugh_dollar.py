@@ -245,9 +245,12 @@ PROPS = [{"path": p, "show": []} for p in HIDE] + [
 FX = [
     {"actor": "Man", "kind": "sparkle", "show": [["@pocket", "@pocket.end"]]},
     {"actor": "TimmyM", "kind": "sparkle", "show": [["@robot+1.6", "@twelve.end"]]},
-    {"actor": "Preston", "kind": "rain", "show": [["@found", "@laughed"]]},
     {"actor": "Leo", "kind": "confetti", "show": [["@leo_laughs", "@leo_laughs.end"]]},
     {"actor": "Timmy", "kind": "hearts", "show": [["@free", "@free.end"]]},
+    {"actor": "Mom", "kind": "label", "show": [["@pay", "@pay.end", "$10K DUE"]]},
+    {"actor": "Timmy", "kind": "label", "show": [["@lemonade", "@cars", "$11"], ["@cars", "@loan", "$34"], ["@loan", "@loan.end", "$35"]]},
+    {"actor": "TimmyM", "kind": "label", "show": [["@twelve", "@saved", "$10,012"]]},
+    {"actor": "PrestonM", "kind": "label", "show": [["@saved", "@saved.end", "BROKE"]]},
 ]
 MUSIC = {"query": "funny", "pick": 0, "from": 0, "gain": 0.45}
 SFX = [("@rule+0.9", "laugh", 0.5), ("@pocket+0.6", "coin", 0.7), ("@clown+0.4", "clown horn", 0.6), ("@me+2.0", "thud", 0.6),

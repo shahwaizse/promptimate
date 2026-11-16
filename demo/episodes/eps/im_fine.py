@@ -220,6 +220,8 @@ FX = [
     {"actor": "Mom", "kind": "rain", "show": [["@mom", "@sun"]]},
     {"actor": "TimmyB", "kind": "rain", "show": [["@cloud", "@sun"]]},
     {"actor": "PrestonB", "kind": "snow", "show": [["@snow", "@twist.end"]]},
+    {"actor": "Mom", "kind": "label", "show": [["@mom", "@ask.end", "41 DAYS"]]},
+    {"actor": "PrestonB", "kind": "label", "show": [["@twist", "@twist.end", "3 DAYS"]]},
 ]
 MUSIC = {"query": "funny", "pick": 1, "from": 0, "gain": 0.45}
 SFX = [("@rule+1.2", "thunder", 0.5), ("@pop+0.3", "pop", 0.7), ("@pop+1.0", "rain", 0.4), ("@small+1.8", "thunder", 0.6),
