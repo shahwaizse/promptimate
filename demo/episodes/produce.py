@@ -237,8 +237,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 cur = []
         for ci, ch in enumerate(chunks):
             chunk_end = starts[chunks[ci + 1][0]] if ci + 1 < len(chunks) else min(t0 + dur + 0.15, nxt - 0.02)
-            if under_title(starts[ch[0]], chunk_end):
-                continue          # one text layer at a time: the title card carries it
+            # (captions keep running under title cards: titles sit at the top, captions below the faces)
             if not highlight:     # one event per chunk
                 ev.append(f"Dialogue: 0,{_ass_time(starts[ch[0]])},{_ass_time(chunk_end)},Cap,,0,0,0,,"
                           + " ".join(word(words[j]) for j in ch))

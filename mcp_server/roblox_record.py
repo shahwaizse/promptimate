@@ -67,7 +67,7 @@ class CameraCue(BaseModel):
 
 # ------------------------------------------------------------------------------------------- subject framing
 SHOTS = {  # distance (in head heights above the floor ~ character height), camera height and aim (0 = hips, 1 = head), fov
-    "close": (1.5, 0.98, 0.9, 34), "medium": (2.0, 0.88, 0.75, 38), "full": (2.8, 0.8, 0.5, 44),
+    "close": (1.5, 1.0, 0.97, 34), "medium": (2.0, 0.92, 0.82, 38), "full": (2.8, 0.8, 0.5, 44),
     "wide": (4.0, 1.2, 0.4, 50), "low": (1.4, -0.1, 0.85, 42),
 }
 WIDER = {"close": "medium", "medium": "full", "low": "medium"}
