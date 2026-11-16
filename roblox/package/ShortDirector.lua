@@ -295,7 +295,7 @@ local function poseFx(t: number)
 		if f.kind == "label" then
 			local g = m.Source:FindFirstChild("Label")
 			if on and head then
-				m.Source.CFrame = CFrame.new(head.Position + Vector3.new(0, 2.1, 0))
+				m.Source.CFrame = CFrame.new(head.Position + Vector3.new(0, 1.45, 0))   -- just above the hair: higher leaves close-ups
 				g.Enabled = true
 				g.Text.Text = tostring(text or "")
 			else
