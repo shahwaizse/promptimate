@@ -567,7 +567,8 @@ def _assemble(out_dir: Path, name: str, segs, prompt_text: str, best: dict, resu
         pp["pose_pins"] = pins
     files = _finish(out_dir, name, prompt_text, root, rot, loop=loop, in_place=in_place, segs=segs)
     pos = motion.fk(root, rot)
-    render.render_judge_sheet(pos, out_dir / "preview.png", prompt_text)
+    if not os.environ.get("PROMPTIMATE_SKIP_PREVIEW"):    # batch callers that never look at it (Roblox episodes)
+        render.render_judge_sheet(pos, out_dir / "preview.png", prompt_text)
     st = motion.stats(pos)
     chk = motion.checks(pos, prompt_text, in_place=in_place)
     hint = selection.idle_tail_hint(pos, [(s.prompt, round(s.frames / speed)) for s in segs]) if not loop else None

@@ -385,6 +385,7 @@ def _main():
         log("cast", r, f"{T['cast']:.0f}s")
     if "perform" in todo:
         os.environ.setdefault("PROMPTIMATE_RBX_TAKES", "1")
+        os.environ.setdefault("PROMPTIMATE_SKIP_PREVIEW", "1")   # the per-clip preview sheet was 80% of perform's CPU
         # every prompt text-encoded up front under one encoder load (otherwise it reloads every few clips)
         prompts = []
         for act in ep.ACTORS:
