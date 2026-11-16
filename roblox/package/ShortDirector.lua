@@ -222,8 +222,8 @@ end
 -- Effects over a character's head (perf.fx = {{actor, kind, show = {{t0, t1}, ...}}}): the visible consequence
 -- of a story's rule. kinds: rain / snow (a cloud that follows the head), sparkle, confetti, hearts.
 local FX = {
-	rain = { cloud = Color3.fromRGB(95, 100, 110), color = Color3.fromRGB(120, 170, 255), rate = 90, speed = 16,
-		life = 0.45, size = 0.12, dir = Enum.NormalId.Bottom },
+	rain = { cloud = Color3.fromRGB(95, 100, 110), color = Color3.fromRGB(40, 90, 210), rate = 160, speed = 14,
+		life = 0.5, size = 0.28, dir = Enum.NormalId.Bottom },
 	snow = { cloud = Color3.fromRGB(215, 220, 230), color = Color3.fromRGB(255, 255, 255), rate = 45, speed = 3,
 		life = 1.4, size = 0.22, dir = Enum.NormalId.Bottom },
 	sparkle = { color = Color3.fromRGB(255, 220, 90), rate = 25, speed = 1.5, life = 0.9, size = 0.35, dir = Enum.NormalId.Top },
@@ -239,9 +239,13 @@ local function buildLabel()
 	local m = Instance.new("Model"); m.Name = "FX_label"
 	local src = Instance.new("Part"); src.Name = "Source"; src.Anchored = true; src.CanCollide = false
 	src.CanQuery = false; src.Transparency = 1; src.Size = Vector3.new(0.2, 0.2, 0.2); src.Parent = m
-	local g = Instance.new("BillboardGui"); g.Name = "Label"; g.Size = UDim2.fromScale(5, 1.3); g.LightInfluence = 0
+	-- the recorder rolls the camera 90 degrees (portrait frames from a landscape viewport) and billboards roll with
+	-- it: the label is drawn turned back by -90 degrees so it reads upright in the video
+	local g = Instance.new("BillboardGui"); g.Name = "Label"; g.Size = UDim2.fromScale(1.3, 5); g.LightInfluence = 0
 	g.Adornee = src; g.Parent = src
-	local t = Instance.new("TextLabel"); t.Name = "Text"; t.BackgroundTransparency = 1; t.Size = UDim2.fromScale(1, 1)
+	local t = Instance.new("TextLabel"); t.Name = "Text"; t.BackgroundTransparency = 1
+	t.AnchorPoint = Vector2.new(0.5, 0.5); t.Position = UDim2.fromScale(0.5, 0.5)
+	t.Size = UDim2.fromScale(5 / 1.3, 1.3 / 5); t.Rotation = -90
 	t.Font = Enum.Font.FredokaOne; t.TextScaled = true; t.TextColor3 = Color3.fromRGB(255, 214, 40)
 	t.TextStrokeTransparency = 0; t.TextStrokeColor3 = Color3.fromRGB(40, 25, 0); t.Parent = g
 	m.Parent = fxFolder()
@@ -263,14 +267,14 @@ local function buildFx(kind: string)
 	local e = Instance.new("ParticleEmitter")
 	e.Rate = spec.rate; e.Speed = NumberRange.new(spec.speed); e.Lifetime = NumberRange.new(spec.life)
 	e.Size = NumberSequence.new(spec.size); e.EmissionDirection = spec.dir; e.SpreadAngle = Vector2.new(8, 8)
-	e.LightEmission = 0.2; e.Enabled = false
+	e.LightEmission = (kind == "rain") and 0 or 0.2; e.Enabled = false
 	if spec.color then
 		e.Color = ColorSequence.new(spec.color)
 	else
 		e.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 80, 80)),
 			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(80, 200, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 230, 60)) })
 	end
-	if kind == "rain" then e.Squash = NumberSequence.new(-1.5) end
+	-- (no Squash: particle stretch follows the rolled recording camera)
 	e.Parent = src
 	m.Parent = fxFolder()
 	return m
@@ -315,6 +319,8 @@ local function poseFx(t: number)
 		end
 	end
 end
+
+D.poseFx = poseFx
 
 function D.seek(t: number)
 	if not D.actors then D.load() end
