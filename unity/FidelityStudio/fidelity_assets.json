@@ -1,0 +1,126 @@
+{
+  "_doc": "Third-party assets for FidelityStudio, fetched by fetch_assets.py into Assets/ThirdParty/ (gitignored). Nothing here is committed. Poly Haven assets are CC0 (https://polyhaven.com/license); Microsoft Rocketbox avatars are MIT (https://github.com/microsoft/Microsoft-Rocketbox/blob/master/LICENSE).",
+  "polyhaven_models": [
+    {
+      "id": "chess_set",
+      "res": "4k"
+    },
+    {
+      "id": "round_wooden_table_01",
+      "res": "2k"
+    },
+    {
+      "id": "dining_chair_02",
+      "res": "2k"
+    },
+    {
+      "id": "ArmChair_01",
+      "res": "2k"
+    },
+    {
+      "id": "Sofa_01",
+      "res": "2k"
+    },
+    {
+      "id": "vintage_cabinet_01",
+      "res": "2k"
+    },
+    {
+      "id": "book_encyclopedia_set_01",
+      "res": "2k"
+    },
+    {
+      "id": "potted_plant_01",
+      "res": "2k"
+    },
+    {
+      "id": "potted_plant_02",
+      "res": "2k"
+    },
+    {
+      "id": "ceramic_vase_01",
+      "res": "1k"
+    },
+    {
+      "id": "brass_vase_01",
+      "res": "1k"
+    },
+    {
+      "id": "hanging_picture_frame_01",
+      "res": "1k"
+    },
+    {
+      "id": "hanging_picture_frame_02",
+      "res": "1k"
+    },
+    {
+      "id": "standing_picture_frame_01",
+      "res": "1k"
+    },
+    {
+      "id": "mantel_clock_01",
+      "res": "1k"
+    },
+    {
+      "id": "vintage_grandfather_clock_01",
+      "res": "2k"
+    },
+    {
+      "id": "tea_set_01",
+      "res": "1k"
+    },
+    {
+      "id": "side_table_01",
+      "res": "2k"
+    },
+    {
+      "id": "vintage_suitcase",
+      "res": "2k"
+    },
+    {
+      "id": "ornate_mirror_01",
+      "res": "1k"
+    },
+    {
+      "id": "vintage_oil_lamp",
+      "res": "1k"
+    }
+  ],
+  "polyhaven_hdris": [
+    {
+      "id": "ehingen_hillside",
+      "res": "4k",
+      "fmt": "hdr"
+    }
+  ],
+  "polyhaven_textures": [
+    {
+      "id": "rectangular_parquet",
+      "res": "2k"
+    },
+    {
+      "id": "plastered_wall_04",
+      "res": "2k"
+    },
+    {
+      "id": "floral_jacquard",
+      "res": "2k"
+    },
+    {
+      "id": "dark_wood",
+      "res": "2k"
+    }
+  ],
+  "rocketbox": [
+    {
+      "id": "Male_Adult_03",
+      "group": "Adults",
+      "role": "father"
+    },
+    {
+      "id": "Female_Adult_09",
+      "group": "Adults",
+      "role": "daughter"
+    }
+  ]
+}

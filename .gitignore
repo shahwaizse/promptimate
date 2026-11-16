@@ -97,3 +97,13 @@ unity/WorldLab/Assets/WorldLab/Generated/
 unity/WorldLab/ProjectSettings/*
 !unity/WorldLab/ProjectSettings/ProjectVersion.txt
 demo/world/build/
+
+# --- FidelityStudio (HDRP path-traced demo): fetched third-party assets and generated files are never committed ---
+unity/FidelityStudio/Assets/ThirdParty/
+unity/FidelityStudio/Assets/ThirdParty.meta
+unity/FidelityStudio/Assets/Fidelity/Generated/
+unity/FidelityStudio/Assets/Fidelity/Generated.meta
+unity/FidelityStudio/Assets/Promptimate/
+unity/FidelityStudio/Assets/Promptimate.meta
+unity/FidelityStudio/ProjectSettings/
+unity/FidelityStudio/Packages/packages-lock.json

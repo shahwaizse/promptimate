@@ -1,0 +1,21 @@
+{
+  "_doc": "CC0 audio for 'Your Move', fetched by fetch_audio.py into build/audio/ (gitignored). All entries are Creative Commons 0 (public domain dedication) on Freesound; the files are Freesound's public HQ previews, which need no login.",
+  "music": [
+    {"id": "gymnopedie", "title": "Satie - Gymnopédie n°1", "creator": "Sterio18", "license": "CC0",
+     "page": "https://freesound.org/people/Sterio18/sounds/472903", "url": "https://cdn.freesound.org/previews/472/472903_10024946-hq.mp3"}
+  ],
+  "sfx": [
+    {"id": "clock", "title": "antique clock tick.wav", "creator": "keweldog", "license": "CC0",
+     "page": "https://freesound.org/people/keweldog/sounds/223130", "url": "https://cdn.freesound.org/previews/223/223130_3153523-hq.mp3"},
+    {"id": "steps", "title": "Walking On A Wooden Floor", "creator": "ralph.whitehead", "license": "CC0",
+     "page": "https://freesound.org/people/ralph.whitehead/sounds/331447", "url": "https://cdn.freesound.org/previews/331/331447_1971023-hq.mp3"},
+    {"id": "suitcase", "title": "putting down suitcase.wav", "creator": "unconsidered", "license": "CC0",
+     "page": "https://freesound.org/people/unconsidered/sounds/144458", "url": "https://cdn.freesound.org/previews/144/144458_2598094-hq.mp3"},
+    {"id": "chess", "title": "Chess Pieces hitting wooden board.wav", "creator": "XfiXy8", "license": "CC0",
+     "page": "https://freesound.org/people/XfiXy8/sounds/467282", "url": "https://cdn.freesound.org/previews/467/467282_9895957-hq.mp3"},
+    {"id": "birds", "title": "Sussex Woodland & Meadow Bird Sounds, Evening", "creator": "Vonora", "license": "CC0",
+     "page": "https://freesound.org/people/Vonora/sounds/269559", "url": "https://cdn.freesound.org/previews/269/269559_5126800-hq.mp3"},
+    {"id": "roomtone", "title": "Room Tone Apartment Small Bachelor", "creator": "leonelmail", "license": "CC0",
+     "page": "https://freesound.org/people/leonelmail/sounds/329568", "url": "https://cdn.freesound.org/previews/329/329568_4437257-hq.mp3"}
+  ]
+}

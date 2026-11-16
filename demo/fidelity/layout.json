@@ -1,0 +1,84 @@
+{
+  "_doc": "World blocking for 'Your Move' (metres, Unity axes: +X right, +Z toward the window wall). Shared by gen_motions.py and make_film.py.",
+  "room": {
+    "x": [
+      -3.2,
+      3.2
+    ],
+    "z": [
+      -2.8,
+      2.8
+    ],
+    "height": 2.8
+  },
+  "window": {
+    "x": [
+      -1.5,
+      1.5
+    ],
+    "sill": 0.72,
+    "top": 2.42
+  },
+  "door": {
+    "x": [
+      -1.92,
+      -1.0
+    ],
+    "height": 2.12
+  },
+  "seat_height": 0.46,
+  "table": [
+    0.45,
+    1.75
+  ],
+  "chair_a": [
+    -0.14,
+    1.75
+  ],
+  "chair_a_yaw": 90,
+  "chair_b": [
+    1.04,
+    1.75
+  ],
+  "chair_b_yaw": -90,
+  "chair_a_hips": [
+    -0.37,
+    1.75
+  ],
+  "chair_b_hips": [
+    1.27,
+    1.75
+  ],
+  "father_start": [
+    -1.05,
+    2.3
+  ],
+  "father_yaw": 0,
+  "daughter_start": [
+    -1.45,
+    -4.4
+  ],
+  "daughter_yaw": 0,
+  "daughter_mid": [
+    -1.35,
+    -1.6
+  ],
+  "daughter_stop": [
+    -1.25,
+    -0.75
+  ],
+  "daughter_path": [
+    [
+      -0.95,
+      0.15
+    ],
+    [
+      0.55,
+      0.95
+    ],
+    [
+      1.3,
+      1.05
+    ]
+  ]
+}

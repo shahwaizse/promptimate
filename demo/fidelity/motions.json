@@ -1,0 +1,16 @@
+{
+  "f_window": "fid_f_window_20261116_020840",
+  "f_turn": "fid_f_turn_20261116_024829",
+  "f_gesture": "fid_f_gesture_20261116_030555",
+  "f_sit": "fid_f_sit_20261116_031454",
+  "f_sit_wait": "fid_f_sit_wait_20261116_032305",
+  "f_move": "fid_f_move_20261116_032602",
+  "f_sit_end": "fid_f_sit_end_20261116_032650",
+  "d_enter": "fid_d_enter_20261116_033119",
+  "d_setdown": "fid_d_setdown_20261116_033211",
+  "d_wait": "fid_d_wait_20261116_033253",
+  "d_walk": "fid_d_walk_20261116_033313",
+  "d_sit": "fid_d_sit_20261116_033337",
+  "d_sit_look": "fid_d_sit_look_20261116_033415",
+  "d_sit_end": "fid_d_sit_end_20261116_033429"
+}
