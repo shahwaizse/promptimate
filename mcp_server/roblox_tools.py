@@ -265,8 +265,11 @@ for _, n in actorNames do
     local hrp = rig:FindFirstChild("HumanoidRootPart"); local hum = rig:FindFirstChildOfClass("Humanoid")
     local ok, stand = pcall(Player.measure, rig)
     local floor = hrp.Position.Y - hum.HipHeight - hrp.Size.Y / 2
+    if hum.RigType == Enum.HumanoidRigType.R6 and rig:FindFirstChild("Left Leg") then
+      floor = hrp.Position.Y - hrp.Size.Y / 2 - rig["Left Leg"].Size.Y   -- R6 HipHeight is 0: legs hang below the root
+    end
     local width = 0
-    for _, pn in { "UpperTorso", "LeftUpperArm", "RightUpperArm" } do
+    for _, pn in { "UpperTorso", "LeftUpperArm", "RightUpperArm", "Torso", "Left Arm", "Right Arm" } do
       local part = rig:FindFirstChild(pn); if part then width += part.Size.X end
     end
     out.actors[n] = { path = path, stand = ok and stand or nil, width = width, x = hrp.Position.X, z = hrp.Position.Z,
@@ -649,6 +652,24 @@ def _evaluate(root, rot, spec) -> tuple[float, list[str], dict]:
             score += 3
         elif land == "ground" and hips_y > 0.4:
             issues.append("fall doesn't reach the ground")
+            score += 3
+    # upright: a beat that asks for nothing low (fall, lie, crawl, kneel, bend, sit, ...) shouldn't tip the body
+    # over (a "jump with joy" that reads as a faint)
+    words = " ".join(p for p, _ in spec.get("segments") or []).lower()
+    if words and not land and not spec.get("seat_local") and not re.search(
+            r"fall|lie|lies|lying|crawl|kneel|bend|bow|sit|squat|crouch|ground|floor|sleep|dive|roll|trip|stumbl|faint|"
+            r"collapse|cartwheel|flip|push-?up|lean|duck|dodge|pick|tie|zombie|drunk", words):
+        pos = motion.fk(root, rot)
+        spine = pos[:, 4] - pos[:, 0]
+        tilt = np.degrees(np.arccos(np.clip(spine[:, 1] / (np.linalg.norm(spine, axis=1) + 1e-9), -1, 1)))
+        over = tilt > 35
+        run_len, best = 0, 0
+        for o in over:
+            run_len = run_len + 1 if o else 0
+            best = max(best, run_len)
+        info["max_tilt"] = round(float(tilt.max()))
+        if best > 0.3 * motion.FPS:
+            issues.append(f"body tips over {float(tilt.max()):.0f} deg (not asked for)")
             score += 3
     st = spec.get("seat_local")
     if st:
@@ -1288,7 +1309,7 @@ def _stage_checks(name: str, r: dict, plan: Planner) -> list[str]:
     # floating (whole body above the ground) / sinking into the ground
     gap = [d["low"] - d["gF"] for d in data]
     fl = _runs([g > 0.35 * spm / 2.14 + 0.2 and not seated_at(d["t"]) for g, d in zip(gap, data)], ts, 0.5)
-    arms = {"LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand"}
+    arms = {"LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand", "Left Arm", "Right Arm"}
     # lying / crawling: the R15 arm boxes' corners dip into the floor by design; not something a beat edit fixes
     sk = _runs([g < -0.35 and not (d["lowPart"] in arms and d["hips"][1] - d["gF"] < 0.6 * spm)
                 for g, d in zip(gap, data)], ts, 0.25)

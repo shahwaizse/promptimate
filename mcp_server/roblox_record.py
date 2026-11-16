@@ -15,6 +15,7 @@ import base64
 import io
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -58,13 +59,18 @@ class CameraCue(BaseModel):
     angle: float = Field(25.0, description="With subject: degrees around it, 0 = straight in front of its face, "
                                            "+ = toward its left, 180 = from behind")
     with_: str | None = Field(None, alias="with", description="With subject: a second character for a two-shot")
+    cover: bool = Field(True, description="With subject: a long shot (> ~2.4 s) is cut into ~1.5 s coverage shots "
+                                          "(close / medium / other angle; two-shots alternate with singles)")
+    push: float = Field(0.08, description="Slow push-in over the shot: field of view narrows by this fraction by its "
+                                          "end (0 = locked-off shot)")
 
 
 # ------------------------------------------------------------------------------------------- subject framing
 SHOTS = {  # distance (in head heights above the floor ~ character height), camera height and aim (0 = hips, 1 = head), fov
-    "close": (1.35, 0.98, 0.93, 32), "medium": (2.0, 0.88, 0.75, 38), "full": (2.8, 0.8, 0.5, 44),
+    "close": (1.5, 0.98, 0.9, 34), "medium": (2.0, 0.88, 0.75, 38), "full": (2.8, 0.8, 0.5, 44),
     "wide": (4.0, 1.2, 0.4, 50), "low": (1.4, -0.1, 0.85, 42),
 }
+WIDER = {"close": "medium", "medium": "full", "low": "medium"}
 POSE_LUAU = r'''
 local D = _G.PromptimateDirector
 local out = {}
@@ -83,7 +89,7 @@ end
 return game:GetService("HttpService"):JSONEncode(out)'''
 
 
-def _cam_for(pose, other, shot: str, angle: float):
+def _cam_for(pose, other, shot: str, angle: float, lift: float = 0.0):
     hx, hy, hz, px, py, pz, lx, lz, foot = pose
     k_dist, k_h, k_aim, fov = SHOTS.get(shot, SHOTS["medium"])
     tall = max(hy - foot, 2.0)
@@ -99,7 +105,7 @@ def _cam_for(pose, other, shot: str, angle: float):
         dx, dz = ax * math.cos(a) - az * math.sin(a), ax * math.sin(a) + az * math.cos(a)
         dist = max(k_dist * tall, sep * 1.5)
         aim_y = foot + tall * k_aim
-        return [ox + dx * dist, foot + tall * k_h, oz + dz * dist], [ox, aim_y, oz], fov + 6
+        return [ox + dx * dist, foot + tall * (k_h + lift), oz + dz * dist], [ox, aim_y, oz], fov + 6
     a = math.radians(angle)
     # rotate the facing direction toward the subject's left (+angle): left of facing (lx, lz) is (lz, -lx) in Roblox
     dx, dz = lx * math.cos(a) + lz * math.sin(a), lz * math.cos(a) - lx * math.sin(a)
@@ -107,7 +113,48 @@ def _cam_for(pose, other, shot: str, angle: float):
     if shot == "close":
         ax, az = hx, hz
     dist = k_dist * tall
-    return [ax + dx * dist, foot + tall * k_h, az + dz * dist], [ax, ay, az], fov
+    return [ax + dx * dist, foot + tall * (k_h + lift), az + dz * dist], [ax, ay, az], fov
+
+
+TIGHTER = {"wide": "full", "full": "medium", "medium": "close", "close": "medium", "low": "close"}
+
+
+def cover(cues, t_end: float, target: float | None = None):
+    """Viral story shorts cut every ~1.4 s. A long subject shot becomes a sequence of coverage shots of the same
+    character(s): the written shot, a tighter one from another side, the written shot from a third angle, ...; a
+    two-shot alternates with singles of each character. Shots of signs/sets (pos/look) and tracked shots are kept."""
+    target = target or float(os.environ.get("PROMPTIMATE_RBX_SHOT_S", "1.6"))
+    out = []
+    cues = sorted(cues, key=lambda c: c.start)
+    for i, c in enumerate(cues):
+        end = cues[i + 1].start if i + 1 < len(cues) else t_end
+        dur = end - c.start
+        if not (c.subject and c.cover and not c.pos and not c.track) or dur < target * 1.5:
+            out.append(c)
+            continue
+        n = max(2, round(dur / target))
+        step = dur / n
+        for j in range(n):
+            u = {"start": round(c.start + j * step, 3), "cover": False}
+            if j > 0:
+                if c.with_:      # two-shot -> single of subject -> two-shot -> single of the other -> ...
+                    m = j % 4
+                    if m == 1:
+                        u.update(with_=None, shot="close" if c.shot != "wide" else "medium", angle=c.angle + 20)
+                    elif m == 3:
+                        u.update(subject=c.with_, with_=None, shot="close" if c.shot != "wide" else "medium", angle=-20)
+                    else:
+                        u.update(angle=c.angle - 15)
+                else:
+                    m = j % 3
+                    if m == 1:
+                        u.update(shot=TIGHTER.get(c.shot, c.shot), angle=c.angle - 30)
+                    elif m == 2:
+                        u.update(angle=c.angle + 35)
+                if c.name:
+                    u["name"] = f"{c.name} /{j + 1}"
+            out.append(c.model_copy(update=u))
+    return out
 
 
 def frame_subjects(cues, t_end: float):
@@ -119,7 +166,7 @@ def frame_subjects(cues, t_end: float):
     q = []
     for i, c in todo:
         b = cues[i + 1].start if i + 1 < len(cues) else t_end
-        t = min(c.start + 0.4, (c.start + b) / 2)
+        t = (c.start + b) / 2
         q.append([c.subject, t])
         if c.with_:
             q.append([c.with_, t])
@@ -135,23 +182,53 @@ def frame_subjects(cues, t_end: float):
             k += 1
         if not pose:
             continue
-        cands = [c.angle + d for d in (0, 25, -25, 50, -50, 80, -80)]
+        # nearby angles first; higher cameras (over a counter/throne arm) and far angles as fallbacks
+        # one size wider as a fallback (hands at the face fill a close-up of a blocky R6 character)
+        sizes = [c.shot] + ([WIDER[c.shot]] if c.shot in WIDER else [])
+        cands = [(c.angle + d, lift, sz) for sz in sizes for lift in (0.0, 0.45)
+                 for d in (0, 25, -25, 50, -50, 80, -80, 115, -115, 150, -150, 180)]
         cams = []
-        for ang in cands:
-            pos, look, fov = _cam_for(pose, other, c.shot, ang)
-            cams.append({"pos": pos, "look": look, "subjects": [c.subject] + ([c.with_] if c.with_ else []), "r": 0.6})
+        for ang, lift, sz in cands:
+            pos, look, fov = _cam_for(pose, other, sz, ang, lift)
+            cams.append({"pos": pos, "look": look, "fov": fov, "subjects": [c.subject] + ([c.with_] if c.with_ else []),
+                         "r": 0.6})
         b = cues[i + 1].start if i + 1 < len(cues) else t_end
-        t = min(c.start + 0.4, (c.start + b) / 2)
-        res = studio().luau_json(f"return _G.PromptimateDirector.camcheck({t:.3f}, game:GetService('HttpService'):JSONDecode("
-                                 f"{long_str(json.dumps(cams))}))")
+        times = sorted({round(min(c.start + 0.4, (c.start + b) / 2), 2), round((c.start + b) / 2, 2),
+                        round(max(b - 0.4, (c.start + b) / 2), 2)})
+        runs = studio().luau_json(
+            "local H = game:GetService('HttpService'); local D = _G.PromptimateDirector\n"
+            f"local cams = H:JSONDecode({long_str(json.dumps(cams))}); local out = {{}}\n"
+            f"for _, t in {{{','.join(f'{t:.3f}' for t in times)}}} do table.insert(out, H:JSONDecode(D.camcheck(t, cams))) end\n"
+            "return H:JSONEncode(out)")
+        res = runs[len(runs) // 2]
         best, best_score = 0, 1e9
-        for j, r in enumerate(res):
-            near = [n for n in r.get("near") or [] if n.split(".")[0] not in (c.subject, c.with_)]
-            blocked = sum(v.get("blocked", 0) for v in (r.get("subjects") or {}).values()) if isinstance(r.get("subjects"), dict) else 0
-            score = len(near) * 10 + blocked * 3 + j * 0.5
+        for j in range(len(cams)):
+            score = 0.0
+            for run in runs:     # the shot is judged over its length, not one instant (arms move)
+                r = run[j]
+                near = [n for n in r.get("near") or [] if n.split(".")[0] not in (c.subject, c.with_)]
+                subs = r.get("subjects") if isinstance(r.get("subjects"), dict) else {}
+                blocked = sum(v.get("blocked", 0) for v in subs.values())
+                score += (len(near) * 10 + blocked * 3 + r.get("fg", 0) * 25) / len(runs)
+                for v in subs.values():
+                    f = v.get("face", 1.0)
+                    score += (8 if f < 0 else 4 if f < 0.35 else 1.5 if f < 0.6 else 0) / len(runs)
+                    score += float(v.get("selfhit") or 0) * 10 / len(runs)                # face covered (arms, props)
+            pos = cams[j]["pos"]
+            look = cams[j]["look"]
+            horiz = math.hypot(pos[0] - look[0], pos[2] - look[2]) or 1e-3
+            pitch = math.degrees(math.atan2(pos[1] - look[1], horiz))
+            score += 4 if pitch > 40 else 1.5 if pitch > 28 else 0              # looking down on hats
+            ang, lift, sz = cands[j]
+            score += abs(ang - c.angle) / 25 * 0.5 + lift * 3 + (2.5 if sz != c.shot else 0)
             if score < best_score:
                 best, best_score = j, score
-        pos, look, fov = _cam_for(pose, other, c.shot, cands[best])
+        if os.environ.get("PROMPTIMATE_FRAME_DEBUG"):
+            r = res[best]
+            print(f"frame {c.name or c.start}: angle {cands[best]} score {best_score:.1f} fg {r.get('fg', 0):.2f} "
+                  + " ".join(f"{k}:face {v.get('face', 0):.2f} cover {float(v.get('selfhit') or 0):.2f}"
+                             for k, v in (r.get('subjects') or {}).items()), file=sys.stderr)
+        pos, look, fov = _cam_for(pose, other, cands[best][2], cands[best][0], cands[best][1])
         out[i] = c.model_copy(update={"pos": [round(v, 3) for v in pos], "look": [round(v, 3) for v in look], "fov": fov,
                                       "subjects": c.subjects if c.subjects is not None else [c.subject]})
     return out
@@ -216,7 +293,12 @@ def camera(cues, perf: Perf, t: float):
         if c.pos is None or c.look is None:
             raise ValueError(f"shot {k + 1}: give pos and look, or track")
         pos, look = np.array(c.pos, float), np.array(c.look, float)
-    return k, c, pos, look, c.fov
+    fov = c.fov
+    if c.push and not c.track:
+        end = cues[k + 1].start if k + 1 < len(cues) else c.start + 4.0
+        u = min(max((t - c.start) / max(end - c.start, 0.5), 0.0), 1.0)
+        fov = c.fov * (1 - c.push * (u * u * (3 - 2 * u)))     # eased
+    return k, c, pos, look, fov
 
 
 def _project(pos, look, fov, size, p) -> tuple[float, float, float]:
@@ -388,10 +470,34 @@ def _ffmpeg() -> str:
     return shutil.which("ffmpeg") or r"D:\tools\ffmpeg\bin\ffmpeg.exe"
 
 
+_VENC = None
+
+
+def _venc() -> list[str]:
+    """H.264 encoder args: the GPU's hardware encoder when ffmpeg has it (AMD AMF ~6x faster than x264 veryfast on
+    1080x1920), else libx264."""
+    global _VENC
+    if _VENC is None:
+        _VENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "17", "-preset", "veryfast"]
+        if os.environ.get("PROMPTIMATE_VENC", "auto") != "x264":
+            try:
+                r = subprocess.run([_ffmpeg(), "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+                                    "color=c=gray:s=256x256:d=0.2", "-c:v", "h264_amf", "-f", "null", "-"],
+                                   capture_output=True, timeout=30)
+                if r.returncode == 0:
+                    _VENC = ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "18", "-qp_p", "20",
+                             "-pix_fmt", "yuv420p"]
+            except Exception:
+                pass
+    return list(_VENC)
+
+
 def _heavy(who: str):
     """Machine-wide lock for heavy jobs (scripts/heavy_lock.py) when this checkout has it: long frame-by-frame
     renders and ffmpeg encodes take turns with other heavy work on the machine."""
     import contextlib
+    if os.environ.get("PROMPTIMATE_HEAVY_HELD"):     # the calling process already holds it (episode producer)
+        return contextlib.nullcontext()
     try:
         sys.path.insert(0, str(ROOT / "scripts"))
         from heavy_lock import heavy
@@ -468,9 +574,43 @@ def _render_job_locked(job: dict, cues, perf, size, fps, t0, t1, draft):
                    "-framerate", str(fps), "-i", "-"]
             if job.get("audio"):
                 cmd += ["-i", job["audio"], "-shortest", "-c:a", "aac", "-b:a", "192k"]
-            cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "17", "-preset", "veryfast", str(mp4)]
+            cmd += [*_venc(), str(mp4)]
             enc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         order = []
+        if fast and os.environ.get("PROMPTIMATE_RBX_REALTIME", "1") != "0":
+            # live pass first: Studio plays the performance, every frame it shows is captured; the loop below then
+            # only fills the frames it skipped
+            missing = [i for i in range(n0, n1 + 1) if not (out_dir / f"f{i - n0:05d}.png").exists()]
+            if len(missing) > fps * 3:
+                try:
+                    import realtime as RTL
+                    from PIL import Image as _Im
+                    FG = fast["FG"]
+                    cams = {}
+                    for i in missing:
+                        _k, _c, pos, look, fov = camera(cues, perf, i / fps)
+                        cams[i] = [*map(float, pos), *map(float, look), FG.roblox_fov(fov, vp, tuple(size))]
+                    job["state"] = "rendering (live pass)"
+                    live_pending = []
+
+                    def on_frame(k, img):
+                        def w(k=k, img=img):
+                            FG.finish(_Im.fromarray(img[:, :, 2::-1]), vp, tuple(size)).save(
+                                out_dir / f"f{k - n0:05d}.png", compress_level=1)
+                        live_pending.append(pool.submit(w))
+                        job["done"] = len(live_pending)
+                    lo, hi = min(missing), max(missing)
+                    got = RTL.record(studio(), fast["rect"], cams, lo, hi, fps, on_frame,
+                                     speed=float(os.environ.get("PROMPTIMATE_RBX_RT_SPEED", "0.6")),
+                                     log=lambda m: job.__setitem__("live", m))
+                    for f in live_pending:
+                        f.result()
+                    job["live_frames"] = len(got)
+                    job["state"] = "rendering (filling skipped frames)"
+                except Exception as e:
+                    job["live_error"] = f"{type(e).__name__}: {e}"[:300]
+            if any(out_dir.glob("f*.png")) and enc:
+                enc.stdin.close(); enc.wait(); enc = None       # frames on disk now: encode from PNGs at the end
         for i in range(n0, n1 + 1):
             if job.get("cancel"):
                 job["state"] = "cancelled"
@@ -519,7 +659,7 @@ def _render_job_locked(job: dict, cues, perf, size, fps, t0, t1, draft):
             cmd = [_ffmpeg(), "-y", "-loglevel", "error", "-framerate", str(fps), "-i", str(out_dir / "f%05d.png")]
             if job.get("audio"):
                 cmd += ["-i", job["audio"], "-shortest", "-c:a", "aac", "-b:a", "192k"]
-            cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "17", "-preset", "veryfast", str(mp4)]
+            cmd += [*_venc(), str(mp4)]
             subprocess.run(cmd, check=True)
         # 4-frame contact sheet
         from PIL import Image
@@ -547,7 +687,7 @@ def record(shots: list[CameraCue], start: float = 0.0, end: float | None = None,
         if j["state"] == "done":
             return [json.dumps({"state": "done", "mp4": j["mp4"], "frames": j["frames_dir"], "render_s": j["render_s"]}),
                     Image(path=j["sheet"])]
-        return [json.dumps({k: j.get(k) for k in ("state", "done", "total", "eta_s", "error") if j.get(k) is not None})]
+        return [json.dumps({k: j.get(k) for k in ("state", "done", "total", "eta_s", "error", "live", "live_frames", "live_error") if j.get(k) is not None})]
     if not shots:
         raise ValueError("give at least one camera cue")
     shots = sorted(shots, key=lambda c: c.start)
@@ -556,6 +696,8 @@ def record(shots: list[CameraCue], start: float = 0.0, end: float | None = None,
         raise ValueError("no performance yet: call roblox_perform first")
     t_end = end if end is not None else perf.end()
     _ensure_running()
+    if os.environ.get("PROMPTIMATE_RBX_COVER", "1") != "0":
+        shots = cover(shots, t_end)
     shots = frame_subjects(shots, t_end)
     warns, _ = check_cameras(shots, perf, size, t_end)
     out = {"shots": len(shots), "seconds": round(t_end - start, 2)}

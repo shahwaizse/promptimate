@@ -104,6 +104,59 @@ def tts(text: str, voice: str, speed: float, out: Path) -> Path:
     return out
 
 
+# ------------------------------------------------------------------------------------------------ narration timing
+_REF = re.compile(r"^@([A-Za-z_][\w-]*)(\.end)?\s*([+-]\s*\d+(?:\.\d+)?)?$")
+
+
+def pace(ep, out_dir: Path) -> None:
+    """Narration-driven timing. LINES may be dicts {"id", "text", "gap"?, "voice"?} (no times): the narration is
+    synthesised first and laid back to back (gap after the previous line, default 0.12 s), and every time anywhere
+    in the episode written as "@id", "@id.end", "@id+0.4" or "@id.end-0.2" becomes seconds. Fast narration then
+    never leaves dead air, and retiming a line moves its beats, shots, faces and sound effects with it."""
+    if not any(isinstance(ln, dict) for ln in ep.LINES):
+        return
+    voice = getattr(ep, "VOICE", "af_heart")
+    speed = getattr(ep, "SPEED", 1.05)
+    t = float(getattr(ep, "LEAD_IN", 0.25))
+    marks, lines = {}, []
+    import hashlib
+    for k, ln in enumerate(ep.LINES):
+        if not isinstance(ln, dict):
+            ln = {"text": ln[1], "at": ln[0], "voice": ln[2] if len(ln) > 2 else None}
+        v = ln.get("voice") or voice
+        p = tts(ln["text"], v, speed, out_dir / "vo" / f"l{k:02d}_{v}_{hashlib.sha1((ln['text'] + str(speed)).encode()).hexdigest()[:8]}.wav")
+        d = duration(p)
+        t0 = float(ln["at"]) if isinstance(ln.get("at"), (int, float)) else (t + (ln.get("gap", 0.12) if k else 0))
+        marks[ln.get("id") or f"L{k}"] = (t0, t0 + d)
+        lines.append((round(t0, 3), ln["text"]) + ((ln["voice"],) if ln.get("voice") else ()))
+        t = t0 + d
+    marks["last"] = (t, t)
+
+    def res(x):
+        if isinstance(x, str):
+            m = _REF.match(x.strip())
+            if m:
+                if m.group(1) not in marks:
+                    raise SystemExit(f"unknown narration mark {x!r} (ids: {', '.join(marks)})")
+                a, b = marks[m.group(1)]
+                return round((b if m.group(2) else a) + float((m.group(3) or "0").replace(" ", "")), 3)
+            return x
+        if isinstance(x, dict):
+            return {k: res(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [res(v) for v in x]
+        if isinstance(x, tuple):
+            return tuple(res(v) for v in x)
+        return x
+    for name in ("ACTORS", "CAMERAS", "TITLES", "FACES", "PROPS", "SFX", "LENGTH", "MUSIC"):
+        if hasattr(ep, name):
+            setattr(ep, name, res(getattr(ep, name)))
+    ep.LINES = lines
+    if not hasattr(ep, "LENGTH") or ep.LENGTH is None:
+        ep.LENGTH = round(t + float(getattr(ep, "TAIL", 1.2)), 2)
+    log(f"paced: {len(lines)} lines, narration ends {t:.1f}s, length {ep.LENGTH}s")
+
+
 # ------------------------------------------------------------------------------------------------ captions
 def _ass_time(t: float) -> str:
     h, r = divmod(max(t, 0), 3600)
@@ -123,13 +176,23 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,Arial Black,{int(getattr(captions, "size", 92))},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,5,2,2,80,80,{int(H * 0.25)},1
+Style: Cap,Arial Black,{int(getattr(captions, "size", 92))},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,{max(5, int(getattr(captions, "size", 92) * 0.11))},2,{8 if getattr(captions, "pos", "top") == "top" else 2},80,80,{int(H * (0.17 if getattr(captions, "pos", "top") == "top" else 0.25))},1
 Style: Title,Arial Black,110,&H00FFFFFF,&H00FFFFFF,&H00000000,&HB4000000,-1,0,0,0,100,100,2,0,3,18,0,8,60,60,{int(H * 0.14)},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     ev = []
+    keys = {k.upper() for k in getattr(captions, "keywords", ())}
+
+    def word(w):      # key words (episode KEYWORDS, numbers, money) pop in yellow
+        bare = re.sub(r"[^A-Za-z0-9$]", "", w).upper()
+        if bare and (bare in keys or re.search(r"[0-9$]", bare)):
+            return "{\\c&H00E6FF&}" + w.upper() + "{\\c&HFFFFFF&}"
+        return w.upper()
+
+    def under_title(t0, t1):
+        return any(a < t1 - 0.05 and t0 + 0.05 < b for a, b, _ in titles)
     for ln in lines:
         words = ln["text"].replace("—", " ").split()
         if not words:
@@ -150,9 +213,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 cur = []
         for ci, ch in enumerate(chunks):
             chunk_end = starts[chunks[ci + 1][0]] if ci + 1 < len(chunks) else t0 + dur + 0.15
+            if under_title(starts[ch[0]], chunk_end):
+                continue          # one text layer at a time: the title card carries it
             if not highlight:     # one event per chunk
                 ev.append(f"Dialogue: 0,{_ass_time(starts[ch[0]])},{_ass_time(chunk_end)},Cap,,0,0,0,,"
-                          + " ".join(words[j].upper() for j in ch))
+                          + " ".join(word(words[j]) for j in ch))
                 continue
             for i in ch:          # one event per word: the chunk shown, the spoken word highlighted
                 txt = " ".join(("{\\c&H00E6FF&}" + words[j].upper() + "{\\c&HFFFFFF&}") if (j == i and highlight) else words[j].upper()
@@ -193,7 +258,7 @@ def mix(ep, total: float, out_dir: Path) -> tuple[Path, list[dict], list[str]]:
     mus = ep.MUSIC
     m = openverse(mus["query"], "music", BUILD / "_media", pick=mus.get("pick", 0), min_s=total * 0.6)
     credits.append(f"Music: \"{m['title']}\" by {m['creator']} ({m['license'].upper()} {m.get('license_version') or ''}) {m['url']}")
-    inputs += ["-ss", str(mus.get("from", 0)), "-i", m["path"]]
+    inputs += ["-stream_loop", "-1", "-ss", str(mus.get("from", 0)), "-i", m["path"]]   # loop: never run out
     fade_out = max(total - 1.2, 0)
     filters.append(f"[{idx}:a]aresample={SR},aformat=channel_layouts=stereo,atrim=0:{total:.3f},asetpts=N/SR/TB,"
                    f"volume={mus.get('gain', 0.5)},afade=t=in:d=0.6,afade=t=out:st={fade_out:.2f}:d=1.2[mraw]")
@@ -243,13 +308,25 @@ def annotate(ep):
 
 # ------------------------------------------------------------------------------------------------ pipeline
 def main():
+    # the whole production holds the machine-wide heavy lock: other agents' model tests wait instead of swapping RAM
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    from heavy_lock import heavy
+    import os
+    if os.environ.get("PROMPTIMATE_HEAVY_HELD"):
+        return _main()
+    os.environ["PROMPTIMATE_HEAVY_HELD"] = "1"
+    with heavy("episode producer"):
+        return _main()
+
+
+def _main():
     ap = argparse.ArgumentParser()
     ap.add_argument("episode")
     ap.add_argument("--from", dest="start", default="cast", choices=["cast", "perform", "record", "audio"])
     ap.add_argument("--rounds", type=int, default=0, help="repair rounds in roblox_perform")
     ap.add_argument("--voice", default=None, help="override the narrator (af_heart, tv_M2, ...)")
     ap.add_argument("--suffix", default="", help="append to the output file name")
-    ap.add_argument("--attempts", type=int, default=1, help="seeds tried per beat for facing/mark/seat")
+    ap.add_argument("--attempts", type=int, default=2, help="seeds tried per beat for facing/mark/seat")
     a = ap.parse_args()
     ep = importlib.import_module(f"eps.{a.episode}")
     if a.voice:
@@ -258,6 +335,7 @@ def main():
             ep.SPEED = 1.35
     out = BUILD / a.episode
     out.mkdir(parents=True, exist_ok=True)
+    pace(ep, out)
     T = {}
     t_all = time.time()
     steps = ["cast", "perform", "record", "audio"]
@@ -306,6 +384,12 @@ def main():
             shutil.copy(res[1].path if hasattr(res[1], "path") else res[1], out / "plan.png")
     if "record" in todo:
         annotate(ep)
+        # always a fresh recording: rig attributes (arms, looks) aren't part of the frame-reuse signature, and the
+        # director caches clip players built from the old rigs
+        import shutil
+        shutil.rmtree(RR.STATE / "record" / a.episode / "frames_final", ignore_errors=True)
+        import roblox_tools as _RT
+        log("package", _RT.install())       # pushes changed player/director code to Studio
         t = time.time()
         cams = [RR.CameraCue(**c) for c in ep.CAMERAS]
         r = RR.record(cams, name=a.episode, quality="final", end=getattr(ep, "LENGTH", None))
@@ -329,14 +413,15 @@ def main():
         wav, placed, credits = mix(ep, total, out)
         cap = getattr(ep, "CAPTIONS", {})
         captions.size = cap.get("size", 92)
+        captions.keywords = getattr(ep, "KEYWORDS", ())
+        captions.pos = cap.get("pos", "top")
         ass = captions(placed, out / "captions.ass", titles=getattr(ep, "TITLES", []), highlight=cap.get("highlight", True),
                        max_words=cap.get("max_words", 3))
         final = out / f"{a.episode}{a.suffix}.mp4"
         fonts = "C\\:/Windows/Fonts"
         assp = str(ass).replace("\\", "/").replace(":", "\\:")
         run([FF, "-y", "-loglevel", "error", "-i", str(silent), "-i", str(wav), "-filter_complex",
-             f"[0:v]ass='{assp}':fontsdir='{fonts}'[v]", "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-preset", "veryfast",
-             "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(final)])
+             f"[0:v]ass='{assp}':fontsdir='{fonts}'[v]", "-map", "[v]", "-map", "1:a", *RR._venc(), "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(final)])
         (out / "credits.txt").write_text("\n".join([getattr(ep, "TITLE", a.episode), "", *credits,
                                                     "Narration: Kokoro TTS (Apache-2.0)"]) + "\n", encoding="utf-8")
         T["audio"] = time.time() - t

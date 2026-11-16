@@ -2,6 +2,7 @@
 TITLE = "In This World, Sitting Down Costs Money"
 LENGTH = 83.0
 VOICE, SPEED = "tv_M2", 1.35
+KEYWORDS = ["PRESTON", "PRESTON.", "FREE", "FREE.", "MONEY", "TIMMY", "MOM"]
 CAPTIONS = {"size": 66, "highlight": False, "max_words": 3}
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)
@@ -70,8 +71,8 @@ ACTORS = [
         {"prompt": "a person stands still, exhausted, shoulders slumped", "seconds": 3.0},
         {"prompt": "a person stands with their legs trembling, exhausted", "seconds": 3.5},
         {"prompt": TIRED, "seconds": 3.5},
-        {"at": 52.0, "prompt": "a person turns and gasps in surprise, hands on their face", "seconds": 3.0},
-        {"prompt": ["a person turns around and sits down slowly", "a person sits and cries happily, hands on face"],
+        {"at": 52.0, "prompt": "a person turns and steps back in surprise, arms down at their sides", "seconds": 3.0},
+        {"prompt": ["a person turns around and sits down slowly", "a person sits with their hands resting on their lap, smiling happily"],
          "seconds": [2.5, 4.0], "sit": "MomChair", "sit_from": 2.2},
         {"prompt": "a person sits and smiles, relaxed", "seconds": 4.0, "sit": "MomChair"},
     ]},
@@ -94,7 +95,7 @@ ACTORS = [
     ]},
     # ---------------------------------------------------------------- D: Preston's chair market
     {"name": "PrestonD", "start": [600, -116], "facing": "-Z", "beats": [
-        {"at": 40.0, "prompt": ["a person turns around and sits down", "a person sits on a throne, leaning back smugly"],
+        {"at": 40.0, "prompt": ["a person turns around and sits down", "a person sits up straight, chin raised, smug"],
          "seconds": [1.5, 4.0], "sit": "Throne", "sit_from": 1.2},
         {"prompt": "a person sits and reaches out a hand to take something", "seconds": 3.0, "sit": "Throne"},
         {"prompt": "a person sits and laughs, leaning back", "seconds": 4.0, "sit": "Throne"},
@@ -122,7 +123,7 @@ CAMERAS = [
     {"name": "trembling", "start": 20.0, "subject": "Mom", "shot": "medium", "angle": -35},
     {"name": "timmy watches", "start": 23.4, "subject": "TimmyB", "shot": "close", "angle": 10},
     # C: Timmy's room
-    {"name": "coins", "start": 27.0, "subject": "TimmyC", "shot": "medium", "angle": 140},
+    {"name": "coins", "start": 27.0, "subject": "TimmyC", "shot": "medium", "angle": 30},
     {"name": "jar close", "start": 29.3, "pos": [459.8, 5.0, -5.6], "look": [456, 3.7, -7.4], "fov": 30, "subjects": []},
     {"name": "counting", "start": 31.0, "subject": "TimmyC", "shot": "close", "angle": 55},
     {"name": "joy", "start": 34.0, "subject": "TimmyC", "shot": "full", "angle": 10},

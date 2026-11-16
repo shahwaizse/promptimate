@@ -972,6 +972,9 @@ function R6.new(character: Model, clip, opts)
 	self.humanoid = character:FindFirstChildOfClass("Humanoid")
 	self.rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart
 	self.scale, self.rootToHips = R6.measure(character)
+	-- arm acting amount (1 = as generated, 0 = arms hang by the sides): story videos act with faces, and big blocky
+	-- arms swinging across the face hide it. opts.arms, else the rig's PromptimateArms attribute.
+	self.arms = math.clamp((opts and opts.arms) or character:GetAttribute("PromptimateArms") or 1, 0, 1)
 	local here = self.rootPart.CFrame
 	self.origin = (opts and opts.origin) or CFrame.lookAt(
 		Vector3.new(here.X, here.Y - self.scale - (character.Torso :: BasePart).Size.Y / 2, here.Z),
@@ -1024,6 +1027,12 @@ function R6:_sample(t: number)
 		local dir = d1 + d2
 		dir = dir.Magnitude > 1e-3 and dir.Unit or d1
 		world[n] = arc(d1, dir) * up
+		if self.arms < 1 and (n == "Left Arm" or n == "Right Arm") then
+			-- toward hanging along the torso, a little out from the body
+			local side = n == "Left Arm" and -1 or 1
+			local rest = world.Torso * CFrame.Angles(0, 0, side * math.rad(4))
+			world[n] = rest:Lerp(world[n], self.arms)
+		end
 	end
 	return world, self.origin * CFrame.new(hips * self.scale)
 end

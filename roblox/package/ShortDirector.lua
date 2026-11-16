@@ -27,6 +27,11 @@ local BODY = { "Head", "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm
 	"RightLowerArm", "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg",
 	"RightFoot" }
 D.BODY = BODY
+local BODY6 = { "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg" }
+local function bodyOf(rig: Model)
+	return rig:FindFirstChild("UpperTorso") and BODY or BODY6
+end
+D.bodyOf = bodyOf
 
 local function folder()
 	return RS:WaitForChild("Promptimate")
@@ -375,7 +380,7 @@ function D.probe(name: string, times, opts)
 			local top = q.Position.Y + q.Size.Y / 2
 			return top <= floorY + 0.25 and q.Size.Y < 4
 		end
-		for _, pn in BODY do
+		for _, pn in bodyOf(a.rig) do
 			local part = a.rig:FindFirstChild(pn)
 			local cf = tg[pn]
 			if part and cf then
@@ -395,7 +400,12 @@ function D.probe(name: string, times, opts)
 				end
 			end
 		end
-		local foot = math.min(boxLowest(tg.LeftFoot, a.rig.LeftFoot.Size), boxLowest(tg.RightFoot, a.rig.RightFoot.Size))
+		local foot
+		if a.rig:FindFirstChild("LeftFoot") then
+			foot = math.min(boxLowest(tg.LeftFoot, a.rig.LeftFoot.Size), boxLowest(tg.RightFoot, a.rig.RightFoot.Size))
+		else   -- R6: one-piece legs
+			foot = math.min(boxLowest(tg["Left Leg"], a.rig["Left Leg"].Size), boxLowest(tg["Right Leg"], a.rig["Right Leg"].Size))
+		end
 		local function ground(pos)
 			-- from just above the body point: a bench or table the character is next to/under isn't the floor;
 			-- the seat in use (opts.ignore) is passed through
@@ -448,6 +458,7 @@ end
 function D.camcheck(t: number, cams)
 	if not D.actors then D.load() end
 	D.seek(t)
+	task.wait()   -- joint (Motor6D) poses reach the parts only on the next frame; rays must see this pose, not the last
 	local res = {}
 	for _, c in cams do
 		local pos = Vector3.new(c.pos[1], c.pos[2], c.pos[3])
@@ -485,13 +496,67 @@ function D.camcheck(t: number, cams)
 						blocked[ownerName(hit.Instance)] = true
 					end
 				end
+				-- and back from the head: a camera inside a mesh (throne back, wall) is invisible to rays that start
+				-- inside it, but a ray from the subject hits the mesh's outside
+				local back = workspace:Raycast(tg.Head.Position, pos - tg.Head.Position, rp)
+				if back and visible(back.Instance) then
+					nb += 2
+					blocked[ownerName(back.Instance)] = true
+				end
 				for k in blocked do table.insert(others, k) end
-				subs[sname] = { blocked = nb, by = others, head = { tg.Head.Position.X, tg.Head.Position.Y, tg.Head.Position.Z },
+				-- face: is the camera in front of the head (1 = straight on, <0 = behind), and is the face hidden
+				-- by the subject's own arms/props (the rays above ignore the subject's own body)
+				local hc = tg.Head
+				-- horizontal: a head looking down (tired, sad) still faces the side it looks to
+				local toCam = (pos - hc.Position) * Vector3.new(1, 0, 1)
+				local lk = hc.LookVector * Vector3.new(1, 0, 1)
+				local face = (toCam.Magnitude > 1e-3 and lk.Magnitude > 1e-3) and lk.Unit:Dot(toCam.Unit) or 0
+				local rp2 = RaycastParams.new()
+				rp2.FilterType = Enum.RaycastFilterType.Exclude
+				local skip = { a.rig:FindFirstChild("Head") }
+				for _, acc in a.rig:GetChildren() do
+					if acc:IsA("Accessory") then table.insert(skip, acc) end
+				end
+				rp2.FilterDescendantsInstances = skip
+				-- share of a 3x3 grid on the face (front of the head) hidden by anything but the head itself
+				local hn, hb = 0, 0
+				for iy = -1, 1 do
+					for ix = -1, 1 do
+						local fp = hc.Position + hc.LookVector * 0.6 + hc.RightVector * (ix * 0.4) + hc.UpVector * (iy * 0.35)
+						local hit = workspace:Raycast(pos, fp - pos, rp2)
+						hn += 1
+						if hit and visible(hit.Instance) then hb += 1 end
+					end
+				end
+				local selfhit = hb / hn
+				subs[sname] = { blocked = nb, by = others, face = face, selfhit = selfhit, head = { tg.Head.Position.X, tg.Head.Position.Y, tg.Head.Position.Z },
 					hips = { tg.LowerTorso.Position.X, tg.LowerTorso.Position.Y, tg.LowerTorso.Position.Z },
 					foot = { tg.LeftFoot.Position.X, math.min(tg.LeftFoot.Position.Y, tg.RightFoot.Position.Y), tg.LeftFoot.Position.Z } }
 			end
 		end
-		table.insert(res, { near = nl, subjects = subs })
+		-- foreground: share of a 6x9 ray grid over the 9:16 frame that hits anything (an arm, a counter) in the
+		-- near half of the way to the aim point, i.e. something big filling the frame in front of the subject
+		local fg = 0
+		if c.look then
+			local look = Vector3.new(c.look[1], c.look[2], c.look[3])
+			local cf = CFrame.lookAt(pos, look)
+			local dist = (look - pos).Magnitude
+			local th = math.tan(math.rad(c.fov or 40) / 2)
+			local rp3 = RaycastParams.new()
+			local n, hits = 0, 0
+			for iy = 0, 8 do
+				for ix = 0, 5 do
+					local u = ((ix + 0.5) / 6 * 2 - 1) * th * 9 / 16
+					local v = ((iy + 0.5) / 9 * 2 - 1) * th
+					local dir = cf:VectorToWorldSpace(Vector3.new(u, v, -1).Unit) * dist * 0.55
+					local hit = workspace:Raycast(pos, dir, rp3)
+					n += 1
+					if hit and visible(hit.Instance) then hits += 1 end
+				end
+			end
+			fg = hits / n
+		end
+		table.insert(res, { near = nl, subjects = subs, fg = fg })
 	end
 	return HttpService:JSONEncode(res)
 end
@@ -523,7 +588,7 @@ function D.bodycheck(times)
 			if A and B and (A.LowerTorso.Position - B.LowerTorso.Position).Magnitude < 12 then
 				local ra, rb = D.actors[names[i]].rig, D.actors[names[j]].rig
 				local best = 0
-				for _, pa in BODY do for _, pb in BODY do
+				for _, pa in bodyOf(ra) do for _, pb in bodyOf(rb) do
 					local qa, qb = ra:FindFirstChild(pa), rb:FindFirstChild(pb)
 					if qa and qb and A[pa] and B[pb] then
 						local d = Player.obbDepth(A[pa], qa.Size, B[pb], qb.Size)

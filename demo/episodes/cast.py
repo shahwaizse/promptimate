@@ -40,6 +40,7 @@ LOOKS.update({
     "c_lady": {"classic": {"skin": SKIN, "shirt": [107, 50, 124], "legs": [99, 95, 98]}, "hairIds": [236398736]},
     "c_man": {"classic": {"skin": [204, 142, 105], "shirt": [75, 151, 75], "legs": [99, 95, 98]}, "hairIds": [265133385]},
     "c_worker": {"classic": {"skin": SKIN, "shirt": [218, 133, 65], "legs": [27, 42, 53]}, "hairIds": [915184016]},
+    "c_butler": {"classic": {"skin": [204, 142, 105], "shirt": [27, 27, 32], "legs": [27, 27, 32]}, "hairIds": [915184016]},
 })
 
 ENSURE = r'''
@@ -118,6 +119,7 @@ local function build(c)
   end
   for _, s in m:GetDescendants() do if s:IsA("Script") or s:IsA("LocalScript") then s:Destroy() end end
   m:SetAttribute("PromptimateLook", c.lookKey)
+  m:SetAttribute("PromptimateArms", c.arms or 0.55)   -- story acting: faces carry it, arms stay out of the face
   return m
 end
 local out = {}
@@ -150,6 +152,6 @@ def ensure(cast: list[dict]) -> dict:
         spec.append({"name": c["name"], "lookKey": c["look"] + "#" + __import__("hashlib").sha1(json.dumps(lk, sort_keys=True).encode()).hexdigest()[:6], "bundle": lk.get("bundle"), "paint": lk.get("paint"),
                      "badge": lk.get("badge", False), "hair": lk.get("hair", True), "skin": lk.get("skin"),
                      "classic": lk.get("classic"), "hairIds": lk.get("hairIds"), "hatIds": lk.get("hatIds"),
-                     "rig": lk.get("rig", "R6" if lk.get("classic") else "R15"),
+                     "rig": "R6",   # R15 retired: too blocky for story videos (user call, 2026-11-16)
                      "x": c["at"][0], "z": c["at"][1], "yaw": c.get("yaw", 0)})
     return studio().luau_json(ENSURE.replace("__SPEC__", json.dumps(json.dumps(spec))), timeout=900)
