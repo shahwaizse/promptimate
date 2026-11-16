@@ -14,6 +14,8 @@ Protocol: one JSON object per line over TCP 127.0.0.1:$MOTIOND_PORT (default 476
      "seed": int, "transition": int, "text_cfg": float|null, "constraint_cfg": float|null,
      "constraints": str|null, "cache": bool}
     {"op": "warm", "config": {...}}   (load the models now with a tiny uncached generation; no-op if loaded)
+    {"op": "prefetch", "config": {...}, "prompts": [str, ...]}   (encode every uncached prompt of a job up front,
+        16 per engine request with one text-encoder load; later generate calls find the embeddings cached)
     {"op": "status"}   {"op": "unload"}   {"op": "shutdown"}
 config = {"engine_dir": str|null, "text_quant": str|null, "extra_env": {..}}; a different config restarts the engine.
 
@@ -33,7 +35,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from kimodo_worker import KIMODO_BUILD, KimodoWorker, Segment  # noqa: E402
+from kimodo_worker import KIMODO_BUILD, KimodoWorker, Segment, prefetch_embeddings  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PORT = int(os.environ.get("MOTIOND_PORT", "47613"))
@@ -115,6 +117,21 @@ class Daemon:
                 tmp.rename(hit)
             return {**info, "cache_hit": False}
 
+    def prefetch(self, req: dict) -> dict:
+        """Batch-encode a job's prompts (see kimodo_worker.prefetch_embeddings). The lock is taken per engine
+        request, so generations from other clients interleave between batches instead of waiting for all of it."""
+        config = req.get("config") or {}
+
+        def gen(segs, out_dir, steps, seed, transition):
+            with self.lock:
+                worker = self._ensure(config)
+                return worker.generate(segs, out_dir, steps=steps, seed=seed, transition=transition)
+
+        with self.lock:
+            worker = self._ensure(config)
+        self.stats["prefetches"] = self.stats.get("prefetches", 0) + 1
+        return prefetch_embeddings(gen, list(req.get("prompts") or []), worker.text_quant, worker.extra_env)
+
     def warm(self, req: dict) -> dict:
         """Load the engine for this config ahead of the first real request (an MCP server calls this in the
         background at startup). A real request that arrives meanwhile queues on the lock and finds it warm."""
@@ -151,6 +168,8 @@ class Handler(socketserver.StreamRequestHandler):
                     res = {"ok": True, "result": DAEMON.generate(req)}
                 elif op == "warm":
                     res = {"ok": True, "result": DAEMON.warm(req)}
+                elif op == "prefetch":
+                    res = {"ok": True, "result": DAEMON.prefetch(req)}
                 elif op == "status":
                     res = {"ok": True, "result": DAEMON.status()}
                 elif op == "unload":
@@ -272,6 +291,25 @@ class RemoteWorker:
                            "segments": [[s.prompt, s.frames] for s in segments], "out_dir": str(out_dir),
                            "steps": steps, "seed": seed, "transition": transition, "text_cfg": text_cfg,
                            "constraint_cfg": constraint_cfg, "constraints": str(constraints) if constraints else None})
+
+    def prefetch(self, prompts: list[str]) -> dict:
+        """Encode all of a job's prompts now, in batches with a single text-encoder load, so the job's generate calls
+        skip encoding. Call it once with every prompt the job will use (exactly as passed to generate). Returns
+        {prompts, already_cached, encoded, errors, seconds}. Works against a daemon that predates the prefetch op
+        too (same batching, driven from this side through plain uncached generate requests)."""
+        try:
+            return self._call({"op": "prefetch", "config": self.config, "prompts": list(prompts)})
+        except RuntimeError as e:
+            if "unknown op" not in str(e):
+                raise
+
+        def gen(segs, out_dir, steps, seed, transition):
+            return self._call({"op": "generate", "config": self.config, "cache": False,
+                               "segments": [[s.prompt, s.frames] for s in segs], "out_dir": str(out_dir),
+                               "steps": steps, "seed": seed, "transition": transition})
+
+        quant = self.config.get("text_quant") or os.environ.get("KIMODO_TEXT_QUANT", "q4_k_m")
+        return prefetch_embeddings(gen, list(prompts), quant, self.config.get("extra_env"))
 
     def status(self) -> dict:
         return self._call({"op": "status"})

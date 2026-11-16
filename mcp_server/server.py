@@ -719,6 +719,15 @@ def _prewarm() -> None:
 
 
 @mcp.tool()
+def prefetch_prompts(prompts: list[str]) -> str:
+    """Before a multi-clip job (shot list, story, set of game clips), pass every segment prompt it will use: they
+    are text-encoded now in a few batched calls, so each later generate_motion call skips encoding (one encoder
+    load for the whole job instead of one every few clips). Optional; results are identical either way."""
+    res = worker.prefetch([intent.rewrite(p.strip()) for p in prompts if p and p.strip()])
+    return json.dumps(res)
+
+
+@mcp.tool()
 def worker_status(warm_up: bool = False) -> str:
     """Show whether the GPU worker is loaded. The server already starts loading it in the background at startup;
     warm_up=true waits until it's loaded (about 1 min cold)."""

@@ -87,6 +87,61 @@ class Segment:
     frames: int
 
 
+EMBED_CACHE = ROOT / ".cache" / "embeddings"
+PREFETCH_BATCH = 16       # engine limit: 16 segments per sequence request
+PREFETCH_FRAMES = 6       # shortest segment the default 5-frame transition allows
+
+
+def embedding_cache_file(prompt: str, text_quant: str, extra_env: dict | None = None) -> Path:
+    """Where the Promptimate engine stores the embedding of `prompt` (FNV-1a 64 of prompt + 0x1f + text model path,
+    mirrors model.cpp generate_text_sequence)."""
+    cache_dir = Path((extra_env or {}).get("KIMODO_EMBED_CACHE_DIR") or os.environ.get("KIMODO_EMBED_CACHE_DIR")
+                     or EMBED_CACHE)
+    h = 1469598103934665603
+    for c in (prompt + "\x1f" + str(TEXT_GGUF[text_quant])).encode("utf-8"):
+        h = ((h ^ c) * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    return cache_dir / f"{h:016x}.f32"
+
+
+def prefetch_embeddings(generate, prompts: list[str], text_quant: str, extra_env: dict | None = None,
+                        out_dir: Path | None = None) -> dict:
+    """Encode every prompt that has no cached embedding yet, PREFETCH_BATCH prompts per engine request.
+
+    Why: the text encoder (~4.4 GB) is loaded lazily and released when idle, and loading it costs 30 s from the HDD
+    (minutes when RAM is tight) while encoding one prompt costs ~0.8 s. A job that generates its clips one by one,
+    with renders in between, reloads the encoder every few prompts. Prefetching pays one load per job.
+    The embeddings are produced by the same engine code path as a normal generation (written to the engine's disk
+    cache), so later generations are bit-identical to ones that encoded the prompt themselves.
+    `generate(segments, out_dir, steps, seed, transition)` runs one uncached engine request."""
+    t0 = time.time()
+    seen, todo = set(), []
+    for p in prompts:
+        p = (p or "").strip()
+        if p and p not in seen:
+            seen.add(p)
+            if not embedding_cache_file(p, text_quant, extra_env).exists():
+                todo.append(p)
+    out_dir = Path(out_dir or ROOT / ".cache" / "prefetch")
+    errors = {}
+
+    def run(batch: list[str]) -> None:
+        generate([Segment(p, PREFETCH_FRAMES) for p in batch], out_dir, 1, 0, 5)
+
+    for i in range(0, len(todo), PREFETCH_BATCH):
+        batch = todo[i:i + PREFETCH_BATCH]
+        try:
+            run(batch)
+        except RuntimeError:  # one bad prompt fails the whole request: isolate it
+            for p in batch:
+                try:
+                    run([p])
+                except RuntimeError as e:
+                    errors[p] = str(e)
+    encoded = sum(embedding_cache_file(p, text_quant, extra_env).exists() for p in todo)
+    return {"prompts": len(seen), "already_cached": len(seen) - len(todo), "encoded": encoded,
+            "errors": errors, "seconds": round(time.time() - t0, 2)}
+
+
 class KimodoWorker:
     def __init__(self, text_quant: str | None = None, engine_dir: Path | None = None, extra_env: dict | None = None):
         self.text_quant = text_quant or os.environ.get("KIMODO_TEXT_QUANT", "q4_k_m")
@@ -151,7 +206,7 @@ class KimodoWorker:
         # after encoding; embeddings persist on disk. Engine RAM between encodes drops from ~6.5 GB to ~1.5 GB,
         # which matters when Unity/Roblox Studio run alongside on a 16 GB machine. (Ignored by older engines.)
         env.setdefault("KIMODO_TEXT_LAZY", "1")
-        env.setdefault("KIMODO_EMBED_CACHE_DIR", str(ROOT / ".cache" / "embeddings"))
+        env.setdefault("KIMODO_EMBED_CACHE_DIR", str(EMBED_CACHE))
         env.setdefault("KIMODO_TEXT_LAYER_CHUNK", "32")  # (only matters if the encoder runs on the GPU)
         # The motion graph cache keeps per-stage allocators that make larger graphs (constrained batch-3 passes,
         # 10 s clips) 3-5x slower on this driver; without it a plain 5 s clip is ~10% slower. Net win.
@@ -219,6 +274,12 @@ class KimodoWorker:
             raise RuntimeError("kimodo error: " + msg)
         return {"frames": int(parts[1]), "joints": int(parts[2]), "seconds": round(dt, 2),
                 "cold_start": cold, "text_quant": self.text_quant, "text_cfg": text_cfg}
+
+    def prefetch(self, prompts: list[str]) -> dict:
+        """Encode all uncached prompts of a job in a few batched requests (see prefetch_embeddings)."""
+        return prefetch_embeddings(
+            lambda segs, d, steps, seed, tr: self.generate(segs, d, steps=steps, seed=seed, transition=tr),
+            prompts, self.text_quant, self.extra_env)
 
     def warm(self) -> dict:
         """Load the models now with a tiny generation (no-op if already loaded)."""
