@@ -653,6 +653,14 @@ def _evaluate(root, rot, spec) -> tuple[float, list[str], dict]:
         elif land == "ground" and hips_y > 0.4:
             issues.append("fall doesn't reach the ground")
             score += 3
+    # getting up: the beat must end standing (a failed get-up leaves every later beat of the chain on the floor)
+    words_all = " ".join(p for p, _ in spec.get("segments") or []).lower()
+    if re.search(r"gets? up|stands? up|rises|getting up|standing up", words_all) and not spec.get("seat_local"):
+        end_hips = float(root[-8:, 1].mean())
+        info["end_hips_m"] = round(end_hips, 2)
+        if end_hips < 0.7:
+            issues.append(f"doesn't get up (hips {end_hips:.2f} m at the end)")
+            score += 6
     # upright: a beat that asks for nothing low (fall, lie, crawl, kneel, bend, sit, ...) shouldn't tip the body
     # over (a "jump with joy" that reads as a faint)
     words = " ".join(p for p, _ in spec.get("segments") or []).lower()
@@ -763,7 +771,10 @@ def _generate(actor: str, idx: int, spec: dict, prev: str | None) -> tuple[str, 
         kw["in_place"] = True
     segs = [SRV.MotionSegment(prompt=p, seconds=s) for p, s in spec["segments"]]
     best = None
-    for attempt in range(int(os.environ.get("PROMPTIMATE_RBX_ATTEMPTS", MAX_ATTEMPTS))):
+    n_att = int(os.environ.get("PROMPTIMATE_RBX_ATTEMPTS", MAX_ATTEMPTS))
+    if re.search(r"gets? up|stands? up|rises", " ".join(p for p, _ in spec["segments"]).lower()):
+        n_att = max(n_att, 4)          # a failed get-up ruins the rest of the chain: worth more seeds
+    for attempt in range(n_att):
         with _GEN_LOCK:
             real = SRV.worker
             if spec.get("face_rel") is not None:
@@ -898,7 +909,7 @@ def _spec(e: dict, p, yaw, spm, seated, plan: Planner, actor: str, occupied: lis
             spec["path_local"] = path
     elif seated:
         # standing up from the seat: hold the seated pose for the first few frames
-        spec["seat_local"] = {"t": [0.0, 0.3], "height": float(seated["height_m"] + R15_SEAT_LIFT), "x": 0.0, "z": 0.0,
+        spec["seat_local"] = {"t": [0.0, 0.3], "height": float(np.clip(seated["height_m"] + R15_SEAT_LIFT, 0.2, 1.0)), "x": 0.0, "z": 0.0,
                               "heading": 0.0, "furniture": "bench"}
         world["stands_up"] = True
     # --- path

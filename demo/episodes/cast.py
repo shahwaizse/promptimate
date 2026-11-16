@@ -41,6 +41,8 @@ LOOKS.update({
     "c_man": {"classic": {"skin": [204, 142, 105], "shirt": [75, 151, 75], "legs": [99, 95, 98]}, "hairIds": [265133385]},
     "c_worker": {"classic": {"skin": SKIN, "shirt": [218, 133, 65], "legs": [27, 42, 53]}, "hairIds": [915184016]},
     "c_butler": {"classic": {"skin": [204, 142, 105], "shirt": [27, 27, 32], "legs": [27, 27, 32]}, "hairIds": [915184016]},
+    "c_girl": {"classic": {"skin": [234, 184, 146], "shirt": [255, 150, 200], "legs": [13, 105, 172]}, "hairIds": [236398736]},
+    "c_grandpa": {"classic": {"skin": SKIN, "shirt": [120, 90, 60], "legs": [60, 60, 70]}, "hairIds": [265133385]},
 })
 
 ENSURE = r'''
@@ -132,8 +134,15 @@ for _, c in spec do
     if not m then m = build(c); m.Name = c.name end
     m.Parent = castF
     local hrp = m.HumanoidRootPart; hrp.Anchored = true
+    -- stand on whatever is there (sidewalk, floor, stage): ray down from above, ignoring characters
+    local rp = RaycastParams.new(); rp.FilterType = Enum.RaycastFilterType.Exclude
+    rp.FilterDescendantsInstances = { castF, pool }
     local floor = 0.1
-    local y = floor + m.Humanoid.HipHeight + hrp.Size.Y / 2
+    local hit = workspace:Raycast(Vector3.new(c.x, 6, c.z), Vector3.new(0, -30, 0), rp)   -- below awnings and ceilings
+    if hit then floor = hit.Position.Y end
+    local legs = m.Humanoid.HipHeight
+    if m.Humanoid.RigType == Enum.HumanoidRigType.R6 and m:FindFirstChild("Left Leg") then legs = m["Left Leg"].Size.Y end
+    local y = floor + legs + hrp.Size.Y / 2
     m:PivotTo(CFrame.new(c.x, y, c.z) * CFrame.Angles(0, math.rad(c.yaw or 0), 0))
     m.Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
     out[c.name] = "ok"

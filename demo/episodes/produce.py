@@ -39,7 +39,7 @@ def log(*a):
 
 
 def run(cmd, **kw):
-    r = subprocess.run(cmd, capture_output=True, text=True, **kw)
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **kw)
     if r.returncode:
         raise SystemExit(f"failed: {' '.join(map(str, cmd))[:300]}\n{(r.stderr or r.stdout)[-1500:]}")
     return r
@@ -84,6 +84,21 @@ def openverse(query: str, kind: str, out_dir: Path, pick: int = 0, min_s: float 
 TINY_VOCA = Path(r"D:\tmp\tts_try")      # tiny-voca (Apache-2.0) venv + weights; voices "tv_M2" / "tv_F2"
 
 
+def tts_many(items) -> None:
+    """Synthesise every missing tiny-voca line in one process (one model load); items = [(text, voice, speed, out)]."""
+    todo = [{"text": t, "voice": v[3:], "speed": sp, "out": str(o)} for t, v, sp, o in items
+            if v.startswith("tv_") and not Path(o).exists()]
+    if not todo:
+        return
+    jf = Path(os.environ.get("TEMP", str(BUILD))) / f"tv_jobs_{os.getpid()}.json"
+    jf.write_text(json.dumps(todo), encoding="utf-8")
+    env = dict(os.environ, DIZIONE_DATA=str(TINY_VOCA / "tiny-voca" / "weights" / "phonemizer"), PYTHONIOENCODING="utf-8")
+    t = time.time()
+    run([str(TINY_VOCA / "venv" / "Scripts" / "python.exe"), str(Path(__file__).with_name("tv_batch.py")),
+         str(TINY_VOCA / "tiny-voca" / "weights" / "tiny-voca.pt"), str(jf)], env=env)
+    log(f"tts: {len(todo)} lines in {time.time() - t:.0f}s (batched)")
+
+
 def tts(text: str, voice: str, speed: float, out: Path) -> Path:
     if out.exists():
         return out
@@ -120,6 +135,12 @@ def pace(ep, out_dir: Path) -> None:
     t = float(getattr(ep, "LEAD_IN", 0.25))
     marks, lines = {}, []
     import hashlib
+    items = []
+    for k, ln in enumerate(ep.LINES):
+        txt = ln["text"] if isinstance(ln, dict) else ln[1]
+        v = (ln.get("voice") if isinstance(ln, dict) else (ln[2] if len(ln) > 2 else None)) or voice
+        items.append((txt, v, speed, out_dir / "vo" / f"l{k:02d}_{v}_{hashlib.sha1((txt + str(speed)).encode()).hexdigest()[:8]}.wav"))
+    tts_many(items)
     for k, ln in enumerate(ep.LINES):
         if not isinstance(ln, dict):
             ln = {"text": ln[1], "at": ln[0], "voice": ln[2] if len(ln) > 2 else None}
@@ -238,6 +259,10 @@ def mix(ep, total: float, out_dir: Path) -> tuple[Path, list[dict], list[str]]:
     speed = getattr(ep, "SPEED", 1.05)
     placed, credits = [], []
     inputs, filters, vo_labels = [], [], []
+    import hashlib as _h
+    tts_many([(ln[1], ln[2] if len(ln) > 2 else voice, speed,
+               out_dir / "vo" / f"l{k:02d}_{ln[2] if len(ln) > 2 else voice}_{_h.sha1((ln[1] + str(speed)).encode()).hexdigest()[:8]}.wav")
+              for k, ln in enumerate(ep.LINES)])
     for k, ln in enumerate(ep.LINES):
         t, text = ln[0], ln[1]
         v = ln[2] if len(ln) > 2 else voice
@@ -353,6 +378,20 @@ def _main():
         log("cast", r, f"{T['cast']:.0f}s")
     if "perform" in todo:
         os.environ.setdefault("PROMPTIMATE_RBX_TAKES", "1")
+        # every prompt text-encoded up front under one encoder load (otherwise it reloads every few clips)
+        prompts = []
+        for act in ep.ACTORS:
+            for bt in act.get("beats", []):
+                pr = bt.get("prompt")
+                prompts += pr if isinstance(pr, list) else [pr]
+        try:
+            t = time.time()
+            import server as _srv
+            res = json.loads(_srv.prefetch_prompts(sorted({p for p in prompts if p})))
+            log(f"prefetch {len(set(prompts))} prompts {time.time() - t:.0f}s", {k: v for k, v in res.items() if not isinstance(v, list)}
+                if isinstance(res, dict) else res)
+        except Exception as e:
+            log("prefetch skipped:", e)
         # a clean cue sheet: only this episode's characters perform (earlier episodes' entries would be posed too)
         from roblox_studio import studio
         studio().luau('local f = game:GetService("ReplicatedStorage"):FindFirstChild("Promptimate"); '
@@ -365,6 +404,7 @@ def _main():
         os.environ["PROMPTIMATE_RBX_ATTEMPTS"] = str(a.attempts)
         import server  # noqa: F401  (motion engine + generate_motion)
         import roblox_tools as RT
+        RT.REPAIR_ROUNDS = a.rounds      # read at import time (server was imported above): set it directly
         sys.path.insert(0, str(ROOT / "roblox" / "short"))
         import fastgrab as FG
         t = time.time()

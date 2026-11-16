@@ -185,13 +185,13 @@ def frame_subjects(cues, t_end: float):
         # nearby angles first; higher cameras (over a counter/throne arm) and far angles as fallbacks
         # one size wider as a fallback (hands at the face fill a close-up of a blocky R6 character)
         sizes = [c.shot] + ([WIDER[c.shot]] if c.shot in WIDER else [])
-        cands = [(c.angle + d, lift, sz) for sz in sizes for lift in (0.0, 0.45)
+        cands = [(c.angle + d, lift, sz) for sz in sizes for lift in (0.0, 0.45, -0.3)
                  for d in (0, 25, -25, 50, -50, 80, -80, 115, -115, 150, -150, 180)]
         cams = []
         for ang, lift, sz in cands:
             pos, look, fov = _cam_for(pose, other, sz, ang, lift)
             cams.append({"pos": pos, "look": look, "fov": fov, "subjects": [c.subject] + ([c.with_] if c.with_ else []),
-                         "r": 0.6})
+                         "r": 0.6, "lean": True})
         b = cues[i + 1].start if i + 1 < len(cues) else t_end
         times = sorted({round(min(c.start + 0.4, (c.start + b) / 2), 2), round((c.start + b) / 2, 2),
                         round(max(b - 0.4, (c.start + b) / 2), 2)})
@@ -206,7 +206,7 @@ def frame_subjects(cues, t_end: float):
             score = 0.0
             for run in runs:     # the shot is judged over its length, not one instant (arms move)
                 r = run[j]
-                near = [n for n in r.get("near") or [] if n.split(".")[0] not in (c.subject, c.with_)]
+                near = list(r.get("near") or [])      # inside anything, the subject's own hat included
                 subs = r.get("subjects") if isinstance(r.get("subjects"), dict) else {}
                 blocked = sum(v.get("blocked", 0) for v in subs.values())
                 score += (len(near) * 10 + blocked * 3 + r.get("fg", 0) * 25) / len(runs)
@@ -220,7 +220,7 @@ def frame_subjects(cues, t_end: float):
             pitch = math.degrees(math.atan2(pos[1] - look[1], horiz))
             score += 4 if pitch > 40 else 1.5 if pitch > 28 else 0              # looking down on hats
             ang, lift, sz = cands[j]
-            score += abs(ang - c.angle) / 25 * 0.5 + lift * 3 + (2.5 if sz != c.shot else 0)
+            score += abs(ang - c.angle) / 25 * 0.5 + abs(lift) * 3 + (2.5 if sz != c.shot else 0)
             if score < best_score:
                 best, best_score = j, score
         if os.environ.get("PROMPTIMATE_FRAME_DEBUG"):

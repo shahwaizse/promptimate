@@ -308,6 +308,73 @@ local function visible(p: BasePart): boolean
 	return p.Transparency < 0.95 and not p:IsA("Terrain")
 end
 
+-- Set walls the camera may cut away (a film set's wild wall): thin, large, vertical parts of workspace.Sets.
+-- Framing ignores them; at render time the ones between the camera and its aim point are hidden for that frame.
+local cullCache = nil
+local function cullables()
+	if cullCache then return cullCache end
+	cullCache = {}
+	local sets = workspace:FindFirstChild("Sets")
+	if sets then
+		for _, p in sets:GetDescendants() do
+			if p:IsA("BasePart") and p.Transparency < 0.95 then
+				local sz = p.Size
+				local axes = { { sz.X, p.CFrame.RightVector }, { sz.Y, p.CFrame.UpVector }, { sz.Z, p.CFrame.LookVector } }
+				table.sort(axes, function(a, b) return a[1] < b[1] end)
+				if axes[1][1] <= 1.5 and axes[2][1] >= 6 and math.abs(axes[1][2].Y) < 0.5 then
+					table.insert(cullCache, p)
+				end
+			end
+		end
+	end
+	return cullCache
+end
+D.cullables = cullables
+local cullSet = nil
+local function isCull(p: Instance): boolean
+	if not cullSet then
+		cullSet = {}
+		for _, q in cullables() do cullSet[q] = true end
+	end
+	return cullSet[p] == true
+end
+
+local cutHidden = {}
+-- Hide the cullable walls between the camera and its aim point (and any the camera sits in); restore the rest.
+function D.cutaway(pos: Vector3, look: Vector3)
+	local want = {}
+	local list = cullables()
+	if #list > 0 then
+		local rp = RaycastParams.new()
+		rp.FilterType = Enum.RaycastFilterType.Include
+		rp.FilterDescendantsInstances = list
+		for _, off in { Vector3.zero, Vector3.new(0, 1.2, 0), Vector3.new(0, -1.2, 0) } do
+			local from, to = pos, look + off
+			for _ = 1, 4 do
+				local hit = workspace:Raycast(from, to - from, rp)
+				if not hit then break end
+				want[hit.Instance] = true
+				from = hit.Position + (to - from).Unit * 0.05
+			end
+		end
+		for _, q in list do   -- the camera inside a wall
+			local lp = q.CFrame:PointToObjectSpace(pos)
+			local h = q.Size / 2 + Vector3.new(0.3, 0.3, 0.3)
+			if math.abs(lp.X) <= h.X and math.abs(lp.Y) <= h.Y and math.abs(lp.Z) <= h.Z then want[q] = true end
+		end
+	end
+	for q, t in cutHidden do
+		if not want[q] then q.Transparency = t; cutHidden[q] = nil end
+	end
+	for q in want do
+		if cutHidden[q] == nil then cutHidden[q] = q.Transparency; q.Transparency = 1 end
+	end
+end
+function D.cutawayClear()
+	for q, t in cutHidden do q.Transparency = t end
+	cutHidden = {}
+end
+
 local function ownerName(p: Instance): string
 	local m = p:FindFirstAncestorOfClass("Model")
 	if m and m ~= workspace then
@@ -465,7 +532,7 @@ function D.camcheck(t: number, cams)
 		local near = {}
 		local op = OverlapParams.new()
 		for _, q in workspace:GetPartBoundsInRadius(pos, c.r or 0.6, op) do
-			if visible(q) then
+			if visible(q) and not isCull(q) then
 				-- precise: the camera point inside the part's box (or near its surface)
 				local lp = q.CFrame:PointToObjectSpace(pos)
 				local s = q.Size / 2 + Vector3.new(1, 1, 1) * (c.r or 0.6)
@@ -485,7 +552,9 @@ function D.camcheck(t: number, cams)
 				local others = {}
 				local rp = RaycastParams.new()
 				rp.FilterType = Enum.RaycastFilterType.Exclude
-				rp.FilterDescendantsInstances = { a.rig }
+				local ex = { a.rig }
+				for _, q in cullables() do table.insert(ex, q) end   -- cut-away walls don't block
+				rp.FilterDescendantsInstances = ex
 				local blocked = {}
 				local nb = 0
 				for _, pn in { "Head", "UpperTorso", "LowerTorso" } do
@@ -507,16 +576,16 @@ function D.camcheck(t: number, cams)
 				-- face: is the camera in front of the head (1 = straight on, <0 = behind), and is the face hidden
 				-- by the subject's own arms/props (the rays above ignore the subject's own body)
 				local hc = tg.Head
-				-- horizontal: a head looking down (tired, sad) still faces the side it looks to
-				local toCam = (pos - hc.Position) * Vector3.new(1, 0, 1)
-				local lk = hc.LookVector * Vector3.new(1, 0, 1)
-				local face = (toCam.Magnitude > 1e-3 and lk.Magnitude > 1e-3) and lk.Unit:Dot(toCam.Unit) or 0
+				-- the face plate's normal toward the camera (a head looking down needs a lower camera)
+				local toCam = pos - hc.Position
+				local face = toCam.Magnitude > 1e-3 and hc.LookVector:Dot(toCam.Unit) or 0
 				local rp2 = RaycastParams.new()
 				rp2.FilterType = Enum.RaycastFilterType.Exclude
 				local skip = { a.rig:FindFirstChild("Head") }
 				for _, acc in a.rig:GetChildren() do
 					if acc:IsA("Accessory") then table.insert(skip, acc) end
 				end
+				for _, q in cullables() do table.insert(skip, q) end
 				rp2.FilterDescendantsInstances = skip
 				-- share of a 3x3 grid on the face (front of the head) hidden by anything but the head itself
 				local hn, hb = 0, 0
@@ -532,6 +601,9 @@ function D.camcheck(t: number, cams)
 				subs[sname] = { blocked = nb, by = others, face = face, selfhit = selfhit, head = { tg.Head.Position.X, tg.Head.Position.Y, tg.Head.Position.Z },
 					hips = { tg.LowerTorso.Position.X, tg.LowerTorso.Position.Y, tg.LowerTorso.Position.Z },
 					foot = { tg.LeftFoot.Position.X, math.min(tg.LeftFoot.Position.Y, tg.RightFoot.Position.Y), tg.LeftFoot.Position.Z } }
+				if c.lean then   -- framing search: scores only (Studio truncates tool output at 100k characters)
+					subs[sname] = { blocked = nb, face = math.floor(face * 100) / 100, selfhit = math.floor(selfhit * 100) / 100 }
+				end
 			end
 		end
 		-- foreground: share of a 6x9 ray grid over the 9:16 frame that hits anything (an arm, a counter) in the
@@ -543,6 +615,8 @@ function D.camcheck(t: number, cams)
 			local dist = (look - pos).Magnitude
 			local th = math.tan(math.rad(c.fov or 40) / 2)
 			local rp3 = RaycastParams.new()
+			rp3.FilterType = Enum.RaycastFilterType.Exclude
+			rp3.FilterDescendantsInstances = cullables()
 			local n, hits = 0, 0
 			for iy = 0, 8 do
 				for ix = 0, 5 do

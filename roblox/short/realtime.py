@@ -69,6 +69,7 @@ task.spawn(function()
         if right.Magnitude < 1e-3 then right = Vector3.xAxis end
         cam.FieldOfView = c[7]
         cam.CFrame = CFrame.lookAt(p, l, right.Unit)
+        if D.cutaway then D.cutaway(p, l) end
       end
       for i = 0, __N__ - 1 do
         bits[i].BackgroundColor3 = (bit32.extract(k, i) == 1) and Color3.new(1, 1, 1) or Color3.new(0, 0, 0)
@@ -76,6 +77,7 @@ task.spawn(function()
     end
     RS.RenderStepped:Wait()
   end
+  if D.cutawayClear then D.cutawayClear() end
   _G.PromptimateRTState = "done"
 end)
 return 1'''

@@ -120,7 +120,9 @@ local f = (l - p).Unit
 local right = f:Cross(Vector3.yAxis)
 if right.Magnitude < 1e-3 then right = Vector3.xAxis end
 cam.CFrame = CFrame.lookAt(p, l, right.Unit)   -- rolled 90 degrees: the scene's up runs along the viewport's width
-{seek}local RS = game:GetService("RunService"); RS.RenderStepped:Wait(); RS.RenderStepped:Wait()
+{seek}local D = _G.PromptimateDirector
+if D and D.cutaway then D.cutaway(p, l) end
+local RS = game:GetService("RunService"); RS.RenderStepped:Wait(); RS.RenderStepped:Wait()
 return 1'''
 
 
@@ -147,7 +149,9 @@ HIDE_NAMES = '''for _, h in workspace:GetDescendants() do
   end
 end
 return 1'''
-RESTORE_NAMES = '''for _, h in workspace:GetDescendants() do
+RESTORE_NAMES = '''local D = _G.PromptimateDirector
+if D and D.cutawayClear then D.cutawayClear() end
+for _, h in workspace:GetDescendants() do
   if h:IsA("Humanoid") and h:GetAttribute("PromptimateNameDist") then
     h.DisplayDistanceType = Enum.HumanoidDisplayDistanceType[h:GetAttribute("PromptimateNameDist")]
     h:SetAttribute("PromptimateNameDist", nil)
