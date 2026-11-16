@@ -237,7 +237,8 @@ def frame_subjects(cues, t_end: float):
                 score += (len(near) * 10 + blocked * 3 + r.get("fg", 0) * 25) / len(runs)
                 for v in subs.values():
                     f = v.get("face", 1.0)
-                    score += (8 if f < 0 else 4 if f < 0.35 else 1.5 if f < 0.6 else 0) / len(runs)
+                    hook = 2.0 if c.start < 2.0 else 1.0      # the opening shot must show a face: it decides the swipe
+                    score += hook * (8 if f < 0 else 4 if f < 0.35 else 1.5 if f < 0.6 else 0) / len(runs)
                     score += float(v.get("selfhit") or 0) * 10 / len(runs)                # face covered (arms, props)
             pos = cams[j]["pos"]
             look = cams[j]["look"]
