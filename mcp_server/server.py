@@ -857,6 +857,12 @@ def stage_actors(actors: list[ShotActor]) -> str:
                       indent=2)
 # ===== END render_shot tools =========================================================================================
 
+# ===== BEGIN roblox tools (mcp_server/roblox_tools.py: roblox_perform, roblox_install, roblox_record) ===============
+import roblox_tools  # noqa: E402
+
+roblox_tools.register(mcp, sys.modules[__name__])
+# ===== END roblox tools ===============================================================================================
+
 # ===== BEGIN world tools (mcp_server/world_tools.py: build_world, light_world, describe_world, render_world_shot) =====
 import world_tools  # noqa: E402
 

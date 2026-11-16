@@ -126,11 +126,19 @@ local function restHeights(character: Model): (number, number)
 	return rest.LowerTorso.Y - lowest, rest.LowerTorso.Y
 end
 
-function Player.new(character: Model, clip: Clip, opts: { origin: CFrame?, speed: number? }?)
+-- Rest measurements of an R15 character in studs: (standing hips height = LowerTorso centre above the bottom of the
+-- feet, LowerTorso centre above the HumanoidRootPart centre). Clips scale by the first value (0.95 m of the source).
+function Player.measure(character: Model): (number, number)
+	return restHeights(character)
+end
+
+function Player.new(character: Model, clip: Clip, opts: { origin: CFrame?, speed: number?, groundClamp: boolean? }?)
 	local self = setmetatable({}, Player)
 	self.character = character
 	self.clip = clip
 	self.speed = (opts and opts.speed) or 1
+	-- lift low poses so no body part goes under the clip's floor (opts.groundClamp = false turns it off)
+	self.groundClamp = not (opts and opts.groundClamp == false)
 	self.humanoid = character:FindFirstChildOfClass("Humanoid")
 	self.rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart
 	assert(self.humanoid and self.rootPart, "PromptimatePlayer needs an R15 character with a Humanoid")
@@ -339,6 +347,29 @@ function Player:_apply(t: number)
 			end
 		end
 		if changed then
+			rootCF, targets, transforms = self:_chain(world, hipsWorld)
+		end
+	end
+	if self.groundClamp then
+		-- Lying, sitting on the ground, crawling, falls: R15 parts are boxier than the source body, so a pose that
+		-- rests on the floor in the source dips the head, arms or shins under it on the rig. Lift the pose by the
+		-- deepest non-foot dip (zero for standing poses, which foot locking handles; continuous, so no pops).
+		local floorY = self.origin.Position.Y
+		local low = math.huge
+		for _, name in ORDER do
+			if name ~= "LeftFoot" and name ~= "RightFoot" then
+				local cf, h = targets[name], (self.parts[name] :: BasePart).Size / 2
+				for _, sx in { -1, 1 } do
+					for _, sy in { -1, 1 } do
+						for _, sz in { -1, 1 } do
+							low = math.min(low, (cf * Vector3.new(sx * h.X, sy * h.Y, sz * h.Z)).Y)
+						end
+					end
+				end
+			end
+		end
+		if low < floorY then
+			hipsWorld = hipsWorld + Vector3.new(0, floorY - low, 0)
 			rootCF, targets, transforms = self:_chain(world, hipsWorld)
 		end
 	end
