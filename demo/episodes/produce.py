@@ -171,7 +171,7 @@ def pace(ep, out_dir: Path) -> None:
         if isinstance(x, tuple):
             return tuple(res(v) for v in x)
         return x
-    for name in ("ACTORS", "CAMERAS", "TITLES", "FACES", "PROPS", "SFX", "LENGTH", "MUSIC"):
+    for name in ("ACTORS", "CAMERAS", "TITLES", "FACES", "PROPS", "FX", "SFX", "LENGTH", "MUSIC"):
         if hasattr(ep, name):
             setattr(ep, name, res(getattr(ep, name)))
     ep.LINES = lines
@@ -195,11 +195,11 @@ def captions(lines: list[dict], out: Path, size=(1080, 1920), titles=(), highlig
 ScriptType: v4.00+
 PlayResX: {W}
 PlayResY: {H}
-WrapStyle: 2
+WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,Arial Black,{int(getattr(captions, "size", 92))},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,{max(5, int(getattr(captions, "size", 92) * 0.11))},2,{8 if getattr(captions, "pos", "top") == "top" else 2},80,80,{int(H * (0.17 if getattr(captions, "pos", "top") == "top" else 0.25))},1
+Style: Cap,Arial Black,{int(getattr(captions, "size", 92))},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,{max(5, int(getattr(captions, "size", 92) * 0.11))},2,{8 if getattr(captions, "pos", "low") == "top" else 2},80,80,{int(H * (0.17 if getattr(captions, "pos", "low") == "top" else 0.35))},1
 Style: Title,Arial Black,110,&H00FFFFFF,&H00FFFFFF,&H00000000,&HB4000000,-1,0,0,0,100,100,2,0,3,18,0,8,60,60,{int(H * 0.14)},1
 
 [Events]
@@ -216,7 +216,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     def under_title(t0, t1):
         return any(a < t1 - 0.05 and t0 + 0.05 < b for a, b, _ in titles)
-    for ln in lines:
+    for li, ln in enumerate(lines):
+        nxt = lines[li + 1]["t"] if li + 1 < len(lines) else 1e9
         words = ln["text"].replace("—", " ").split()
         if not words:
             continue
@@ -235,7 +236,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 chunks.append(cur)
                 cur = []
         for ci, ch in enumerate(chunks):
-            chunk_end = starts[chunks[ci + 1][0]] if ci + 1 < len(chunks) else t0 + dur + 0.15
+            chunk_end = starts[chunks[ci + 1][0]] if ci + 1 < len(chunks) else min(t0 + dur + 0.15, nxt - 0.02)
             if under_title(starts[ch[0]], chunk_end):
                 continue          # one text layer at a time: the title card carries it
             if not highlight:     # one event per chunk
@@ -319,8 +320,8 @@ def annotate(ep):
     """Face-expression and prop cues from the episode (FACES, PROPS) into the Studio cue sheet (Performance)."""
     from roblox_studio import studio
     from roblox_tools import long_str
-    faces, props = getattr(ep, "FACES", {}), getattr(ep, "PROPS", [])
-    if not faces and not props:
+    faces, props, fx = getattr(ep, "FACES", {}), getattr(ep, "PROPS", []), getattr(ep, "FX", [])
+    if not faces and not props and not fx:
         return
     st = studio()
     raw = st.luau('return require(game:GetService("ReplicatedStorage").Promptimate.Performance:Clone())')
@@ -329,6 +330,8 @@ def annotate(ep):
         if name in perf.get("actors", {}):
             perf["actors"][name]["faces"] = [[float(t), e] for t, e in cues]
     perf["props"] = props
+    perf["fx"] = [{"actor": f["actor"], "kind": f["kind"], "show": [[float(a_), float(b_)] for a_, b_ in f["show"]]}
+                  for f in fx if f.get("actor") in perf.get("actors", {})]
     src = "return " + long_str(json.dumps(perf, separators=(",", ":")))
     st.luau('local m = game:GetService("ReplicatedStorage").Promptimate.Performance; m.Source = ' + long_str(src) + '; return 1')
 
@@ -459,9 +462,9 @@ def _main():
         total = duration(silent)
         wav, placed, credits = mix(ep, total, out)
         cap = getattr(ep, "CAPTIONS", {})
-        captions.size = max(cap.get("size", 92), 84)   # two blind judges: captions read too small below this
+        captions.size = max(cap.get("size", 92), 96)   # blind judges, twice: captions read too small
         captions.keywords = getattr(ep, "KEYWORDS", ())
-        captions.pos = cap.get("pos", "top")
+        captions.pos = cap.get("pos", "low")      # below the faces (~65% down); at the top they sat on hats
         ass = captions(placed, out / "captions.ass", titles=getattr(ep, "TITLES", []), highlight=cap.get("highlight", True),
                        max_words=cap.get("max_words", 3))
         final = out / f"{a.episode}{a.suffix}.mp4"

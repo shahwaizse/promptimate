@@ -91,6 +91,9 @@ function D.load()
 	D._player = nil
 	D._faces = nil
 	D.cache = {}
+	local old = workspace:FindFirstChild("PromptimateFX")
+	if old then old:Destroy() end
+	D._fx = {}
 	local perf = HttpService:JSONDecode(fresh(folder().Performance))
 	D.perf = perf
 	D.actors = {}
@@ -216,6 +219,79 @@ local function poseProps(t: number)
 	end
 end
 
+-- Effects over a character's head (perf.fx = {{actor, kind, show = {{t0, t1}, ...}}}): the visible consequence
+-- of a story's rule. kinds: rain / snow (a cloud that follows the head), sparkle, confetti, hearts.
+local FX = {
+	rain = { cloud = Color3.fromRGB(95, 100, 110), color = Color3.fromRGB(120, 170, 255), rate = 90, speed = 16,
+		life = 0.45, size = 0.12, dir = Enum.NormalId.Bottom },
+	snow = { cloud = Color3.fromRGB(215, 220, 230), color = Color3.fromRGB(255, 255, 255), rate = 45, speed = 3,
+		life = 1.4, size = 0.22, dir = Enum.NormalId.Bottom },
+	sparkle = { color = Color3.fromRGB(255, 220, 90), rate = 25, speed = 1.5, life = 0.9, size = 0.35, dir = Enum.NormalId.Top },
+	confetti = { color = nil, rate = 70, speed = 7, life = 1.2, size = 0.25, dir = Enum.NormalId.Top },
+	hearts = { color = Color3.fromRGB(255, 90, 130), rate = 10, speed = 2, life = 1.2, size = 0.45, dir = Enum.NormalId.Top },
+}
+local function fxFolder()
+	local f = workspace:FindFirstChild("PromptimateFX")
+	if not f then f = Instance.new("Folder"); f.Name = "PromptimateFX"; f.Parent = workspace end
+	return f
+end
+local function buildFx(kind: string)
+	local spec = FX[kind] or FX.sparkle
+	local m = Instance.new("Model"); m.Name = "FX_" .. kind
+	local src = Instance.new("Part"); src.Name = "Source"; src.Anchored = true; src.CanCollide = false
+	src.CanQuery = false; src.Transparency = 1; src.Size = Vector3.new(3, 0.2, 3); src.Parent = m
+	if spec.cloud then
+		for i, o in { Vector3.new(-0.9, 0, 0), Vector3.new(0.8, 0.1, 0.2), Vector3.new(0, 0.45, -0.1), Vector3.new(0.1, 0.1, 0.7) } do
+			local b = Instance.new("Part"); b.Name = "Puff" .. i; b.Shape = Enum.PartType.Ball; b.Anchored = true
+			b.CanCollide = false; b.CanQuery = false; b.Material = Enum.Material.SmoothPlastic; b.Color = spec.cloud
+			b.Size = Vector3.new(1.7, 1.7, 1.7); b:SetAttribute("Offset", o); b.Parent = m
+		end
+	end
+	local e = Instance.new("ParticleEmitter")
+	e.Rate = spec.rate; e.Speed = NumberRange.new(spec.speed); e.Lifetime = NumberRange.new(spec.life)
+	e.Size = NumberSequence.new(spec.size); e.EmissionDirection = spec.dir; e.SpreadAngle = Vector2.new(8, 8)
+	e.LightEmission = 0.2; e.Enabled = false
+	if spec.color then
+		e.Color = ColorSequence.new(spec.color)
+	else
+		e.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 80, 80)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(80, 200, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 230, 60)) })
+	end
+	if kind == "rain" then e.Squash = NumberSequence.new(-1.5) end
+	e.Parent = src
+	m.Parent = fxFolder()
+	return m
+end
+local function poseFx(t: number)
+	local list = D.perf and D.perf.fx
+	if not list then return end
+	D._fx = D._fx or {}
+	for i, f in list do
+		local on = false
+		for _, sp in f.show or {} do
+			if t >= sp[1] and t <= sp[2] then on = true end
+		end
+		local a = D.actors[f.actor]
+		local m = D._fx[i]
+		if not m or not m.Parent then m = buildFx(f.kind); D._fx[i] = m end
+		local head = a and a._player and a._player.targets and a._player.targets.Head
+		local e = m.Source:FindFirstChildOfClass("ParticleEmitter")
+		if on and head then
+			local top = head.Position + Vector3.new(0, (f.kind == "rain" or f.kind == "snow") and 3.2 or 0.6, 0)
+			m.Source.CFrame = CFrame.new(top)
+			for _, b in m:GetChildren() do
+				if b.Name:sub(1, 4) == "Puff" then b.Transparency = 0; b.CFrame = CFrame.new(top + b:GetAttribute("Offset")) end
+			end
+			e.Enabled = true
+		else
+			e.Enabled = false
+			for _, b in m:GetChildren() do
+				if b.Name:sub(1, 4) == "Puff" then b.Transparency = 1 end
+			end
+		end
+	end
+end
+
 function D.seek(t: number)
 	if not D.actors then D.load() end
 	for name, a in D.actors do
@@ -227,6 +303,7 @@ function D.seek(t: number)
 		end
 	end
 	poseProps(t)
+	poseFx(t)
 end
 
 function D.play(t0: number?)
