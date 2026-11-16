@@ -40,6 +40,7 @@ JOBS: dict[str, dict] = {}
 
 
 class CameraCue(BaseModel):
+    model_config = {"populate_by_name": True}
     start: float = Field(description="Story time (s) this shot starts; it lasts until the next cue's start")
     pos: list[float] | None = Field(None, description="Camera position [x, y, z] studs (static shot)")
     look: list[float] | None = Field(None, description="Point the camera looks at [x, y, z]")
@@ -50,6 +51,110 @@ class CameraCue(BaseModel):
     subjects: list[str] | None = Field(None, description="Characters that must be visible (default: the tracked one, "
                                                          "else everyone in frame). [] = no visibility checks")
     name: str | None = Field(None, description="Label used in warnings")
+    subject: str | None = Field(None, description="Frame this character, from where it actually is: the camera is "
+                                                  "placed relative to its pose at the shot's start (no pos/look needed)")
+    shot: str = Field("medium", description="With subject: close (face) | medium (waist up) | full (whole body) | "
+                                            "wide (with surroundings) | low (low angle, looking up)")
+    angle: float = Field(25.0, description="With subject: degrees around it, 0 = straight in front of its face, "
+                                           "+ = toward its left, 180 = from behind")
+    with_: str | None = Field(None, alias="with", description="With subject: a second character for a two-shot")
+
+
+# ------------------------------------------------------------------------------------------- subject framing
+SHOTS = {  # distance (in head heights above the floor ~ character height), camera height and aim (0 = hips, 1 = head), fov
+    "close": (1.35, 0.98, 0.93, 32), "medium": (2.0, 0.88, 0.75, 38), "full": (2.8, 0.8, 0.5, 44),
+    "wide": (4.0, 1.2, 0.4, 50), "low": (1.4, -0.1, 0.85, 42),
+}
+POSE_LUAU = r'''
+local D = _G.PromptimateDirector
+local out = {}
+for _, q in game:GetService("HttpService"):JSONDecode(__Q__) do
+  D.seek(q[2])
+  local a = D.actors[q[1]]
+  local tg = a and a._player and a._player.targets
+  if tg then
+    local h, hp, l = tg.Head.Position, tg.LowerTorso.Position, tg.HumanoidRootPart.LookVector
+    local foot = math.min(tg.LeftFoot.Position.Y, tg.RightFoot.Position.Y) - 0.4
+    table.insert(out, { h.X, h.Y, h.Z, hp.X, hp.Y, hp.Z, l.X, l.Z, foot })
+  else
+    table.insert(out, false)
+  end
+end
+return game:GetService("HttpService"):JSONEncode(out)'''
+
+
+def _cam_for(pose, other, shot: str, angle: float):
+    hx, hy, hz, px, py, pz, lx, lz, foot = pose
+    k_dist, k_h, k_aim, fov = SHOTS.get(shot, SHOTS["medium"])
+    tall = max(hy - foot, 2.0)
+    ln = math.hypot(lx, lz) or 1.0
+    lx, lz = lx / ln, lz / ln
+    if other:
+        ox, oz = (hx + other[0]) / 2, (hz + other[2]) / 2
+        sep = math.hypot(other[0] - hx, other[2] - hz)
+        ax, az = (other[2] - hz) / (sep or 1), -(other[0] - hx) / (sep or 1)   # perpendicular to the pair
+        if ax * lx + az * lz < 0:
+            ax, az = -ax, -az                                                    # on the side the subject faces
+        a = math.radians(angle)
+        dx, dz = ax * math.cos(a) - az * math.sin(a), ax * math.sin(a) + az * math.cos(a)
+        dist = max(k_dist * tall, sep * 1.5)
+        aim_y = foot + tall * k_aim
+        return [ox + dx * dist, foot + tall * k_h, oz + dz * dist], [ox, aim_y, oz], fov + 6
+    a = math.radians(angle)
+    # rotate the facing direction toward the subject's left (+angle): left of facing (lx, lz) is (lz, -lx) in Roblox
+    dx, dz = lx * math.cos(a) + lz * math.sin(a), lz * math.cos(a) - lx * math.sin(a)
+    ax, ay, az = px + (hx - px) * 0.3, foot + tall * k_aim, pz + (hz - pz) * 0.3
+    if shot == "close":
+        ax, az = hx, hz
+    dist = k_dist * tall
+    return [ax + dx * dist, foot + tall * k_h, az + dz * dist], [ax, ay, az], fov
+
+
+def frame_subjects(cues, t_end: float):
+    """Cues with a subject get pos/look from the subject's real pose at the shot start (+0.4 s); when the camera would
+    sit inside something or the subject is blocked, nearby angles are tried and the clearest one is used."""
+    todo = [(i, c) for i, c in enumerate(cues) if c.subject and not c.pos and not c.track]
+    if not todo:
+        return cues
+    q = []
+    for i, c in todo:
+        b = cues[i + 1].start if i + 1 < len(cues) else t_end
+        t = min(c.start + 0.4, (c.start + b) / 2)
+        q.append([c.subject, t])
+        if c.with_:
+            q.append([c.with_, t])
+    poses = studio().luau_json(POSE_LUAU.replace("__Q__", long_str(json.dumps(q))))
+    k = 0
+    out = list(cues)
+    for i, c in todo:
+        pose = poses[k]
+        k += 1
+        other = None
+        if c.with_:
+            other = poses[k]
+            k += 1
+        if not pose:
+            continue
+        cands = [c.angle + d for d in (0, 25, -25, 50, -50, 80, -80)]
+        cams = []
+        for ang in cands:
+            pos, look, fov = _cam_for(pose, other, c.shot, ang)
+            cams.append({"pos": pos, "look": look, "subjects": [c.subject] + ([c.with_] if c.with_ else []), "r": 0.6})
+        b = cues[i + 1].start if i + 1 < len(cues) else t_end
+        t = min(c.start + 0.4, (c.start + b) / 2)
+        res = studio().luau_json(f"return _G.PromptimateDirector.camcheck({t:.3f}, game:GetService('HttpService'):JSONDecode("
+                                 f"{long_str(json.dumps(cams))}))")
+        best, best_score = 0, 1e9
+        for j, r in enumerate(res):
+            near = [n for n in r.get("near") or [] if n.split(".")[0] not in (c.subject, c.with_)]
+            blocked = sum(v.get("blocked", 0) for v in (r.get("subjects") or {}).values()) if isinstance(r.get("subjects"), dict) else 0
+            score = len(near) * 10 + blocked * 3 + j * 0.5
+            if score < best_score:
+                best, best_score = j, score
+        pos, look, fov = _cam_for(pose, other, c.shot, cands[best])
+        out[i] = c.model_copy(update={"pos": [round(v, 3) for v in pos], "look": [round(v, 3) for v in look], "fov": fov,
+                                      "subjects": c.subjects if c.subjects is not None else [c.subject]})
+    return out
 
 
 # ------------------------------------------------------------------------------------------- performance (Python)
@@ -248,6 +353,7 @@ def shot_sheet(cues, perf, size, t_end, out: Path) -> Path:
     if fast:
         try:
             _ensure_running()
+            fast["FG"].pin_studio(True)
             fast["rect"] = fast["FG"].calibrate(studio(), vp)
             studio().luau(fast["FG"].HIDE_NAMES)
         except Exception:
@@ -341,6 +447,7 @@ def _render_job_locked(job: dict, cues, perf, size, fps, t0, t1, draft):
         state = {}
         if fast:
             try:
+                fast["FG"].pin_studio(True)
                 fast["rect"] = fast["FG"].calibrate(studio(), vp)
                 studio().luau(fast["FG"].HIDE_NAMES)
             except Exception as e:     # window covered / minimized: fall back to MCP captures
@@ -371,6 +478,11 @@ def _render_job_locked(job: dict, cues, perf, size, fps, t0, t1, draft):
             path = out_dir / f"f{i - n0:05d}.png"
             if not path.exists():
                 if fast:
+                    if i % 24 == 0 and not fast["FG"].viewport_clear(fast["rect"]):
+                        fast["FG"].pin_studio(True)        # something covered Studio: bring it back up, re-measure
+                        fast["rect"] = fast["FG"].calibrate(studio(), vp)
+                        if not fast["FG"].viewport_clear(fast["rect"]):
+                            raise RuntimeError("Studio's viewport is covered by another window; uncover it and record again")
                     t = i / fps
                     _k, _c, pos, look, fov = camera(cues, perf, t)
                     raw = fast["FG"].portrait_raw(studio(), fast["rect"], vp, list(pos), list(look), fov, seek_t=t,
@@ -444,6 +556,7 @@ def record(shots: list[CameraCue], start: float = 0.0, end: float | None = None,
         raise ValueError("no performance yet: call roblox_perform first")
     t_end = end if end is not None else perf.end()
     _ensure_running()
+    shots = frame_subjects(shots, t_end)
     warns, _ = check_cameras(shots, perf, size, t_end)
     out = {"shots": len(shots), "seconds": round(t_end - start, 2)}
     if warns:

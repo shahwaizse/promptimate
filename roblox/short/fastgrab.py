@@ -17,14 +17,14 @@ except Exception:
     _u.SetProcessDPIAware()
 
 
-def studio_window():
+def studio_window(include_minimized: bool = False):
     found = []
 
     @ctypes.WINFUNCTYPE(ctypes.c_bool, W.HWND, W.LPARAM)
     def cb(h, _l):
         n = ctypes.create_unicode_buffer(512)
         _u.GetWindowTextW(h, n, 512)
-        if n.value.endswith("Roblox Studio") and _u.IsWindowVisible(h) and not _u.IsIconic(h):
+        if n.value.endswith("Roblox Studio") and _u.IsWindowVisible(h) and (include_minimized or not _u.IsIconic(h)):
             r = W.RECT()
             _u.GetWindowRect(h, ctypes.byref(r))
             found.append((h, (r.left, r.top, r.right, r.bottom)))
@@ -154,3 +154,41 @@ RESTORE_NAMES = '''for _, h in workspace:GetDescendants() do
   end
 end
 return 1'''
+
+
+def pin_studio(on: bool = True) -> bool:
+    """Raise Studio's window above the others on its monitor (without taking keyboard focus) so nothing covers the
+    viewport while recording. Returns whether the window was found."""
+    w = studio_window(include_minimized=True)
+    if not w:
+        return False
+    if on:
+        if _u.IsIconic(w[0]):
+            _u.ShowWindow(w[0], 4)      # SW_SHOWNOACTIVATE: un-minimize to its previous size, focus stays put
+            time.sleep(0.8)
+        _u.ShowWindow(w[0], 8)          # SW_SHOWNA: to the front in its current (maximized) state, focus stays put
+        time.sleep(0.3)
+    return True
+
+
+def viewport_clear(rect) -> bool:
+    """Is Studio the window under the viewport's centre and corners?"""
+    w = studio_window()
+    if not w:
+        return False
+    l, t, r, b = rect
+    for x, y in (((l + r) // 2, (t + b) // 2), (l + 8, t + 8), (r - 8, t + 8), (l + 8, b - 8), (r - 8, b - 8)):
+        h = _u.WindowFromPoint(W.POINT(int(x), int(y)))
+        if _u.GetAncestor(h, 2) != w[0]:
+            return False
+    return True
+
+
+def minimize_studio() -> bool:
+    """Minimize Studio (it stops rendering): while motion is generated, a rendering Studio competes for the GPU
+    (measured: ~35 s per motion with heavy sets on screen vs 4-6 s minimized)."""
+    w = studio_window()
+    if not w:
+        return False
+    _u.ShowWindow(w[0], 7)              # SW_SHOWMINNOACTIVE
+    return True

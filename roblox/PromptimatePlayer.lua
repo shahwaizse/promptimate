@@ -185,11 +185,22 @@ end
 
 -- Rest measurements of an R15 character in studs: (standing hips height = LowerTorso centre above the bottom of the
 -- feet, LowerTorso centre above the HumanoidRootPart centre). Clips scale by the first value (0.95 m of the source).
+local R6 = {}
+R6.__index = R6
+
 function Player.measure(character: Model): (number, number)
+	local hum = character:FindFirstChildOfClass("Humanoid")
+	if hum and hum.RigType == Enum.HumanoidRigType.R6 then
+		return R6.measure(character)
+	end
 	return restHeights(character)
 end
 
 function Player.new(character: Model, clip: Clip, opts: { origin: CFrame?, speed: number?, groundClamp: boolean?, selfCollide: boolean? }?)
+	local hum = character:FindFirstChildOfClass("Humanoid")
+	if hum and hum.RigType == Enum.HumanoidRigType.R6 then
+		return R6.new(character, clip, opts)
+	end
 	local self = setmetatable({}, Player)
 	self.character = character
 	self.clip = clip
@@ -929,6 +940,188 @@ end
 function Player:SampleTargets(t: number): { [string]: CFrame }
 	self:_apply(t)
 	return self.targets
+end
+
+
+-- ======================================================================================================== R6 rigs
+-- Classic R6 characters (one-piece arms and legs, no hands: the look of most Roblox story videos). The same clip
+-- data drives them: each limb points from its shoulder/hip toward the wrist/ankle of the source limb (the R15 upper
+-- and lower parts' bone directions summed), so a bent arm still reaches where the hand is; the torso follows the
+-- spine between the source's lower and upper torso. Same interface as the R15 player (Seek, targets, Play, Stop).
+local R6LIMBS = {
+	["Left Arm"] = { "LeftUpperArm", "LeftLowerArm", "Left Shoulder" },
+	["Right Arm"] = { "RightUpperArm", "RightLowerArm", "Right Shoulder" },
+	["Left Leg"] = { "LeftUpperLeg", "LeftLowerLeg", "Left Hip" },
+	["Right Leg"] = { "RightUpperLeg", "RightLowerLeg", "Right Hip" },
+}
+local R6ORDER = { "Torso", "Head", "Left Arm", "Right Arm", "Left Leg", "Right Leg" }
+
+function R6.measure(character: Model): (number, number)
+	local leg = character:FindFirstChild("Left Leg") :: BasePart
+	local torso = character:FindFirstChild("Torso") :: BasePart
+	local legLen = leg and leg.Size.Y or 2
+	-- "hips" = the hip-joint level (torso bottom): legLen above the feet; the root sits at the torso centre
+	return legLen, -(torso and torso.Size.Y / 2 or 1)
+end
+
+function R6.new(character: Model, clip, opts)
+	local self = setmetatable({}, R6)
+	self.character, self.clip = character, clip
+	self.speed = (opts and opts.speed) or 1
+	self.groundClamp = not (opts and opts.groundClamp == false)
+	self.humanoid = character:FindFirstChildOfClass("Humanoid")
+	self.rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart
+	self.scale, self.rootToHips = R6.measure(character)
+	local here = self.rootPart.CFrame
+	self.origin = (opts and opts.origin) or CFrame.lookAt(
+		Vector3.new(here.X, here.Y - self.scale - (character.Torso :: BasePart).Size.Y / 2, here.Z),
+		Vector3.new(here.X + here.LookVector.X, here.Y - self.scale - (character.Torso :: BasePart).Size.Y / 2, here.Z + here.LookVector.Z))
+	self.parts, self.motors = {}, {}
+	local torso = character:FindFirstChild("Torso") :: BasePart
+	self.parts.Torso = torso
+	self.motors.Torso = self.rootPart:FindFirstChild("RootJoint") or self.rootPart:FindFirstChild("Root Hip")
+	for _, n in { "Head", "Left Arm", "Right Arm", "Left Leg", "Right Leg" } do
+		self.parts[n] = character:FindFirstChild(n)
+	end
+	self.motors.Head = torso:FindFirstChild("Neck")
+	for n, v in R6LIMBS do
+		self.motors[n] = torso:FindFirstChild(v[3])
+	end
+	for _, n in R6ORDER do
+		assert(self.parts[n] and self.motors[n], "R6 rig is missing " .. n)
+	end
+	self.index = {}
+	for i, name in clip.parts do
+		self.index[name] = (i - 1) * 4
+	end
+	self.time, self.playing = 0, false
+	self.Ended = Instance.new("BindableEvent")
+	return self
+end
+
+function R6:_sample(t: number)
+	local clip = self.clip
+	local f = t * clip.fps
+	local n = clip.frames
+	f = clip.loop and (f % (n - 1)) or math.clamp(f, 0, n - 1)
+	local i0 = math.floor(f)
+	local i1 = math.min(i0 + 1, n - 1)
+	local a = f - i0
+	local r0, r1 = clip.rot[i0 + 1], clip.rot[i1 + 1]
+	local p0, p1 = clip.root[i0 + 1], clip.root[i1 + 1]
+	local hips = Vector3.new(p0[1] + (p1[1] - p0[1]) * a, p0[2] + (p1[2] - p0[2]) * a, p0[3] + (p1[3] - p0[3]) * a)
+	local originRot = rotationOnly(self.origin)
+	local src = {}
+	for name, o in self.index do
+		src[name] = originRot * quat(r0, o):Lerp(quat(r1, o), a)
+	end
+	local world = {}
+	world.Torso = src.LowerTorso:Lerp(src.UpperTorso, 0.6)
+	world.Head = src.Head
+	for n, v in R6LIMBS do
+		local up, lo = src[v[1]], src[v[2]]
+		local d1, d2 = up * Vector3.new(0, -1, 0), lo * Vector3.new(0, -1, 0)
+		local dir = d1 + d2
+		dir = dir.Magnitude > 1e-3 and dir.Unit or d1
+		world[n] = arc(d1, dir) * up
+	end
+	return world, self.origin * CFrame.new(hips * self.scale)
+end
+
+function R6:_chain(world, hipsWorld: CFrame)
+	local torso = self.parts.Torso :: BasePart
+	local torsoCF = CFrame.new(hipsWorld.Position) * world.Torso * CFrame.new(0, torso.Size.Y / 2, 0)
+	local look = (world.Torso * Vector3.new(0, 0, -1)) * Vector3.new(1, 0, 1)
+	if look.Magnitude < 1e-3 then look = self.origin.LookVector end
+	local rootCF = CFrame.lookAt(Vector3.new(torsoCF.X, self.origin.Y + self.scale + torso.Size.Y / 2, torsoCF.Z),
+		Vector3.new(torsoCF.X, self.origin.Y + self.scale + torso.Size.Y / 2, torsoCF.Z) + look.Unit)
+	local targets = { HumanoidRootPart = rootCF, Torso = torsoCF }
+	local transforms = {}
+	local rj = self.motors.Torso :: any
+	transforms.Torso = (rootCF * jointC0(rj)):Inverse() * torsoCF * jointC1(rj)
+	for _, name in R6ORDER do
+		if name ~= "Torso" then
+			local j = self.motors[name] :: any
+			local c0, c1 = jointC0(j), jointC1(j)
+			local rot = rotationOnly(torsoCF * c0):Inverse() * world[name] * rotationOnly(c1)
+			transforms[name] = rot
+			targets[name] = torsoCF * c0 * rot * c1:Inverse()
+		end
+	end
+	-- aliases so tools written for R15 (cameras, probes, prop hands) work on R6 rigs too
+	targets.LowerTorso = torsoCF * CFrame.new(0, -torso.Size.Y / 2 + 0.2, 0)
+	targets.UpperTorso = torsoCF
+	local ll, rl = self.parts["Left Leg"] :: BasePart, self.parts["Right Leg"] :: BasePart
+	targets.LeftFoot = targets["Left Leg"] * CFrame.new(0, -ll.Size.Y / 2 + 0.2, 0)
+	targets.RightFoot = targets["Right Leg"] * CFrame.new(0, -rl.Size.Y / 2 + 0.2, 0)
+	local la, ra = self.parts["Left Arm"] :: BasePart, self.parts["Right Arm"] :: BasePart
+	targets.LeftHand = targets["Left Arm"] * CFrame.new(0, -la.Size.Y / 2 + 0.25, 0)
+	targets.RightHand = targets["Right Arm"] * CFrame.new(0, -ra.Size.Y / 2 + 0.25, 0)
+	return rootCF, targets, transforms
+end
+
+function R6:_apply(t: number)
+	local world, hipsWorld = self:_sample(t)
+	local rootCF, targets, transforms = self:_chain(world, hipsWorld)
+	if self.groundClamp then
+		local floorY, low = self.origin.Position.Y, math.huge
+		for _, name in R6ORDER do
+			local cf, h = targets[name], (self.parts[name] :: BasePart).Size / 2
+			for _, sx in { -1, 1 } do for _, sy in { -1, 1 } do for _, sz in { -1, 1 } do
+				low = math.min(low, (cf * Vector3.new(sx * h.X, sy * h.Y, sz * h.Z)).Y)
+			end end end
+		end
+		if low < floorY - 0.02 then
+			hipsWorld = hipsWorld + Vector3.new(0, floorY - low, 0)
+			rootCF, targets, transforms = self:_chain(world, hipsWorld)
+		end
+	end
+	self.rootPart.CFrame = rootCF
+	for _, name in R6ORDER do
+		(self.motors[name] :: any).Transform = transforms[name]
+	end
+	self.targets = targets
+end
+
+function R6:Play(startTime: number?)
+	self.time = startTime or 0
+	self.playing = true
+	local animate = self.character:FindFirstChild("Animate")
+	if animate and animate:IsA("LocalScript") then animate.Enabled = false end
+	local animator = self.humanoid:FindFirstChildOfClass("Animator")
+	if animator then for _, tr in animator:GetPlayingAnimationTracks() do tr:Stop(0) end end
+	self.rootPart.Anchored = true
+	self.humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+	local event = RunService:IsClient() and RunService.PreRender or RunService.PreSimulation
+	self.conn = event:Connect(function(dt)
+		if not self.playing then return end
+		self.time += dt * self.speed
+		self:_apply(self.time)
+		if not self.clip.loop and self.time * self.clip.fps >= self.clip.frames - 1 then
+			self.playing = false
+			self.Ended:Fire()
+		end
+	end)
+	self:_apply(self.time)
+end
+
+function R6:Seek(t: number)
+	self.time = t
+	self:_apply(t)
+end
+
+function R6:Stop()
+	self.playing = false
+	if self.conn then self.conn:Disconnect(); self.conn = nil end
+end
+
+function R6:SampleTargets(t: number)
+	self:_apply(t)
+	return self.targets
+end
+
+function R6:SelfClip(): (number, string)
+	return 0, ""
 end
 
 return Player

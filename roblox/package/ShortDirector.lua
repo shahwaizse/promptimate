@@ -84,6 +84,7 @@ end
 -- (Re)read the cue sheet. Called automatically by seek/play; call again after roblox_perform pushed new clips.
 function D.load()
 	D._player = nil
+	D._faces = nil
 	D.cache = {}
 	local perf = HttpService:JSONDecode(fresh(folder().Performance))
 	D.perf = perf
@@ -92,7 +93,7 @@ function D.load()
 		local rig = resolve(a.path)
 		if rig then
 			D.prepare(rig)
-			D.actors[name] = { rig = rig, clips = a.clips }
+			D.actors[name] = { rig = rig, clips = a.clips, faces = a.faces }
 		else
 			warn("ShortDirector: character not found: " .. table.concat(a.path, "."))
 		end
@@ -139,14 +140,88 @@ function D.poseActor(name: string, t: number)
 	local c, lt = active(a, t)
 	local p = clipPlayer(name, a, c)
 	p:Seek(lt)
+	a._player = p
 	return p, c
+end
+
+-- Expression cues: perf.actors[name].faces = {{t, "happy"}, ...} (Faces.lua); the latest cue at or before t holds
+local function faceAt(a, t)
+	local cur
+	for _, c in a.faces or {} do
+		if c[1] <= t + 1e-6 then cur = c[2] end
+	end
+	return cur
+end
+
+-- Prop cues: perf.props = {{path = {"Sets","Bakery","Chair"}, show = {{t0, t1}, ...}, attach = {actor, hand, offset =
+-- {x, y, z, rx, ry, rz}}}}: visible only inside its spans (moved far below otherwise), and carried in a hand if attached
+local HIDE = Vector3.new(0, -2000, 0)
+local function poseProps(t: number)
+	-- several cues may name the same object (on the desk, then in Timmy's hand, then in Preston's): per object, the
+	-- cue whose span contains t wins; an object with spans and none active is hidden; one without spans stays home
+	local byInst = {}
+	for _, p in (D.perf and D.perf.props) or {} do
+		if p._inst == nil then
+			p._inst = resolve(p.path) or false
+		end
+		local inst = p._inst
+		if inst then
+			local e = byInst[inst]
+			if not e then
+				e = { active = nil, spans = false }
+				byInst[inst] = e
+				if D._propHome == nil then D._propHome = {} end
+				if D._propHome[inst] == nil then
+					-- the home pose survives director reloads (a prop may be hidden or carried when a new one starts)
+					local h = inst:GetAttribute("PromptimateHome")
+					if typeof(h) ~= "CFrame" then
+						h = inst:GetPivot()
+						inst:SetAttribute("PromptimateHome", h)
+					end
+					D._propHome[inst] = h
+				end
+			end
+			if p.show then
+				e.spans = true
+				for _, sp in p.show do
+					if not e.active and t >= sp[1] - 1e-6 and t <= sp[2] + 1e-6 then e.active = p end
+				end
+			elseif not e.active then
+				e.always = p
+			end
+		end
+	end
+	for inst, e in byInst do
+		local p = e.active or e.always
+		local home = D._propHome[inst]
+		if not p then
+			inst:PivotTo(home + HIDE)
+		elseif p.attach and D.actors[p.attach.actor] then
+			local a = D.actors[p.attach.actor]
+			local hn = (p.attach.hand or "Right") .. "Hand"
+			local pl = a._player
+			local cf = pl and pl.targets and pl.targets[hn] or (a.rig:FindFirstChild(hn) and a.rig[hn].CFrame)
+			if cf then
+				local o = p.attach.offset or { 0, -0.6, 0, 0, 0, 0 }
+				inst:PivotTo(cf * CFrame.new(o[1], o[2], o[3]) * CFrame.Angles(math.rad(o[4]), math.rad(o[5]), math.rad(o[6])))
+			end
+		else
+			inst:PivotTo(home)
+		end
+	end
 end
 
 function D.seek(t: number)
 	if not D.actors then D.load() end
-	for name in D.actors do
+	for name, a in D.actors do
 		D.poseActor(name, t)
+		local f = faceAt(a, t)
+		if f then
+			if not D._faces then D._faces = fresh(folder().Faces) end
+			D._faces.set(a.rig, f)
+		end
 	end
+	poseProps(t)
 end
 
 function D.play(t0: number?)
@@ -349,8 +424,15 @@ function D.probe(name: string, times, opts)
 			end end
 			return best
 		end
-		local thigh = math.min(boxLowest(tg.LowerTorso, a.rig.LowerTorso.Size),
-			hipEnd(tg.LeftUpperLeg, a.rig.LeftUpperLeg.Size), hipEnd(tg.RightUpperLeg, a.rig.RightUpperLeg.Size))
+		local thigh
+		if a.rig:FindFirstChild("LeftUpperLeg") then
+			thigh = math.min(boxLowest(tg.LowerTorso, a.rig.LowerTorso.Size),
+				hipEnd(tg.LeftUpperLeg, a.rig.LeftUpperLeg.Size), hipEnd(tg.RightUpperLeg, a.rig.RightUpperLeg.Size))
+		else   -- R6: the torso bottom and the top ends of the one-piece legs
+			local tor = a.rig:FindFirstChild("Torso")
+			thigh = math.min(boxLowest(tg.Torso, tor.Size), hipEnd(tg["Left Leg"], a.rig["Left Leg"].Size),
+				hipEnd(tg["Right Leg"], a.rig["Right Leg"].Size))
+		end
 		local look = tg.HumanoidRootPart.LookVector
 		local hl = {}
 		for k in hits do table.insert(hl, k) end

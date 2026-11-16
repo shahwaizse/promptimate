@@ -192,7 +192,8 @@ def _gen_frame(prev: str | None) -> tuple[float, float, float]:
 # ================================================================================================ Studio: package
 def _pkg_sources() -> dict[str, str]:
     return {"PromptimatePlayer": (ROOT / "roblox" / "PromptimatePlayer.lua").read_text(encoding="utf-8"),
-            "ShortDirector": (PKG / "ShortDirector.lua").read_text(encoding="utf-8")}
+            "ShortDirector": (PKG / "ShortDirector.lua").read_text(encoding="utf-8"),
+            "Faces": (PKG / "Faces.lua").read_text(encoding="utf-8")}
 
 
 def _pkg_version() -> str:
@@ -741,7 +742,7 @@ def _generate(actor: str, idx: int, spec: dict, prev: str | None) -> tuple[str, 
         kw["in_place"] = True
     segs = [SRV.MotionSegment(prompt=p, seconds=s) for p, s in spec["segments"]]
     best = None
-    for attempt in range(MAX_ATTEMPTS):
+    for attempt in range(int(os.environ.get("PROMPTIMATE_RBX_ATTEMPTS", MAX_ATTEMPTS))):
         with _GEN_LOCK:
             real = SRV.worker
             if spec.get("face_rel") is not None:
@@ -750,6 +751,7 @@ def _generate(actor: str, idx: int, spec: dict, prev: str | None) -> tuple[str, 
                 for tries in range(4):   # the shared GPU daemon may restart (other jobs, memory pressure): retry
                     try:
                         res = SRV.generate_motion(segs, name=f"rbx_{actor}_{idx:02d}",
+                                                  takes=int(os.environ.get("PROMPTIMATE_RBX_TAKES", "2")),
                                                   seed=(attempt + spec.get("retry", 0) * MAX_ATTEMPTS) * 101,
                                                   unity_check="off", **kw)
                         break
@@ -1269,10 +1271,12 @@ def _stage_checks(name: str, r: dict, plan: Planner) -> list[str]:
     ends = [round(b["t1"] - 0.04, 3) for b in beats]
     times = sorted(set(times + ends))
     seats = {s["name"]: s["top"] for s in r["seats"] if s.get("name") and s.get("top") is not None}
-    data = studio().luau_json(
-        "local D = _G.PromptimateDirector or require(game:GetService('ReplicatedStorage').Promptimate.ShortDirector:Clone())\n"
-        f"return D.probe({json.dumps(name)}, {{{','.join(map(str, times))}}}, "
-        f"game:GetService('HttpService'):JSONDecode({long_str(json.dumps({'seats': seats}))}))")
+    data = []
+    for i in range(0, len(times), 120):     # batches: Studio truncates tool output at 100k characters
+        data += studio().luau_json(
+            "local D = _G.PromptimateDirector or require(game:GetService('ReplicatedStorage').Promptimate.ShortDirector:Clone())\n"
+            f"return D.probe({json.dumps(name)}, {{{','.join(map(str, times[i:i + 120]))}}}, "
+            f"game:GetService('HttpService'):JSONDecode({long_str(json.dumps({'seats': seats}))}))")
     spm = r["spm"]
     by_t = {round(d["t"], 3): d for d in data}
     warn = []
@@ -1373,10 +1377,12 @@ def _body_checks(results: dict) -> tuple[list[str], dict]:
     {(actor, beat index): [kinds]})."""
     t1 = max(c["s"] + c["d"] for r in results.values() for c in r["clips"])
     times = [round(t, 2) for t in np.arange(0, t1, 0.2)]
-    data = studio().luau_json(
-        "local D = _G.PromptimateDirector or require(game:GetService('ReplicatedStorage').Promptimate.ShortDirector:Clone())\n"
-        "_G.PromptimateDirector = D; D.options = nil; D.load()\n"
-        f"return D.bodycheck({{{','.join(map(str, times))}}})", timeout=900)
+    data = []
+    for i in range(0, len(times), 40):      # batches: Studio truncates tool output at 100k characters
+        data += studio().luau_json(
+            "local D = _G.PromptimateDirector or require(game:GetService('ReplicatedStorage').Promptimate.ShortDirector:Clone())\n"
+            "_G.PromptimateDirector = D; D.options = nil" + ("; D.load()" if i == 0 else "") + "\n"
+            f"return D.bodycheck({{{','.join(map(str, times[i:i + 40]))}}})", timeout=900)
     ts = [d["t"] for d in data]
     warn, bad = [], {}
 
