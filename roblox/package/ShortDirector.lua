@@ -391,16 +391,18 @@ local cullCache = nil
 local function cullables()
 	if cullCache then return cullCache end
 	cullCache = {}
-	local sets = workspace:FindFirstChild("Sets")
-	if sets then
-		for _, p in sets:GetDescendants() do
+	for _, rn in { "Sets", "Town" } do
+		local root = workspace:FindFirstChild(rn)
+		for _, p in root and root:GetDescendants() or {} do
 			if p:IsA("BasePart") and p.Transparency < 0.95 then
 				local sz = p.Size
 				local axes = { { sz.X, p.CFrame.RightVector }, { sz.Y, p.CFrame.UpVector }, { sz.Z, p.CFrame.LookVector } }
 				table.sort(axes, function(a, b) return a[1] < b[1] end)
 				-- wall-sized only (furniture panels like a throne's back must still block the camera)
-				if axes[1][1] <= 1.2 and axes[2][1] >= 8 and math.abs(axes[1][2].Y) < 0.5 then
+				if rn == "Sets" and axes[1][1] <= 1.2 and axes[2][1] >= 8 and math.abs(axes[1][2].Y) < 0.5 then
 					table.insert(cullCache, p)
+				elseif axes[2][1] <= 0.9 and axes[3][1] >= 5 and math.abs(axes[3][2].Y) > 0.9 then
+					table.insert(cullCache, p)      -- lamp posts, sign poles: a crew would move them out of the shot
 				end
 			end
 		end
