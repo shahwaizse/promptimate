@@ -242,6 +242,13 @@ HIDE = [["Workspace", "Sets", n] for n in ("PaidBench", "SaleChair0", "SaleChair
 PROPS = [{"path": p, "show": []} for p in HIDE] + [
     {"path": ["Workspace", "Sets", "Jar"], "show": [[0, 999]]},          # the money jar on Timmy's desk
 ]
+FX = [
+    {"actor": "Man", "kind": "sparkle", "show": [["@pocket", "@pocket.end"]]},
+    {"actor": "TimmyM", "kind": "sparkle", "show": [["@robot+1.6", "@twelve.end"]]},
+    {"actor": "Preston", "kind": "rain", "show": [["@found", "@laughed"]]},
+    {"actor": "Leo", "kind": "confetti", "show": [["@leo_laughs", "@leo_laughs.end"]]},
+    {"actor": "Timmy", "kind": "hearts", "show": [["@free", "@free.end"]]},
+]
 MUSIC = {"query": "funny", "pick": 0, "from": 0, "gain": 0.45}
 SFX = [("@rule+0.9", "laugh", 0.5), ("@pocket+0.6", "coin", 0.7), ("@clown+0.4", "clown horn", 0.6), ("@me+2.0", "thud", 0.6),
        ("@tosses+2.4", "coin", 0.6), ("@letter+0.5", "gasp", 0.6), ("@pay+0.2", "boom", 0.5), ("@loan+1.4", "coin", 0.6),

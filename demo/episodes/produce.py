@@ -330,7 +330,8 @@ def annotate(ep):
         if name in perf.get("actors", {}):
             perf["actors"][name]["faces"] = [[float(t), e] for t, e in cues]
     perf["props"] = props
-    perf["fx"] = [{"actor": f["actor"], "kind": f["kind"], "show": [[float(a_), float(b_)] for a_, b_ in f["show"]]}
+    perf["fx"] = [{"actor": f["actor"], "kind": f["kind"], "text": f.get("text"),
+                   "show": [[float(sp[0]), float(sp[1])] + ([str(sp[2])] if len(sp) > 2 else []) for sp in f["show"]]}
                   for f in fx if f.get("actor") in perf.get("actors", {})]
     src = "return " + long_str(json.dumps(perf, separators=(",", ":")))
     st.luau('local m = game:GetService("ReplicatedStorage").Promptimate.Performance; m.Source = ' + long_str(src) + '; return 1')

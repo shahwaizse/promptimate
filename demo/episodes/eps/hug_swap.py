@@ -238,6 +238,14 @@ HIDE = [["Workspace", "Sets", n] for n in ("PaidBench", "SaleChair0", "SaleChair
                                            "MomChair")] + \
        [["Workspace", "Sets", "ChairMarket", "Sign"], ["Workspace", "Sets", "ChairMarket", "Price"]]
 PROPS = [{"path": p, "show": []} for p in HIDE]
+FX = [
+    {"actor": "Lady", "kind": "sparkle", "show": [["@flash", "@flash.end"]]},
+    {"actor": "Man", "kind": "sparkle", "show": [["@flash", "@flash.end"]]},
+    {"actor": "TimmyA", "kind": "sparkle", "show": [["@swap", "@swap.end"], ["@back", "@back.end"]]},
+    {"actor": "PrestonA", "kind": "sparkle", "show": [["@swap", "@swap.end"], ["@back", "@back.end"]]},
+    {"actor": "Mom", "kind": "confetti", "show": [["@pop", "@isamom.end"]]},
+    {"actor": "PrestonB", "kind": "confetti", "show": [["@pop", "@isamom.end"]]},
+]
 MUSIC = {"query": "happy", "pick": 1, "from": 0, "gain": 0.45}
 SFX = [("@rule+1.0", "gasp", 0.5), ("@flash+1.6", "pop", 0.7), ("@cat+0.8", "meow", 0.6), ("@cat+3.0", "groan", 0.5),
        ("@team+1.4", "crowd cheer", 0.4), ("@wave", "whistle", 0.4), ("@me", "shop bell", 0.5), ("@mom+1.8", "aww", 0.5),

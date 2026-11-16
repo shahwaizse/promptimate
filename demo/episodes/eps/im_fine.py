@@ -213,6 +213,14 @@ HIDE = [["Workspace", "Sets", n] for n in ("PaidBench", "SaleChair0", "SaleChair
                                            "MomChair")] + \
        [["Workspace", "Sets", "ChairMarket", "Sign"], ["Workspace", "Sets", "ChairMarket", "Price"]]
 PROPS = [{"path": p, "show": []} for p in HIDE]
+FX = [
+    {"actor": "Kid", "kind": "rain", "show": [["@pop", "@honest"]]},
+    {"actor": "Man", "kind": "rain", "show": [["@small+1.6", "@honest+1.4"]]},
+    {"actor": "Mayor", "kind": "rain", "show": [["@mayor+1.4", "@mayor.end"]]},
+    {"actor": "Mom", "kind": "rain", "show": [["@mom", "@sun"]]},
+    {"actor": "TimmyB", "kind": "rain", "show": [["@cloud", "@sun"]]},
+    {"actor": "PrestonB", "kind": "snow", "show": [["@snow", "@twist.end"]]},
+]
 MUSIC = {"query": "funny", "pick": 1, "from": 0, "gain": 0.45}
 SFX = [("@rule+1.2", "thunder", 0.5), ("@pop+0.3", "pop", 0.7), ("@pop+1.0", "rain", 0.4), ("@small+1.8", "thunder", 0.6),
        ("@mayor+1.4", "wedding bells", 0.4), ("@mayor.end-1.0", "boat horn", 0.6), ("@honest+1.6", "groan", 0.5),

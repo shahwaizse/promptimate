@@ -235,7 +235,20 @@ local function fxFolder()
 	if not f then f = Instance.new("Folder"); f.Name = "PromptimateFX"; f.Parent = workspace end
 	return f
 end
+local function buildLabel()
+	local m = Instance.new("Model"); m.Name = "FX_label"
+	local src = Instance.new("Part"); src.Name = "Source"; src.Anchored = true; src.CanCollide = false
+	src.CanQuery = false; src.Transparency = 1; src.Size = Vector3.new(0.2, 0.2, 0.2); src.Parent = m
+	local g = Instance.new("BillboardGui"); g.Name = "Label"; g.Size = UDim2.fromScale(5, 1.3); g.LightInfluence = 0
+	g.Adornee = src; g.Parent = src
+	local t = Instance.new("TextLabel"); t.Name = "Text"; t.BackgroundTransparency = 1; t.Size = UDim2.fromScale(1, 1)
+	t.Font = Enum.Font.FredokaOne; t.TextScaled = true; t.TextColor3 = Color3.fromRGB(255, 214, 40)
+	t.TextStrokeTransparency = 0; t.TextStrokeColor3 = Color3.fromRGB(40, 25, 0); t.Parent = g
+	m.Parent = fxFolder()
+	return m
+end
 local function buildFx(kind: string)
+	if kind == "label" then return buildLabel() end
 	local spec = FX[kind] or FX.sparkle
 	local m = Instance.new("Model"); m.Name = "FX_" .. kind
 	local src = Instance.new("Part"); src.Name = "Source"; src.Anchored = true; src.CanCollide = false
@@ -267,14 +280,25 @@ local function poseFx(t: number)
 	if not list then return end
 	D._fx = D._fx or {}
 	for i, f in list do
-		local on = false
+		local on, text = false, f.text
 		for _, sp in f.show or {} do
-			if t >= sp[1] and t <= sp[2] then on = true end
+			if t >= sp[1] and t <= sp[2] then on = true; text = sp[3] or f.text end
 		end
 		local a = D.actors[f.actor]
 		local m = D._fx[i]
 		if not m or not m.Parent then m = buildFx(f.kind); D._fx[i] = m end
 		local head = a and a._player and a._player.targets and a._player.targets.Head
+		if f.kind == "label" then
+			local g = m.Source:FindFirstChild("Label")
+			if on and head then
+				m.Source.CFrame = CFrame.new(head.Position + Vector3.new(0, 2.1, 0))
+				g.Enabled = true
+				g.Text.Text = tostring(text or "")
+			else
+				g.Enabled = false
+			end
+			continue
+		end
 		local e = m.Source:FindFirstChildOfClass("ParticleEmitter")
 		if on and head then
 			local top = head.Position + Vector3.new(0, (f.kind == "rain" or f.kind == "snow") and 3.2 or 0.6, 0)
