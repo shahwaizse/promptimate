@@ -115,7 +115,7 @@ def _cam_for(pose, other, shot: str, angle: float, lift: float = 0.0):
     ax, ay, az = px + (hx - px) * 0.3, foot + tall * k_aim, pz + (hz - pz) * 0.3
     if shot == "close":
         ax, az = hx, hz
-    dist = k_dist * tall
+    dist = k_dist * max(tall, 3.6)    # a seated or lying character is short: keep the standing distance (no hat-tops)
     return [ax + dx * dist, foot + tall * (k_h + lift), az + dz * dist], [ax, ay, az], fov
 
 
