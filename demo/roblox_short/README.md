@@ -127,3 +127,7 @@ Other quality fixes found along the way:
 - Characters coming from behind a bench go round its end.
 - The seat-front ray and the collision test ignore only the sitting surface, not the backrest.
 - Collisions need 0.15 studs of penetration, so leaning against something isn't flagged.
+
+**The short:** `.cache/roblox_perform/record/sitdown_v2/sitdown_v2_final.mp4`. It is 1080x1920 at 24 fps, 37.0 s
+long (888 frames, silent). It rendered through `roblox_record` in 36 min, after waiting about 2.5 h for the
+machine's heavy-job lock.
