@@ -72,7 +72,7 @@ ACTORS = [
         {"at": "@mute", "prompt": FISTS, "seconds": 2.6, "face": "Preston"},
         {"at": "@dumb", "prompt": SAD, "seconds": 3.0, "face": "Leo"},
         {"at": "@scream", "prompt": ANGRY, "seconds": 1.7, "face": "Preston"},
-        {"prompt": WALK_SAD, "seconds": 3.0, "to": [62, 11.5]},
+        {"at": "@away", "prompt": WALK_SAD, "seconds": 3.0, "to": [62, 11.5]},
     ]},
     {"name": "Preston", "start": [53.5, 9.5], "facing": "-X", "beats": [
         {"at": "@found", "prompt": TALK, "seconds": 3.0, "face": "Timmy"},
@@ -96,8 +96,8 @@ ACTORS = [
         {"prompt": STARE, "seconds": 1.8, "face": "TimmyB"},
         {"at": "@said", "prompt": TALK, "seconds": 2.6, "face": "TimmyB"},
         {"at": "@clean", "prompt": POINT, "seconds": 1.4, "face": "TimmyB"},
-        {"prompt": LAUGH, "seconds": 2.6},
-        {"prompt": HAPPY, "seconds": 4.0, "face": "TimmyB"},
+        {"at": "@laughed", "prompt": LAUGH, "seconds": 2.6},
+        {"prompt": HAPPY, "seconds": 7.5, "face": "TimmyB"},
     ]},
     {"name": "TimmyB", "start": [347.5, 3], "facing": "-Z", "beats": [
         {"at": "@mom", "prompt": HAPPY, "seconds": 3.0, "face": "Mom"},
@@ -109,7 +109,7 @@ ACTORS = [
         {"at": "@mouth", "prompt": STARE, "seconds": 2.5, "face": "Mom"},
         {"at": "@breath", "prompt": NERVOUS, "seconds": 1.4, "face": "Mom"},
         {"at": "@laughed", "prompt": JOY, "seconds": 3.0},
-        {"prompt": HAPPY, "seconds": 4.0, "face": "Mom"},
+        {"prompt": HAPPY, "seconds": 7.5, "face": "Mom"},
     ]},
     # ---------------------------------------------------------------- C: Timmy's room
     {"name": "TimmyC", "start": [456, -4.5], "facing": "-Z", "beats": [
@@ -123,8 +123,8 @@ ACTORS = [
 CAMERAS = [
     # one cue per story moment (the recorder adds coverage cuts and push-ins); fixed shots for sets
     # A: the street
-    {"name": "talking", "start": 0.0, "subject": "Lady", "with": "Man", "shot": "medium", "angle": 0},
-    {"name": "click", "start": "@click", "subject": "Lady", "shot": "close", "angle": 15},
+    {"name": "talking", "start": 0.0, "subject": "Lady", "shot": "close", "angle": 0},
+    {"name": "click", "start": "@click", "subject": "Lady", "with": "Man", "shot": "medium", "angle": 0},
     {"name": "hi", "start": "@hi", "subject": "Man", "shot": "medium", "angle": 20},
     {"name": "wedding", "start": "@hi+1.4", "subject": "Lady", "shot": "close", "angle": -15},
     {"name": "the street", "start": "@weather", "pos": [52, 6, 26], "look": [52, 3.5, 5], "fov": 52, "subjects": []},
@@ -158,9 +158,9 @@ CAMERAS = [
     {"name": "she said", "start": "@said", "subject": "Mom", "shot": "medium", "angle": -20},
     {"name": "held breath", "start": "@breath", "subject": "TimmyB", "shot": "close", "angle": 10},
     {"name": "clean your room", "start": "@clean", "subject": "Mom", "shot": "close", "angle": 0},
-    {"name": "she laughs", "start": "@laughed", "subject": "Mom", "shot": "medium", "angle": 25},
+    {"name": "she laughs", "start": "@laughed", "subject": "Mom", "shot": "close", "angle": 10},
     {"name": "timmy grins", "start": "@laughed+1.6", "subject": "TimmyB", "shot": "close", "angle": -15},
-    {"name": "984", "start": "@left", "subject": "TimmyB", "with": "Mom", "shot": "full", "angle": 0},
+    {"name": "984", "start": "@left", "subject": "Mom", "with": "TimmyB", "shot": "medium", "angle": 0},   # holds on both faces to the end
 ]
 
 LINES = [
@@ -203,7 +203,7 @@ FACES = {
     "Preston": [(0, "smug"), ("@found", "grin"), ("@shoe", "angry"), ("@mute", "grin"), ("@dumb", "smug")],
     "Leo": [(0, "neutral"), ("@dumb+1.8", "shocked"), ("@dumb+3.6", "sad")],
     "Mom": [(0, "tired"), ("@mom+3.0", "happy"), ("@since", "sad"), ("@midnight", "tired"), ("@gave", "shocked"),
-            ("@said", "happy"), ("@clean", "smug"), ("@clean.end", "grin"), ("@laughed+1.8", "love")],
+            ("@said", "happy"), ("@clean", "smug"), ("@laughed", "grin"), ("@left", "love")],
     "TimmyB": [(0, "happy"), ("@since", "sad"), ("@midnight", "neutral"), ("@gave", "happy"), ("@mouth", "shocked"),
                ("@breath", "scared"), ("@clean", "shocked"), ("@laughed", "grin"), ("@left", "love")],
     "TimmyC": [(0, "neutral"), ("@once", "scared"), ("@tomorrow", "grin"), ("@never", "sad")],

@@ -48,7 +48,7 @@ T = "Throne"
 ACTORS = [
     # ---------------------------------------------------------------- A: the mansion lawn
     {"name": "PrestonM", "start": [600, -116], "facing": "-Z", "beats": [
-        {"at": 0.0, "prompt": [SIT_DOWN, SIT_SMUG], "seconds": [1.5, 2.0], "sit": T, "sit_from": 1.2},
+        {"at": 0.0, "prompt": SIT_SMUG, "seconds": 3.5, "sit": T, "sit_from": 0.0},   # already enthroned at t=0 (hook close-up)
         {"prompt": SIT_SMUG, "seconds": 2.5, "sit": T},
         {"prompt": SIT_LAUGH, "seconds": 2.6, "sit": T},
         {"prompt": SIT_SMUG, "seconds": 2.0, "sit": T},
@@ -67,7 +67,8 @@ ACTORS = [
         {"at": "@notruck", "prompt": CONFUSED, "seconds": 2.5, "face": "TimmyM"},
         {"prompt": SAD, "seconds": 2.5},
         {"at": "@truck+1.0", "prompt": STARE, "seconds": 1.5, "face": "-Z"},
-        {"at": "@both+0.8", "prompt": RUN, "seconds": 3.0, "to": [606, -168]},
+        {"at": "@both+0.8", "prompt": RUN, "seconds": 1.4, "to": [602.5, -146]},
+        {"at": "@nobody", "prompt": HAPPY, "seconds": 7.5, "face": "-Z"},
     ]},
     {"name": "TimmyM", "start": [600, -142], "facing": "+Z", "beats": [
         {"at": "@went", "prompt": WALK, "seconds": 2.5, "to": [601.5, -128], "face": "PrestonM"},
@@ -80,7 +81,8 @@ ACTORS = [
         {"at": "@gone", "prompt": WALK, "seconds": 2.0, "to": [600, -116.5], "face": "-Z"},
         {"prompt": [SIT_DOWN, SIT_SMUG], "seconds": [1.5, 3.0], "sit": T, "sit_from": 1.2},
         {"prompt": SIT_RELAX, "seconds": 2.0, "sit": T},
-        {"at": "@both", "prompt": [STAND_UP, RUN], "seconds": [1.0, 2.5], "to": [596, -168], "via": [[595.5, -124]]},
+        {"at": "@both", "prompt": [STAND_UP, RUN], "seconds": [1.0, 1.4], "to": [597.5, -146], "via": [[595.5, -124]]},
+        {"at": "@nobody", "prompt": HAPPY, "seconds": 7.5, "face": "-Z"},
     ]},
     {"name": "LeoM", "start": [596.5, -142], "facing": "+Z", "beats": [
         {"at": "@went", "prompt": WALK, "seconds": 2.2, "to": [598, -128], "face": "PrestonM"},
@@ -124,7 +126,7 @@ ACTORS = [
 CAMERAS = [
     # one cue per story moment (the recorder adds coverage cuts and push-ins); fixed shots for sets
     # A: the throne
-    {"name": "he sits", "start": 0.0, "subject": "PrestonM", "shot": "full", "angle": 0},
+    {"name": "he sits", "start": 0.0, "subject": "PrestonM", "shot": "close", "angle": 0},
     {"name": "the seat", "start": "@seat", "subject": "PrestonM", "shot": "medium", "angle": 30},
     {"name": "sneeze king", "start": "@shortest", "subject": "PrestonM", "shot": "close", "angle": -20},
     {"name": "three years", "start": "@longest", "subject": "PrestonM", "shot": "low", "angle": 0},
@@ -155,7 +157,7 @@ CAMERAS = [
     {"name": "bows", "start": "@bowed", "subject": "TimmyM", "shot": "full", "angle": 30},
     {"name": "sings", "start": "@bowed+1.4", "subject": "TimmyM", "shot": "medium", "angle": -20},
     {"name": "ding ding", "start": "@ding", "subject": "TimmyM", "shot": "close", "angle": 0},
-    {"name": "jumps up", "start": "@jumped", "subject": "PrestonM", "shot": "full", "angle": 20},
+    {"name": "jumps up", "start": "@jumped", "subject": "PrestonM", "with": "TimmyM", "shot": "full", "angle": 15},
     {"name": "empty throne", "start": "@gone", "pos": [600, 8, -140], "look": [600, 5, -117], "fov": 40, "subjects": []},
     {"name": "no truck", "start": "@notruck", "subject": "PrestonM", "shot": "close", "angle": 15},
     {"name": "timmy sits", "start": "@notruck+1.2", "subject": "TimmyM", "shot": "full", "angle": 15},
@@ -166,7 +168,7 @@ CAMERAS = [
     {"name": "real truck", "start": "@truck", "subject": "TimmyM", "shot": "close", "angle": 10},
     {"name": "timmy runs", "start": "@both", "subject": "TimmyM", "shot": "full", "angle": 30},
     {"name": "preston runs", "start": "@both+0.9", "subject": "PrestonM", "shot": "full", "angle": -20},
-    {"name": "nobody king", "start": "@nobody", "pos": [600, 7, -135], "look": [600, 5, -117], "fov": 38, "subjects": []},
+    {"name": "nobody king", "start": "@nobody", "subject": "TimmyM", "with": "PrestonM", "shot": "medium", "angle": 10},
 ]
 
 LINES = [
@@ -203,10 +205,10 @@ FACES = {
     "PrestonM": [(0, "smug"), ("@shortest", "grin"), ("@longest", "smug"), ("@eats", "sleeping"), ("@eats+2.6", "smug"),
                  ("@alarm+1.2", "neutral"), ("@spider+1.5", "smug"), ("@begged+1.0", "grin"), ("@morning+2.2", "smug"),
                  ("@ding", "shocked"), ("@jumped", "happy"), ("@notruck", "shocked"), ("@notruck+1.4", "sad"),
-                 ("@truck+1.0", "shocked"), ("@both+0.8", "grin")],
+                 ("@truck+1.0", "shocked"), ("@both+0.8", "grin"), ("@nobody", "happy")],
     "TimmyM": [(0, "neutral"), ("@went", "angry"), ("@spider", "scared"), ("@begged", "sad"), ("@morning", "neutral"),
                ("@bowed+1.0", "wink"), ("@ding", "grin"), ("@gone", "shocked"), ("@notruck+1.2", "smug"),
-               ("@truck", "shocked"), ("@both", "grin")],
+               ("@truck", "shocked"), ("@both", "grin"), ("@nobody", "happy")],
     "LeoM": [(0, "neutral"), ("@alarm", "scared"), ("@begged", "crying")],
     "Man": [(0, "tired"), ("@rules", "happy"), ("@rules+1.4", "scared"), ("@summer", "sad"), ("@newrules", "grin")],
     "Lady": [(0, "sad"), ("@summer", "shocked"), ("@newrules", "happy")],

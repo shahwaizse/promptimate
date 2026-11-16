@@ -84,9 +84,9 @@ ACTORS = [
         {"prompt": SAD, "seconds": 3.0, "face": "Preston"},
         {"at": "@found", "prompt": WALK, "seconds": 2.4, "to": [-24.2, 12], "face": "+Z"},
         {"prompt": SIT_GROUND, "seconds": 2.5},
-        {"prompt": SIT_GROUND_TALK, "seconds": 2.5},
-        {"prompt": SIT_GROUND_LAUGH, "seconds": 3.0},
-        {"prompt": SIT_GROUND_HAPPY, "seconds": 6.0},
+        {"prompt": SIT_GROUND_TALK, "seconds": 4.5},
+        {"at": "@laughed+0.7", "prompt": SIT_GROUND_LAUGH, "seconds": 3.0},     # "I laughed."
+        {"prompt": SIT_GROUND_HAPPY, "seconds": 8.0},
     ]},
     {"name": "Preston", "start": [-21, 8], "facing": "-X", "beats": [
         {"at": "@preston", "prompt": SMUG, "seconds": 2.0},
@@ -100,7 +100,7 @@ ACTORS = [
         {"prompt": SIT_GROUND_SAD, "seconds": 6.0},
         {"at": "@found", "prompt": SIT_GROUND_SAD, "seconds": 3.0},
         {"at": "@laughed", "prompt": SIT_GROUND_LAUGH, "seconds": 3.0},
-        {"prompt": SIT_GROUND_HAPPY, "seconds": 6.0},
+        {"prompt": SIT_GROUND_HAPPY, "seconds": 8.0},
     ]},
     {"name": "Leo", "start": [-30, 7], "facing": "+Z", "beats": [
         {"at": "@leo", "prompt": HOLD_LAUGH, "seconds": 3.5},
@@ -145,8 +145,8 @@ ACTORS = [
 CAMERAS = [
     # one cue per story moment (the recorder adds coverage cuts and push-ins); fixed shots for sets
     # A: the street
-    {"name": "man trips", "start": 0.0, "subject": "Man", "shot": "full", "angle": 20},
-    {"name": "lady laughs", "start": "@rule+1.4", "subject": "Lady", "shot": "medium", "angle": 15},
+    {"name": "lady laughs", "start": 0.0, "subject": "Lady", "shot": "close", "angle": 0},
+    {"name": "man trips", "start": "@rule+1.2", "subject": "Man", "shot": "full", "angle": 20},
     {"name": "dollar jumps", "start": "@pocket", "subject": "Lady", "with": "Man", "shot": "full", "angle": 0},
     {"name": "giggle", "start": "@giggle", "subject": "Lady", "shot": "close", "angle": -20},
     {"name": "the street", "start": "@clown", "pos": [-28, 6, 26], "look": [-28, 3.5, 5], "fov": 52, "subjects": []},
@@ -174,15 +174,15 @@ CAMERAS = [
     {"name": "bow and fall", "start": "@bow", "subject": "TimmyM", "shot": "full", "angle": 40},
     {"name": "47 minutes", "start": "@straight", "subject": "PrestonM", "shot": "medium", "angle": -10},
     {"name": "ten thousand twelve", "start": "@twelve", "subject": "TimmyM", "with": "PrestonM", "shot": "full", "angle": 0},
-    {"name": "broke", "start": "@saved", "subject": "PrestonM", "shot": "close", "angle": 20},
+    {"name": "broke", "start": "@saved", "subject": "PrestonM", "shot": "close", "angle": 10},
     # D: the street again
     {"name": "on the sidewalk", "start": "@found", "subject": "Preston", "shot": "full", "angle": 20},
     {"name": "the joke", "start": "@sat", "subject": "Timmy", "with": "Preston", "shot": "full", "angle": 0},
     {"name": "he laughed", "start": "@laughed", "subject": "Preston", "shot": "close", "angle": -15},
     {"name": "i laughed", "start": "@laughed+0.7", "subject": "Timmy", "shot": "close", "angle": 15},
-    {"name": "leo laughs", "start": "@leo_laughs", "subject": "Leo", "shot": "medium", "angle": 10},
+    {"name": "leo laughs", "start": "@leo_laughs", "subject": "Leo", "shot": "close", "angle": 5},
     {"name": "whole street", "start": "@cent", "pos": [-26, 6, 26], "look": [-26, 3, 7], "fov": 52, "subjects": []},
-    {"name": "free", "start": "@free", "subject": "Timmy", "with": "Preston", "shot": "medium", "angle": 0},
+    {"name": "free", "start": "@free", "subject": "Timmy", "with": "Preston", "shot": "medium", "angle": 0},   # holds on both faces to the end
 ]
 
 LINES = [
@@ -221,12 +221,12 @@ TITLES = [("@pay", "@pay.end+0.3", "$10,000 by Friday"), ("@twelve", "@twelve.en
 
 FACES = {
     "Man": [(0, "shocked"), (2.5, "tired"), ("@pocket", "grin"), ("@clown", "neutral"), ("@cent", "grin")],
-    "Lady": [(0, "neutral"), (0.6, "grin"), ("@pocket", "shocked"), ("@giggle", "sad"), ("@clown", "neutral"), ("@cent", "happy")],
+    "Lady": [(0, "grin"), ("@pocket", "shocked"), ("@giggle", "sad"), ("@clown", "neutral"), ("@cent", "happy")],
     "Timmy": [(0, "neutral"), ("@me+1.4", "shocked"), ("@preston", "sad"), ("@lemonade", "happy"), ("@cars", "tired"),
-              ("@loan", "scared"), ("@loan+1.2", "sad"), ("@found", "neutral"), ("@sat", "happy"), ("@laughed", "grin")],
+              ("@loan", "scared"), ("@loan+1.2", "sad"), ("@found", "neutral"), ("@sat", "happy"), ("@laughed+0.7", "grin"), ("@free", "happy")],
     "Preston": [(0, "smug"), ("@tosses", "grin"), ("@tosses+2.0", "smug"), ("@loan+0.8", "grin"), ("@show", "sad"),
                 ("@found", "crying"), ("@laughed", "grin"), ("@free", "happy")],
-    "Leo": [(0, "neutral"), ("@leo+1.0", "scared"), ("@leo.end", "neutral"), ("@found", "sad"), ("@leo_laughs", "grin")],
+    "Leo": [(0, "neutral"), ("@leo+1.0", "scared"), ("@leo.end", "neutral"), ("@found", "sad"), ("@leo_laughs", "grin"), ("@free", "happy")],
     "Mom": [(0, "happy"), ("@letter", "shocked"), ("@pay", "crying"), ("@cent", "grin")],
     "TimmyR": [(0, "tired"), ("@swore", "sad"), ("@purpose", "angry"), ("@purpose.end", "smug")],
     "PrestonM": [(0, "smug"), ("@robot+1.0", "grin"), ("@slip+1.3", "crying"), ("@straight", "grin"), ("@saved", "shocked"),
