@@ -290,6 +290,19 @@ def _render_job_locked(job: dict, cues, perf, size, fps, t0, t1, draft):
     try:
         out_dir = Path(job["frames_dir"])
         out_dir.mkdir(parents=True, exist_ok=True)
+        # frames on disk are reused to resume an interrupted render, but only for the same performance, package,
+        # cameras and size: re-recording after a new roblox_perform must not reuse stale frames
+        import hashlib
+        import roblox_tools as RT
+        sig = hashlib.sha1(json.dumps({
+            "state": (STATE / "state.json").read_text() if (STATE / "state.json").exists() else "",
+            "pkg": RT._pkg_version(), "cues": [c.model_dump() if hasattr(c, "model_dump") else c for c in cues],
+            "size": list(size), "fps": fps, "t": [t0, t1], "draft": draft}, sort_keys=True, default=str).encode()).hexdigest()
+        sig_file = out_dir / "signature.txt"
+        if not sig_file.exists() or sig_file.read_text().strip() != sig:
+            for f in out_dir.glob("f*.png"):
+                f.unlink()
+            sig_file.write_text(sig)
         _ensure_running()
         vp = _viewport()
         state = {}

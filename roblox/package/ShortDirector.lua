@@ -116,7 +116,8 @@ local function clipPlayer(name, a, c)
 	if p then return p end
 	local Player = D.Player()
 	local data = Player.decode(fresh(folder().Clips[c.m]))
-	p = Player.new(a.rig, data, { origin = CFrame.new(c.x, c.y, c.z) * CFrame.Angles(0, c.yaw, 0) })
+	p = Player.new(a.rig, data, { origin = CFrame.new(c.x, c.y, c.z) * CFrame.Angles(0, c.yaw, 0),
+		selfCollide = (D.options and D.options.selfCollide == true) or false })
 	D.cache[key] = p
 	return p
 end
@@ -411,6 +412,48 @@ function D.camcheck(t: number, cams)
 		table.insert(res, { near = nl, subjects = subs })
 	end
 	return HttpService:JSONEncode(res)
+end
+
+-- Body clipping at story times: per sample, each actor's deepest limb-into-own-body overlap (forearms/hands into
+-- torso, head, thighs) and the deepest overlap between two characters' parts, in studs. Returns
+-- {t, self={name=depth}, selfWhere={name=side}, pair={"a|b"=depth}} per time.
+function D.bodycheck(times)
+	if not D.actors then D.load() end
+	local Player = D.Player()
+	local names = {}
+	for n in D.actors do table.insert(names, n) end
+	table.sort(names)
+	local out = {}
+	for _, t in times do
+		local poses = {}
+		local selfd, selfw = {}, {}
+		for _, n in names do
+			local p = D.poseActor(n, t)
+			if p then
+				poses[n] = p.targets
+				local d, w = p:SelfClip()
+				selfd[n], selfw[n] = d, w
+			end
+		end
+		local pair = {}
+		for i = 1, #names do for j = i + 1, #names do
+			local A, B = poses[names[i]], poses[names[j]]
+			if A and B and (A.LowerTorso.Position - B.LowerTorso.Position).Magnitude < 12 then
+				local ra, rb = D.actors[names[i]].rig, D.actors[names[j]].rig
+				local best = 0
+				for _, pa in BODY do for _, pb in BODY do
+					local qa, qb = ra:FindFirstChild(pa), rb:FindFirstChild(pb)
+					if qa and qb and A[pa] and B[pb] then
+						local d = Player.obbDepth(A[pa], qa.Size, B[pb], qb.Size)
+						if d > best then best = d end
+					end
+				end end
+				pair[names[i] .. "|" .. names[j]] = best
+			end
+		end end
+		table.insert(out, { t = t, self = selfd, selfWhere = selfw, pair = pair })
+	end
+	return HttpService:JSONEncode(out)
 end
 
 -- Hips position of every actor at story time t (camera tracking): "name=x,y,z;..."

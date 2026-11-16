@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import struct
 import threading
@@ -40,6 +41,9 @@ FACE_FRAMES = 8          # end facing: heading pinned on the last frames
 FACE_TOL = 30.0          # deg
 PATH_TOL = 0.5           # m, end of a `to` path
 MAX_ATTEMPTS = 3
+REPAIR_ROUNDS = int(os.environ.get("PROMPTIMATE_REPAIR_ROUNDS", "2"))   # perform: regenerate beats that clip
+SELF_BAD = 0.35        # fraction of a forearm/hand hidden inside its own body that reads as clipping
+PAIR_BAD = 0.3         # studs: two characters' parts overlapping this deep
 R15_SEAT_LIFT = 0.12     # m
 SRV = None               # server module (generate_motion, worker, ...), set by register()
 _GEN_LOCK = threading.Lock()
@@ -412,6 +416,42 @@ class Scene:
         self.perf.setdefault("actors", {})
 
 
+STANDFREE_LUAU = r"""
+local HttpService = game:GetService("HttpService")
+local q = HttpService:JSONDecode(__Q__)
+local rigs = {}
+for _, d in workspace:GetDescendants() do
+  if d:IsA("Humanoid") and d.Parent:IsA("Model") then table.insert(rigs, d.Parent) end
+end
+local op = OverlapParams.new(); op.FilterType = Enum.RaycastFilterType.Exclude; op.FilterDescendantsInstances = rigs
+local out = {}
+for _, p in q.pts do
+  local floor = q.floor
+  local cf = CFrame.new(p[1], floor + 0.35 + q.h / 2, p[2])
+  local free = true
+  for _, part in workspace:GetPartBoundsInBox(cf, Vector3.new(q.r * 2, q.h, q.r * 2), op) do
+    if part.CanCollide and part.Transparency < 0.95 and not part:IsA("Terrain") and part.Position.Y + part.Size.Y / 2 > floor + 0.35 then
+      free = false; break
+    end
+  end
+  table.insert(out, free)
+end
+return HttpService:JSONEncode(out)
+"""
+
+
+def _stand_free(pts, floor, radius: float, spm: float) -> list[bool]:
+    """Whether a character standing at each ground point (x, z) is clear of scenery (Studio overlap query)."""
+    if floor is None:
+        return [True] * len(pts)
+    q = {"pts": [[float(p[0]), float(p[1])] for p in pts], "floor": float(floor), "r": float(radius),
+         "h": float(1.7 * spm)}
+    try:
+        return list(studio().luau_json(STANDFREE_LUAU.replace("__Q__", long_str(json.dumps(q)))))
+    except Exception:
+        return [True] * len(pts)
+
+
 def _target_names(actors: list[Actor]) -> list[str]:
     out = []
     for a in actors:
@@ -493,7 +533,19 @@ class Planner:
                 d = np.array(DIRS[side.lower()])
             n = np.linalg.norm(d)
             d = d / n if n > 1e-6 else np.array([1.0, 0.0])
-            return c + d * 1.1 * spm          # ~1.1 m: talking distance
+            # ~1.1 m: talking distance; on the approach side if that spot is clear of scenery, else the nearest
+            # clear spot around the character (benches, crates, posts): standing inside one reads as clipping
+            cands = []
+            for ang in (0, 25, -25, 50, -50, 75, -75, 100, -100, 130, -130, 160, -160, 180):
+                a = math.radians(ang)
+                dd = np.array([d[0] * math.cos(a) - d[1] * math.sin(a), d[0] * math.sin(a) + d[1] * math.cos(a)])
+                for r in (1.1, 1.35):
+                    cands.append(c + dd * r * spm)
+            free = _stand_free(cands, self.ground, 0.42 * spm, spm)
+            for pt, ok in zip(cands, free):
+                if ok:
+                    return pt
+            return cands[0]
         c = self.point(name, t)
         tg = self.scene.targets.get(name) or {}
         if not side and tg.get("seat"):
@@ -697,7 +749,8 @@ def _generate(actor: str, idx: int, spec: dict, prev: str | None) -> tuple[str, 
             try:
                 for tries in range(4):   # the shared GPU daemon may restart (other jobs, memory pressure): retry
                     try:
-                        res = SRV.generate_motion(segs, name=f"rbx_{actor}_{idx:02d}", seed=attempt * 101,
+                        res = SRV.generate_motion(segs, name=f"rbx_{actor}_{idx:02d}",
+                                                  seed=(attempt + spec.get("retry", 0) * MAX_ATTEMPTS) * 101,
                                                   unity_check="off", **kw)
                         break
                     except (ConnectionError, OSError) as e:
@@ -709,7 +762,12 @@ def _generate(actor: str, idx: int, spec: dict, prev: str | None) -> tuple[str, 
         meta = json.loads(res[0])
         root, rot = motion.load(Path(meta["files"]["raw_dir"]))
         score, issues, info = _evaluate(root, rot, spec)
-        info.update(attempts=attempt + 1, checks_ok=meta.get("checks", {}).get("passed"))
+        chk = meta.get("checks", {})
+        info.update(attempts=attempt + 1, checks_ok=chk.get("passed"))
+        if chk.get("passed") is False:   # the engine's own checks (pops, floating, sliding...) failed: never accept
+            failed = [str(x) for x in chk.get("failures") or []]
+            issues.append("automatic checks failed" + (f" ({'; '.join(failed[:2])})" if failed else ""))
+            score += 2
         if best is None or score < best[0]:
             best = (score, meta["name"], issues, info)
         if not issues:
@@ -946,84 +1004,122 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
                 an.append((tend, p))
             plan.anchors[a.name] = an
     # ---- generate each character's chain
-    results, log = {}, {}
-    for a in actors:
-        p, yaw, spm = starts[a.name]
-        m = scene.actors[a.name]
-        plan.ground = m["ground"]
-        old = scene.perf["actors"].get(a.name) if a.append else None
-        prev = old["clips"][-1]["src"] if old and old.get("clips") else None
-        clips = list(old["clips"]) if old else []
-        seated = None
-        occupied = []
-        in_call = {x.name for x in actors}
-        for other, oa in scene.perf["actors"].items():
-            if other not in in_call:          # characters re-performed in this call get new seats below
-                occupied += oa.get("seats", [])
-        for r in results.values():
-            occupied += r["seats"]
-        seats_used, beat_info = [], []
-        for i, e in enumerate(_expand(a)):
-            spec, extra = _spec(e, p, yaw, spm, seated, plan, a.name, occupied)
-            key = _cache_key(a.name, spec, prev)
-            hit = cache.get(key)
-            if hit and (SRV.OUTPUT / hit["name"] / "root_positions.f32").exists():
-                name, info = hit["name"], dict(hit["info"], cached=True)
-            else:
-                name, info = _generate(a.name, len(clips) + 1, spec, prev)
-                cache[key] = {"name": name, "info": info}
-                _save_beat_cache(cache)
-            warped = _warp(name, spec)
-            if warped:
-                info = dict(info, warped_cm=warped)
-                r_, q_ = motion.load(SRV.OUTPUT / name)
-                _, iss, inf2 = _evaluate(r_, q_, spec)
-                info.update({k: v for k, v in inf2.items()}, issues=iss)
-                cache[key] = {"name": name, "info": info}
-                _save_beat_cache(cache)
-            raw = SRV.OUTPUT / name
-            root, rot = motion.load(raw)
-            dur = (len(root) - 1) / motion.FPS
-            mod = f"{a.name}_{len(clips) + 1:02d}_{hashlib.sha1(name.encode()).hexdigest()[:6]}"
-            clip = {"m": mod, "src": name, "s": round(e["start"], 4), "d": round(dur, 4), "x": round(float(p[0]), 4),
-                    "z": round(float(p[1]), 4), "yaw": round(float(yaw), 5), "label": extra["world"]["label"]}
-            if seated is not None:
-                clip["seated_start"] = True
-            hips = world_hips(root, p, yaw, spm)
-            clip["_hips"] = hips
-            clips.append(clip)
-            w = extra["world"]
-            w.update(info=info, filler=e["filler"], clip=mod, src=name)
-            if extra["seat"] is not None:
-                seats_used.append({"name": extra["seat"].get("name"), "u": extra["seat"].get("u", 0.0),
-                                   "t": w["seat"]["span"], "top": extra["seat"].get("top"), "w": extra["seat"].get("w")})
-            beat_info.append(w)
-            prev = name
-            p, yaw = place_next(root, rot, p, yaw, spm)
-            seated = extra["seat"] if e["beat"].sit is not None else None
-        track = []
-        for c in clips:
-            hips = c.pop("_hips", None)
-            if hips is None:
-                continue
-            n = len(hips)
-            for f in range(0, n, 8):
-                track.append([round(c["s"] + f / motion.FPS, 3), round(float(hips[f, 0]), 3), round(float(hips[f, 1]), 3)])
-            track.append([round(c["s"] + (n - 1) / motion.FPS, 3), round(float(hips[-1, 0]), 3), round(float(hips[-1, 1]), 3)])
-        plan.tracks[a.name] = track
-        results[a.name] = {"clips": clips, "beats": beat_info, "spm": spm, "end": [float(p[0]), float(p[1]), float(yaw)],
-                           "seats": seats_used, "path": scene.actors[a.name]["path"], "track": track,
-                           "ground": m["ground"]}
-    # ---- push into Studio
-    push_calls = _push(scene, results)
-    # ---- staging checks
-    warnings = []
-    if check:
-        for name, r in results.items():
-            warnings += _stage_checks(name, r, plan)
-    warnings += [f"{n} beat {i + 1} '{b['label']}': {iss}" for n, r in results.items()
-                 for i, b in enumerate(r["beats"]) for iss in b["info"].get("issues", [])
-                 if not any(iss.split()[0] in w and n in w and f"beat {i + 1}" in w for w in warnings)]
+    def gen_all(retry: dict) -> dict:
+        results = {}
+        for a in actors:
+            p, yaw, spm = starts[a.name]
+            m = scene.actors[a.name]
+            plan.ground = m["ground"]
+            old = scene.perf["actors"].get(a.name) if a.append else None
+            prev = old["clips"][-1]["src"] if old and old.get("clips") else None
+            clips = list(old["clips"]) if old else []
+            seated = None
+            occupied = []
+            in_call = {x.name for x in actors}
+            for other, oa in scene.perf["actors"].items():
+                if other not in in_call:          # characters re-performed in this call get new seats below
+                    occupied += oa.get("seats", [])
+            for r in results.values():
+                occupied += r["seats"]
+            seats_used, beat_info = [], []
+            for i, e in enumerate(_expand(a)):
+                spec, extra = _spec(e, p, yaw, spm, seated, plan, a.name, occupied)
+                if retry.get((a.name, i)):
+                    spec["retry"] = retry[(a.name, i)]
+                key = _cache_key(a.name, spec, prev)
+                hit = cache.get(key)
+                if hit and (SRV.OUTPUT / hit["name"] / "root_positions.f32").exists():
+                    name, info = hit["name"], dict(hit["info"], cached=True)
+                else:
+                    name, info = _generate(a.name, len(clips) + 1, spec, prev)
+                    cache[key] = {"name": name, "info": info}
+                    _save_beat_cache(cache)
+                warped = _warp(name, spec)
+                if warped:
+                    info = dict(info, warped_cm=warped)
+                    r_, q_ = motion.load(SRV.OUTPUT / name)
+                    _, iss, inf2 = _evaluate(r_, q_, spec)
+                    info.update({k: v for k, v in inf2.items()}, issues=iss)
+                    cache[key] = {"name": name, "info": info}
+                    _save_beat_cache(cache)
+                raw = SRV.OUTPUT / name
+                root, rot = motion.load(raw)
+                dur = (len(root) - 1) / motion.FPS
+                mod = f"{a.name}_{len(clips) + 1:02d}_{hashlib.sha1((name + roblox.EXPORT_VERSION).encode()).hexdigest()[:6]}"
+                clip = {"m": mod, "src": name, "s": round(e["start"], 4), "d": round(dur, 4), "x": round(float(p[0]), 4),
+                        "z": round(float(p[1]), 4), "yaw": round(float(yaw), 5), "label": extra["world"]["label"]}
+                if seated is not None:
+                    clip["seated_start"] = True
+                hips = world_hips(root, p, yaw, spm)
+                clip["_hips"] = hips
+                clips.append(clip)
+                w = extra["world"]
+                w.update(info=info, filler=e["filler"], clip=mod, src=name)
+                if extra["seat"] is not None:
+                    seats_used.append({"name": extra["seat"].get("name"), "u": extra["seat"].get("u", 0.0),
+                                       "t": w["seat"]["span"], "top": extra["seat"].get("top"), "w": extra["seat"].get("w")})
+                beat_info.append(w)
+                prev = name
+                p, yaw = place_next(root, rot, p, yaw, spm)
+                seated = extra["seat"] if e["beat"].sit is not None else None
+            track = []
+            for c in clips:
+                hips = c.pop("_hips", None)
+                if hips is None:
+                    continue
+                n = len(hips)
+                for f in range(0, n, 8):
+                    track.append([round(c["s"] + f / motion.FPS, 3), round(float(hips[f, 0]), 3), round(float(hips[f, 1]), 3)])
+                track.append([round(c["s"] + (n - 1) / motion.FPS, 3), round(float(hips[-1, 0]), 3), round(float(hips[-1, 1]), 3)])
+            plan.tracks[a.name] = track
+            results[a.name] = {"clips": clips, "beats": beat_info, "spm": spm, "end": [float(p[0]), float(p[1]), float(yaw)],
+                               "seats": seats_used, "path": scene.actors[a.name]["path"], "track": track,
+                               "ground": m["ground"]}
+        return results
+
+    # ---- push, check, repair: beats that clip (hands deep in the body, two bodies overlapping, the body passing
+    # through scenery) or fail the engine's own checks are regenerated with new seeds (later beats of that character
+    # follow, since they continue from it); the round with the fewest problems is kept.
+    retry: dict = {}
+    best = None
+    rounds = []
+    for rnd in range(REPAIR_ROUNDS + 1 if check else 1):
+        results = gen_all(retry)
+        push_calls = _push(scene, results)
+        warnings, bad = [], {}
+        if check:
+            for name, r in results.items():
+                warnings += _stage_checks(name, r, plan)
+            body_w, body_bad = _body_checks(results)
+            warnings += body_w
+            for k, v in body_bad.items():
+                # self-clipping on blocky R15 bodies comes from the rig's proportions, not the take: new seeds don't
+                # fix it, so it is reported but doesn't trigger regeneration
+                v = [x for x in v if x != "self"]
+                if v:
+                    bad.setdefault(k, []).extend(v)
+            for name, r in results.items():
+                for i, b in enumerate(r["beats"]):
+                    for kind, t0, t1, _txt in r.get("flags", []):
+                        if b["t0"] - 0.05 <= (t0 + t1) / 2 <= b["t1"] + 0.05:
+                            bad.setdefault((name, i), []).append(kind)
+                    if b["info"].get("checks_ok") is False:
+                        bad.setdefault((name, i), []).append("checks")
+        warnings += [f"{n} beat {i + 1} '{b['label']}': {iss}" for n, r in results.items()
+                     for i, b in enumerate(r["beats"]) for iss in b["info"].get("issues", [])
+                     if not any(iss.split()[0] in w and n in w and f"beat {i + 1}" in w for w in warnings)]
+        n_bad = len(bad)
+        rounds.append({"round": rnd, "bad_beats": n_bad, "kinds": sorted({k for v in bad.values() for k in v})})
+        if best is None or n_bad < best[0]:
+            best = (n_bad, results, warnings, push_calls, dict(retry))
+        if n_bad == 0 or rnd == REPAIR_ROUNDS:
+            break
+        for k in bad:
+            retry[k] = retry.get(k, 0) + 1
+    n_bad, results, warnings, push_calls, used = best
+    if used != retry or rounds[-1]["bad_beats"] != n_bad:   # an earlier round was better: put it back
+        results = gen_all(used)
+        push_calls += _push(scene, results)
     warnings = list(dict.fromkeys(warnings))
     _save_state(results)
     out = {"ok": True, "actors": {}}
@@ -1040,6 +1136,8 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
         out["warnings"] = warnings[:14] + ([f"+{len(warnings) - 14} more"] if len(warnings) > 14 else [])
     out["studio"] = (f"clips in ReplicatedStorage.Promptimate.Clips; press Play to watch (autoplay) or "
                      f"roblox_record to film")
+    if len(rounds) > 1:
+        out["repair"] = rounds
     out["seconds"] = round(time.time() - t_all, 1)
     log = {"studio_calls": st.calls - calls0, "push_calls": push_calls, "install": inst}
     (STATE / "last_perform.json").write_text(json.dumps({"out": out, "log": log, "beats": {
@@ -1203,9 +1301,14 @@ def _stage_checks(name: str, r: dict, plan: Planner) -> list[str]:
     for d in data:
         for h in d["hits"]:
             hits.setdefault(h, []).append(d["t"])
-    for h, tl in sorted(hits.items(), key=lambda kv: -len(kv[1]))[:3]:
-        if len(tl) >= 2:
-            warn.append(f"{name}'s body passes through {h} at {min(tl):.1f}-{max(tl):.1f}s")
+    shown = 0
+    for h, tl in sorted(hits.items(), key=lambda kv: -len(kv[1])):
+        runs = _runs([any(abs(t - x) < 1e-6 for x in tl) for t in ts], ts, 0.25)
+        for a, b in runs:
+            r.setdefault("flags", []).append(("scenery", a, b, h))
+        if runs and shown < 3:
+            shown += 1
+            warn.append(f"{name}'s body passes through {h} at " + ", ".join(f"{a:.1f}-{b:.1f}s" for a, b in runs[:3]))
     # seats: thighs resting on the seat top
     for s in r["seats"]:
         if s.get("top") is None:
@@ -1262,6 +1365,49 @@ def _stage_checks(name: str, r: dict, plan: Planner) -> list[str]:
         if rr:
             warn.append(f"{name} and {other} overlap at {rr[0][0]:.1f}-{rr[0][1]:.1f}s")
     return warn
+
+
+def _body_checks(results: dict) -> tuple[list[str], dict]:
+    """Clipping between body parts, on the real rigs in Studio (PromptimatePlayer's arm push-out applied): a forearm
+    or hand deep in its own torso/head/thighs, and two characters' parts overlapping. Returns (warnings,
+    {(actor, beat index): [kinds]})."""
+    t1 = max(c["s"] + c["d"] for r in results.values() for c in r["clips"])
+    times = [round(t, 2) for t in np.arange(0, t1, 0.2)]
+    data = studio().luau_json(
+        "local D = _G.PromptimateDirector or require(game:GetService('ReplicatedStorage').Promptimate.ShortDirector:Clone())\n"
+        "_G.PromptimateDirector = D; D.options = nil; D.load()\n"
+        f"return D.bodycheck({{{','.join(map(str, times))}}})", timeout=900)
+    ts = [d["t"] for d in data]
+    warn, bad = [], {}
+
+    def beat_at(name, t):
+        for i, b in enumerate(results[name]["beats"]):
+            if b["t0"] - 1e-6 <= t <= b["t1"] + 1e-6:
+                return i
+        return None
+
+    for name, r in results.items():
+        v = [(d["self"] or {}).get(name, 0.0) if isinstance(d["self"], dict) else 0.0 for d in data]
+        for i, b in enumerate(r["beats"]):
+            sel = [x for t, x in zip(ts, v) if b["t0"] <= t <= b["t1"]]
+            if sel and sum(x > SELF_BAD for x in sel) / len(sel) > 0.15:
+                bad.setdefault((name, i), []).append("self")
+                warn.append(f"{name} beat {i + 1} '{b['label']}': hands sink into the body "
+                            f"({sum(x > SELF_BAD for x in sel) / len(sel) * 100:.0f}% of the beat, up to "
+                            f"{max(sel) * 100:.0f}% of a forearm hidden)")
+    pairs = sorted({k for d in data if isinstance(d["pair"], dict) for k in d["pair"]})
+    for pk in pairs:
+        v = [(d["pair"].get(pk, 0.0) if isinstance(d["pair"], dict) else 0.0) for d in data]
+        for a, b in _runs([x > PAIR_BAD for x in v], ts, 0.2):
+            na, nb = pk.split("|")
+            for n in (na, nb):
+                if n in results:
+                    i = beat_at(n, (a + b) / 2)
+                    if i is not None:
+                        bad.setdefault((n, i), []).append("pair")
+            warn.append(f"{na} and {nb}: bodies overlap at {a:.1f}-{b:.1f}s (up to "
+                        f"{max(x for t, x in zip(ts, v) if a <= t <= b):.1f} studs)")
+    return warn, bad
 
 
 def _save_state(results: dict) -> None:

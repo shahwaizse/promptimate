@@ -13,6 +13,7 @@ direction at that frame and its rest secondary axis ("forward") onto the SOMA jo
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,7 @@ import motion
 # Roblox space: Y up, right-handed, characters face -Z (LookVector), +X = character's right.
 # A 180 degree turn about Y maps one onto the other.
 K2R = np.diag([-1.0, 1.0, -1.0])
+EXPORT_VERSION = "2"   # bump when the clip data changes (Studio re-uploads clip modules)
 SOMA_HIP_HEIGHT = 0.95   # m, hips height of the standing SOMA rest pose (motion.OFFSETS[0, 1] ~ 0.988, ~0.95 walking)
 
 UP, DOWN, FWD = np.array([0.0, 1.0, 0.0]), np.array([0.0, -1.0, 0.0]), np.array([0.0, 0.0, 1.0])
@@ -121,6 +123,77 @@ def retarget(root: np.ndarray, rot: np.ndarray) -> dict:
     return {"rot": out, "root": lt / SOMA_HIP_HEIGHT}
 
 
+# Hands near the body are placed by WHERE they are on the body, not by copying arm angles: R15 torsos, heads and
+# thighs are far thicker than the source body, so copied angles put a hand resting in the lap, at the ear or on the
+# chest inside the blocky part. Each wrist is described relative to the source body's boxes (same part frames as the
+# R15 parts the retarget drives): the closest point on the box surface (normalised to the box's half-size) and the
+# wrist's clearance above it. The player puts the rig's wrist at the same spot on the rig's part, at the same
+# clearance plus the rig's forearm thickness, with arm IK.
+# part -> (SOMA joint the box hangs off (None: thigh bone), centre offset and half-size in the part's rest frame
+# (Kimodo axes: x left, y up, z forward), metres)
+BODY_BOXES = {
+    "UpperTorso": (3, (0.0, 0.13, -0.01), (0.165, 0.16, 0.11)),
+    "LowerTorso": (0, (0.0, 0.04, 0.0), (0.16, 0.09, 0.11)),
+    "Head": (6, (0.0, 0.06, 0.02), (0.085, 0.115, 0.10)),
+    "LeftUpperLeg": (None, (22, 23), (0.075, None, 0.075)),
+    "RightUpperLeg": (None, (26, 27), (0.075, None, 0.075)),
+}
+BOX_ORDER = list(BODY_BOXES)
+WRISTS = {"Left": 13, "Right": 19}
+WRIST_R = 0.035          # m, source forearm half-thickness at the wrist
+NEAR_IN, NEAR_OUT = 0.06, 0.22   # m clearance: full surface placement below NEAR_IN, none above NEAR_OUT
+
+
+def _hand_spots(root: np.ndarray, rot: np.ndarray, rt: dict) -> list[list[float]]:
+    """Per frame: for each wrist (Left, Right) [near weight, box1 index, q1(3), n1(3), e1, box2 index, q2(3), n2(3),
+    e2, blend toward box2], with q = closest surface point / half-size, n = outward unit direction (part-local,
+    Roblox axes), e = clearance beyond the source forearm radius in hip heights."""
+    pos = motion.fk(root, rot).astype(np.float64)
+    F = len(root)
+    boxes = {}
+    for part, (joint, off, half) in BODY_BOXES.items():
+        R = K2R @ rt["rot"][part] @ K2R                  # part rotation, Kimodo space (rest frame -> world)
+        if joint is None:
+            a, b = off
+            c = (pos[:, a] + pos[:, b]) / 2
+            ln = np.linalg.norm(pos[:, b] - pos[:, a], axis=1)
+            h = np.stack([np.full(F, half[0]), ln / 2, np.full(F, half[2])], 1)
+        else:
+            c = pos[:, joint] + np.einsum("fij,j->fi", R, np.array(off))
+            h = np.tile(np.array(half), (F, 1))
+        boxes[part] = (R, c, h)
+    out = []
+    for f in range(F):
+        row = []
+        for side in ("Left", "Right"):
+            w = pos[f, WRISTS[side]]
+            cand = []
+            for bi, part in enumerate(BOX_ORDER):
+                R, c, h = boxes[part]
+                l = R[f].T @ (w - c[f])                    # box-local, Kimodo axes
+                q = np.clip(l, -h[f], h[f])
+                o = l - q
+                d = float(np.linalg.norm(o))
+                if d < 1e-6:                               # inside the source box: onto the nearest face
+                    k = int(np.argmin(h[f] - np.abs(l)))
+                    n = np.zeros(3); n[k] = 1.0 if l[k] >= 0 else -1.0
+                    q = l.copy(); q[k] = h[f][k] * n[k]
+                    d = -float(h[f][k] - abs(l[k]))
+                else:
+                    n = o / d
+                cand.append((d, bi, (K2R @ (q / h[f])).tolist(), (K2R @ n).tolist(),
+                             max(d - WRIST_R, 0.0) / SOMA_HIP_HEIGHT))
+            cand.sort(key=lambda x: x[0])
+            (d1, i1, q1, n1, e1), (d2, i2, q2, n2, e2) = cand[0], cand[1]
+            near = float(np.clip((NEAR_OUT - d1) / (NEAR_OUT - NEAR_IN), 0, 1))
+            near = near * near * (3 - 2 * near)
+            blend = float(np.clip(0.5 - (d2 - d1) / 0.08, 0, 0.5))   # two boxes about as close: share
+            row += [round(near, 3), i1, *[round(v, 3) for v in q1], *[round(v, 3) for v in n1], round(e1, 4),
+                    i2, *[round(v, 3) for v in q2], *[round(v, 3) for v in n2], round(e2, 4), round(blend, 3)]
+        out.append(row)
+    return out
+
+
 def _contacts(root: np.ndarray, rot: np.ndarray) -> list[int]:
     import postprocess
     c = postprocess.detect_contacts(motion.fk(root, rot).astype(np.float64))
@@ -145,6 +218,10 @@ def export(motion_dir: Path, out_path: Path, name: str = "", loop: bool = False)
         # with leg IK on the R15 rig, since its proportions would otherwise bring foot sliding back)
         "contacts": _contacts(root, rot),
     }
+    if os.environ.get("PROMPTIMATE_RBX_HANDS") == "1":
+        # experimental (PromptimatePlayer selfCollide): hands near the body, placed by their spot on it
+        data["handBoxes"] = BOX_ORDER
+        data["hands"] = _hand_spots(root, rot, rt)
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(data, separators=(",", ":")))
