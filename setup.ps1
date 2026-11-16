@@ -12,7 +12,7 @@ param(
   [switch]$AcceptLicenses,
   [switch]$SkipModels,
   [string]$EngineZip = '',
-  [string]$EngineUrl = 'https://github.com/shahwaizse/promptimate/releases/download/v0.3.0/kimodo-engine-win64-vulkan.zip'
+  [string]$EngineUrl = 'https://github.com/shahwaizse/promptimate/releases/download/v0.3.1/kimodo-engine-win64-vulkan.zip'
 )
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -46,10 +46,10 @@ Step 2 'Installing the generation engine (kimodo.cpp, Vulkan build)'
 $engine = Join-Path $Root 'engine'
 $info = Join-Path $engine 'BUILD-INFO.txt'
 $current = (Test-Path (Join-Path $engine 'kmd-generate.exe')) -and (Test-Path $info) -and
-           ((Get-Content $info -Raw) -match 'engine v0\.3')
+           ((Get-Content $info -Raw) -match 'engine v0\.3\.1')
 if ($current) { Ok 'already installed' }
 else {
-  if (Test-Path (Join-Path $engine 'kmd-generate.exe')) { Write-Host '  updating the engine to v0.3 (faster multi-segment clips with stops)' }
+  if (Test-Path (Join-Path $engine 'kmd-generate.exe')) { Write-Host '  updating the engine to v0.3.1 (low-memory mode)' }
   New-Item -ItemType Directory -Force $engine | Out-Null
   $zip = $EngineZip
   if (-not $zip) {
