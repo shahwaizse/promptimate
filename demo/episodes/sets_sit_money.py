@@ -108,7 +108,15 @@ sign(f, "Sign", Vector3.new(18, 4, 0.5), CFrame.new(X, 10, Z + 13), Color3.fromR
 for _, dx in { -9, 9 } do part(f, "SignPost", Vector3.new(0.6, 10, 0.6), CFrame.new(X + dx, 5, Z + 13), Color3.fromRGB(200, 160, 60), Enum.Material.Metal) end
 sign(f, "Price", Vector3.new(5, 2.2, 0.3), CFrame.new(X + 9, 3.4, Z + 2), Color3.fromRGB(255, 255, 255), "CHAIR: $10,000", Color3.fromRGB(200, 20, 20))
 local throne = workspace.Sets:FindFirstChild("Throne")
-if throne then throne.Parent = f; throne:PivotTo(CFrame.new(X, 1.2 + 4.5, Z + 9) * CFrame.Angles(0, math.pi, 0)) end
+if throne then
+  throne.Parent = f; throne:PivotTo(CFrame.new(X, 1.2 + 4.5, Z + 9) * CFrame.Angles(0, math.pi, 0))
+  -- the free model is 9 studs tall (seat far above an R6 leg): 0.6x, base kept on the platform
+  if throne:GetScale() > 0.99 then
+    local c0, s0 = throne:GetBoundingBox(); throne:ScaleTo(0.6)
+    local c1, s1 = throne:GetBoundingBox()
+    throne:PivotTo(throne:GetPivot() + Vector3.new(0, (c0.Position.Y - s0.Y / 2) - (c1.Position.Y - s1.Y / 2), 0))
+  end
+end
 return "ok"'''
 
 STREET = LIB + r'''

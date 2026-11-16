@@ -79,7 +79,10 @@ for _, q in game:GetService("HttpService"):JSONDecode(__Q__) do
   local a = D.actors[q[1]]
   local tg = a and a._player and a._player.targets
   if tg then
-    local h, hp, l = tg.Head.Position, tg.LowerTorso.Position, tg.HumanoidRootPart.LookVector
+    -- facing = where the face points (flattened), the body's facing when the head looks straight up/down
+    local h, hp = tg.Head.Position, tg.LowerTorso.Position
+    local l = tg.Head.LookVector * Vector3.new(1, 0, 1)
+    if l.Magnitude < 0.3 then l = tg.HumanoidRootPart.LookVector end
     local foot = math.min(tg.LeftFoot.Position.Y, tg.RightFoot.Position.Y) - 0.4
     table.insert(out, { h.X, h.Y, h.Z, hp.X, hp.Y, hp.Z, l.X, l.Z, foot })
   else

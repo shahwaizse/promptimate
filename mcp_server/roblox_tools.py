@@ -274,7 +274,8 @@ for _, n in actorNames do
     end
     out.actors[n] = { path = path, stand = ok and stand or nil, width = width, x = hrp.Position.X, z = hrp.Position.Z,
       lookX = hrp.CFrame.LookVector.X, lookZ = hrp.CFrame.LookVector.Z, floor = floor,
-      ground = ground(hrp.Position.X, floor, hrp.Position.Z) or floor, r15 = hum.RigType == Enum.HumanoidRigType.R15,
+      -- the surface from above the head: a rig left sunk or lifted by an earlier performance must not shift the floor
+      ground = ground(hrp.Position.X, math.max(floor, hrp.Position.Y + 3), hrp.Position.Z) or floor, r15 = hum.RigType == Enum.HumanoidRigType.R15,
       err = (not ok) and tostring(stand) or nil }
   end
 end
@@ -735,6 +736,57 @@ def _warp(name: str, spec: dict) -> float:
     return round(n * 100, 1)
 
 
+def _qmul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Quaternion product a*b, xyzw, broadcast over leading axes."""
+    ax, ay, az, aw = np.moveaxis(a, -1, 0)
+    bx, by, bz, bw = np.moveaxis(b, -1, 0)
+    return np.stack([aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+                     aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz], -1)
+
+
+def _yawed(root: np.ndarray, rot: np.ndarray, yaw: np.ndarray):
+    """The clip turned about +Y by yaw[f] (radians) per frame, around its first frame's hips."""
+    q = np.zeros((len(yaw), 4), np.float32)
+    q[:, 1], q[:, 3] = np.sin(yaw / 2), np.cos(yaw / 2)
+    rot = rot.copy()
+    rot[:, 0] = _qmul(q, rot[:, 0])
+    root = root.copy()
+    c, s_ = np.cos(yaw), np.sin(yaw)
+    dx, dz = root[:, 0] - root[0, 0], root[:, 2] - root[0, 2]
+    root[:, 0] = root[0, 0] + c * dx + s_ * dz
+    root[:, 2] = root[0, 2] - s_ * dx + c * dz
+    return root, rot
+
+
+def _turn(name: str, spec: dict) -> float:
+    """End facing for in-place beats (talking to someone, reacting): the engine's heading constraint often leaves
+    the character facing well away from who they talk to. The missing turn is blended into the root over the beat
+    (smoothstep), so the character turns toward them in place. Idempotent; returns the turn in degrees."""
+    if spec.get("face_rel") is None or spec.get("seat_local") or spec.get("path_local"):
+        return 0.0
+    d = SRV.OUTPUT / name
+    root, rot = motion.load(d)
+    F = len(root)
+    if F < 12:
+        return 0.0
+    err = wrap(spec["face_rel"] - C.frame_placement(root, rot, F - 1)[2])
+    if abs(math.degrees(err)) < 12:
+        return 0.0
+    err = float(np.clip(err, -math.radians(160), math.radians(160)))
+    w = _smooth(np.arange(F) / max(1, int(F * 0.7)))      # turned by 70% of the beat, then held
+    best = None
+    for sgn in (1.0, -1.0):          # pick the direction that lands the facing (heading convention vs +Y yaw)
+        r2, q2 = _yawed(root, rot, (sgn * err * w).astype(np.float32))
+        e2 = abs(wrap(spec["face_rel"] - C.frame_placement(r2, q2, F - 1)[2]))
+        if best is None or e2 < best[0]:
+            best = (e2, r2, q2)
+    if best[0] >= abs(err) - math.radians(5):
+        return 0.0
+    import postprocess
+    postprocess.save(d, best[1], best[2])
+    return round(math.degrees(abs(err)), 1)
+
+
 def _cache_key(actor: str, spec: dict, prev: str | None) -> str:
     s = json.dumps({"a": actor, "spec": {k: v for k, v in spec.items() if k != "label"}, "prev": prev,
                     "v": 3}, sort_keys=True, default=lambda o: np.asarray(o).round(4).tolist())
@@ -1018,7 +1070,7 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
         starts[a.name] = (p, yaw, spm)
     # floor height under each start point (cast from just above the rig's floor, so benches aren't taken for it)
     gs = studio().luau_json(GROUND_LUAU.replace("__PTS__", long_str(json.dumps(
-        [[float(starts[a.name][0][0]), float(scene.actors[a.name]["floor"]), float(starts[a.name][0][1])] for a in actors]))))
+        [[float(starts[a.name][0][0]), float(max(scene.actors[a.name]["floor"], scene.actors[a.name]["ground"])), float(starts[a.name][0][1])] for a in actors]))))
     for a, g in zip(actors, gs):
         scene.actors[a.name]["ground"] = float(g)
     plan.ground = None
@@ -1063,12 +1115,23 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
                 key = _cache_key(a.name, spec, prev)
                 hit = cache.get(key)
                 if hit and (SRV.OUTPUT / hit["name"] / "root_positions.f32").exists():
+                    # re-judge cached clips with the current checks: one that fails a critical one (never got up,
+                    # tips over) is regenerated instead of reused
+                    r_, q_ = motion.load(SRV.OUTPUT / hit["name"])
+                    _, iss_now, _ = _evaluate(r_, q_, spec)
+                    if any(x.startswith(("doesn't get up", "body tips over")) for x in iss_now) and not hit.get("rejudged"):
+                        hit = None
+                if hit and (SRV.OUTPUT / hit["name"] / "root_positions.f32").exists():
                     name, info = hit["name"], dict(hit["info"], cached=True)
                 else:
                     name, info = _generate(a.name, len(clips) + 1, spec, prev)
-                    cache[key] = {"name": name, "info": info}
+                    cache[key] = {"name": name, "info": info, "rejudged": True}
                     _save_beat_cache(cache)
                 warped = _warp(name, spec)
+                turned = _turn(name, spec)
+                if turned:
+                    info = dict(info, turned_deg=turned)
+                    warped = warped or 0.01
                 if warped:
                     info = dict(info, warped_cm=warped)
                     r_, q_ = motion.load(SRV.OUTPUT / name)

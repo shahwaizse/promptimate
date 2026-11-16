@@ -321,7 +321,8 @@ local function cullables()
 				local sz = p.Size
 				local axes = { { sz.X, p.CFrame.RightVector }, { sz.Y, p.CFrame.UpVector }, { sz.Z, p.CFrame.LookVector } }
 				table.sort(axes, function(a, b) return a[1] < b[1] end)
-				if axes[1][1] <= 1.5 and axes[2][1] >= 6 and math.abs(axes[1][2].Y) < 0.5 then
+				-- wall-sized only (furniture panels like a throne's back must still block the camera)
+				if axes[1][1] <= 1.2 and axes[2][1] >= 8 and math.abs(axes[1][2].Y) < 0.5 then
 					table.insert(cullCache, p)
 				end
 			end

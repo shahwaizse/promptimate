@@ -124,6 +124,21 @@ local function build(c)
   m:SetAttribute("PromptimateArms", c.arms or 0.55)   -- story acting: faces carry it, arms stay out of the face
   return m
 end
+-- thinner arms (the clean story-video look): arm parts w x 2 x w, the shoulder joint kept at the torso edge
+local function thinArms(m, w)
+  local tor = m:FindFirstChild("Torso")
+  if not tor then return end
+  for _, side in { "Left", "Right" } do
+    local arm, j = m:FindFirstChild(side .. " Arm"), tor:FindFirstChild(side .. " Shoulder")
+    if arm and j then
+      local c1 = j:GetAttribute("PromptimateC1") or j.C1
+      if j:GetAttribute("PromptimateC1") == nil then j:SetAttribute("PromptimateC1", j.C1) end
+      arm.Size = Vector3.new(w, 2, w)
+      local p1 = c1.Position
+      j.C1 = CFrame.new(p1.X * w, p1.Y, p1.Z * w) * c1.Rotation
+    end
+  end
+end
 local out = {}
 for _, c in spec do
   local ok, err = pcall(function()
@@ -145,6 +160,7 @@ for _, c in spec do
     local y = floor + legs + hrp.Size.Y / 2
     m:PivotTo(CFrame.new(c.x, y, c.z) * CFrame.Angles(0, math.rad(c.yaw or 0), 0))
     m.Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+    thinArms(m, c.armWidth or 0.55)
     out[c.name] = "ok"
   end)
   if not ok then out[c.name] = tostring(err) end

@@ -365,6 +365,8 @@ def _main():
     t_all = time.time()
     steps = ["cast", "perform", "record", "audio"]
     todo = steps[steps.index(a.start):]
+    if "perform" in todo and "cast" not in todo:
+        todo.insert(0, "cast")      # rigs back on their marks: perform measures where they stand
     import server  # noqa: F401  (registers the Roblox tools: sets their server module)
     import roblox_record as RR
     if "cast" in todo:
