@@ -244,11 +244,24 @@ def shot_sheet(cues, perf, size, t_end, out: Path) -> Path:
     vp = _viewport()
     state = {}
     thumbs = []
+    fast = _fast_setup(size)
+    if fast:
+        try:
+            _ensure_running()
+            fast["rect"] = fast["FG"].calibrate(studio(), vp)
+            studio().luau(fast["FG"].HIDE_NAMES)
+        except Exception:
+            fast = None
     for k, c in enumerate(cues):
         b = cues[k + 1].start if k + 1 < len(cues) else t_end
         t = (c.start + b) / 2
-        imgs, rows = frame(cues, perf, t, size, vp, True, f"sheet_{k}_{uuid.uuid4().hex[:6]}", state)
-        im = stitch.blend(imgs, rows, size).resize((135, 240))
+        if fast:
+            _k, _c, pos, look, fov = camera(cues, perf, t)
+            im = fast["FG"].portrait(studio(), fast["rect"], vp, list(pos), list(look), fov, seek_t=t,
+                                     out=tuple(size)).resize((135, 240))
+        else:
+            imgs, rows = frame(cues, perf, t, size, vp, True, f"sheet_{k}_{uuid.uuid4().hex[:6]}", state)
+            im = stitch.blend(imgs, rows, size).resize((135, 240))
         d = ImageDraw.Draw(im)
         d.rectangle([0, 0, 135, 14], fill=(0, 0, 0))
         d.text((3, 1), f"{k + 1} {c.name or ''} {t:.1f}s"[:24], fill=(255, 255, 255))
@@ -258,6 +271,8 @@ def shot_sheet(cues, perf, size, t_end, out: Path) -> Path:
     sheet = Image.new("RGB", (cols * 135, rows_n * 240), (20, 20, 20))
     for i, im in enumerate(thumbs):
         sheet.paste(im, ((i % cols) * 135, (i // cols) * 240))
+    if fast:
+        studio().luau(fast["FG"].RESTORE_NAMES)
     sheet.save(out)
     return out
 
@@ -286,6 +301,22 @@ def _render_job(job: dict, cues, perf, size, fps, t0, t1, draft):
         _render_job_locked(job, cues, perf, size, fps, t0, t1, draft)
 
 
+def _fast_setup(size):
+    """Screen-grab recording (one rolled-camera shot per frame, ~0.27 s) when Studio's window is on screen;
+    PROMPTIMATE_RBX_CAPTURE=mcp forces the MCP screen_capture path (3 stitched captures per frame, ~2.3 s)."""
+    import os
+    if os.environ.get("PROMPTIMATE_RBX_CAPTURE", "screen") == "mcp" or sys.platform != "win32":
+        return None
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "roblox" / "short"))
+        import fastgrab as FG
+        if not FG.studio_window():
+            return None
+        return {"FG": FG}
+    except Exception:
+        return None
+
+
 def _render_job_locked(job: dict, cues, perf, size, fps, t0, t1, draft):
     try:
         out_dir = Path(job["frames_dir"])
@@ -294,7 +325,9 @@ def _render_job_locked(job: dict, cues, perf, size, fps, t0, t1, draft):
         # cameras and size: re-recording after a new roblox_perform must not reuse stale frames
         import hashlib
         import roblox_tools as RT
-        sig = hashlib.sha1(json.dumps({
+        fast = _fast_setup(size)
+        job["mode"] = "screen" if fast else "mcp"
+        sig = hashlib.sha1(json.dumps({"mode": job["mode"], 
             "state": (STATE / "state.json").read_text() if (STATE / "state.json").exists() else "",
             "pkg": RT._pkg_version(), "cues": [c.model_dump() if hasattr(c, "model_dump") else c for c in cues],
             "size": list(size), "fps": fps, "t": [t0, t1], "draft": draft}, sort_keys=True, default=str).encode()).hexdigest()
@@ -306,30 +339,76 @@ def _render_job_locked(job: dict, cues, perf, size, fps, t0, t1, draft):
         _ensure_running()
         vp = _viewport()
         state = {}
-        pool = ThreadPoolExecutor(2)
+        if fast:
+            try:
+                fast["rect"] = fast["FG"].calibrate(studio(), vp)
+                studio().luau(fast["FG"].HIDE_NAMES)
+            except Exception as e:     # window covered / minimized: fall back to MCP captures
+                job["mode"] = "mcp"
+                job["fast_error"] = str(e)[:200]
+                fast = None
+        pool = ThreadPoolExecutor(4)
         pending = []
         n0, n1 = int(round(t0 * fps)), int(math.floor(t1 * fps - 1e-6))
         job["total"] = n1 - n0 + 1
         t_start = time.time()
+        # screen mode on a fresh render: frames stream straight into the encoder while they're captured (the MP4
+        # is ready seconds after the last frame); PNGs are still written so an interrupted render can resume
+        enc = None
+        mp4 = Path(job["mp4"])
+        if fast and not any(out_dir.glob("f*.png")):
+            cmd = [_ffmpeg(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{size[0]}x{size[1]}",
+                   "-framerate", str(fps), "-i", "-"]
+            if job.get("audio"):
+                cmd += ["-i", job["audio"], "-shortest", "-c:a", "aac", "-b:a", "192k"]
+            cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "17", "-preset", "veryfast", str(mp4)]
+            enc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        order = []
         for i in range(n0, n1 + 1):
             if job.get("cancel"):
                 job["state"] = "cancelled"
                 return
             path = out_dir / f"f{i - n0:05d}.png"
             if not path.exists():
-                imgs, rows = frame(cues, perf, i / fps, size, vp, draft, f"r{job['id']}_{i}", state)
-                pending.append(pool.submit(lambda im=imgs, rw=rows, p=path: stitch.blend(im, rw, size).save(p)))
+                if fast:
+                    t = i / fps
+                    _k, _c, pos, look, fov = camera(cues, perf, t)
+                    raw = fast["FG"].portrait_raw(studio(), fast["rect"], vp, list(pos), list(look), fov, seek_t=t,
+                                                  out=tuple(size))
+
+                    def work(raw=raw, p=path):
+                        im = fast["FG"].finish(raw, vp, tuple(size))
+                        im.save(p, compress_level=1)
+                        return im.tobytes()
+                    fut = pool.submit(work)
+                    pending.append(fut)
+                    if enc:
+                        order.append(fut)
+                        while len(order) > 6:          # feed the encoder in frame order, a few frames behind
+                            enc.stdin.write(order.pop(0).result())
+                else:
+                    imgs, rows = frame(cues, perf, i / fps, size, vp, draft, f"r{job['id']}_{i}", state)
+                    pending.append(pool.submit(lambda im=imgs, rw=rows, p=path: stitch.blend(im, rw, size).save(p)))
             job["done"] = i - n0 + 1
             el = time.time() - t_start
             job["eta_s"] = round(el / job["done"] * (job["total"] - job["done"]))
+        if enc:
+            for fut in order:
+                enc.stdin.write(fut.result())
         for p in pending:
             p.result()
-        mp4 = Path(job["mp4"])
-        cmd = [_ffmpeg(), "-y", "-loglevel", "error", "-framerate", str(fps), "-i", str(out_dir / "f%05d.png")]
-        if job.get("audio"):
-            cmd += ["-i", job["audio"], "-shortest", "-c:a", "aac", "-b:a", "192k"]
-        cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", "-preset", "medium", str(mp4)]
-        subprocess.run(cmd, check=True)
+        if fast:
+            studio().luau(fast["FG"].RESTORE_NAMES)
+        if enc:
+            enc.stdin.close()
+            if enc.wait() != 0:
+                raise RuntimeError("ffmpeg (streamed encode) failed")
+        else:
+            cmd = [_ffmpeg(), "-y", "-loglevel", "error", "-framerate", str(fps), "-i", str(out_dir / "f%05d.png")]
+            if job.get("audio"):
+                cmd += ["-i", job["audio"], "-shortest", "-c:a", "aac", "-b:a", "192k"]
+            cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "17", "-preset", "veryfast", str(mp4)]
+            subprocess.run(cmd, check=True)
         # 4-frame contact sheet
         from PIL import Image
         files = sorted(out_dir.glob("f*.png"))
@@ -382,7 +461,7 @@ def record(shots: list[CameraCue], start: float = 0.0, end: float | None = None,
         JOBS[jid] = j
         threading.Thread(target=_render_job, args=(j, shots, perf, size, fps, start, t_end, quality == "draft"),
                          daemon=True).start()
-        per = 0.9 if quality == "draft" else 2.2
+        per = 0.3 if _fast_setup(size) else (0.9 if quality == "draft" else 2.2)
         out.update(job=jid, frames=int((t_end - start) * fps),
                    eta_min=round((t_end - start) * fps * per / 60, 1),
                    status=f"rendering in the background; call roblox_record(job='{jid}') for progress / the MP4")
