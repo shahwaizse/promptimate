@@ -483,6 +483,12 @@ def compile_story(spec, slug: str) -> str:
                 who = c.split("+")
                 if who[0] in {p["name"] for p in props}:
                     appears = {k for k, v in (ln.get("change") or {}).items() if str(v).strip().startswith("appear")}
+                    if who[0] in appears and who[0] not in shown:
+                        # it pops in during this line: the insert starts with the pop, not before it
+                        m_ap = re.search(r"@\s*([\d.]+)", str((ln.get("change") or {})[who[0]]))
+                        off_ap = float(m_ap.group(1)) if m_ap else min(0.8, dur * 0.3)
+                        if t_cut < off_ap - 0.3:
+                            at = f"@{lid}+{max(0.0, off_ap - 0.3):.1f}"
                     if who[0] in shown or who[0] in ln.get("show", []) or who[0] in appears:
                         is_sign = any(e_["name"] == who[0] and e_["prop"] == "sign" for e_ in place)
                         cams.append({"name": f"{lid} {c}", "start": at, "prop": who[0], "shot": "medium" if is_sign else "close", "angle": 0})
@@ -510,7 +516,8 @@ def compile_story(spec, slug: str) -> str:
                 else:
                     # whole bodies read (acting, sizes); a close-up only for a big feeling
                     big = (ln.get("feel") or {}).get(who[0]) in ("shocked", "crying", "scared", "love", "angry")
-                    cue.update({"shot": "close" if big and k_cam % 2 else ["full", "medium", "full"][k_cam % 3],
+                    # head-and-shoulders or whole body (a blocky "medium" is a torso filling the frame)
+                    cue.update({"shot": "close" if big else ["full", "close", "full"][k_cam % 3],
                                 "angle": [0, 20, -15, 10][k_cam % 4]})
                 cams.append(cue)
             for ch in ln.get("do", {}):
@@ -638,9 +645,9 @@ def compile_story(spec, slug: str) -> str:
                     if verb == "shrink":       # judges: "Max at -7 inches looks normal-sized": every change reads
                         to = min(to, max(0.5, cur_scale.get(here[who], 1.0) * 0.75)) if who in here else min(to, 0.7)
                     elif verb == "grow":
-                        to = max(to, min(2.0, cur_scale.get(here[who], 1.0) * 1.35)) if who in here else max(to, 1.4)
-                    events.append({"kind": "scale", "actor": a, "at": at, "to": max(0.35, min(2.0, to)), "over": 0.7})
-                    cur_scale[a] = max(0.35, min(2.0, to))
+                        to = max(to, min(1.7, cur_scale.get(here[who], 1.0) * 1.35)) if who in here else max(to, 1.4)
+                    events.append({"kind": "scale", "actor": a, "at": at, "to": max(0.35, min(1.7, to)), "over": 0.7})
+                    cur_scale[a] = max(0.35, min(1.7, to))
                     char_state.setdefault(who, {})["scale"] = cur_scale[a]
                 elif verb == "look":
                     if arg in lks:

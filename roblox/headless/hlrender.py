@@ -460,8 +460,9 @@ CLEAR_PROPS = os.environ.get("PROMPTIMATE_CLEAR_PROPS", "1") != "0"
 
 def _smallish(sp) -> bool:
     """A prop-sized static instance (no floors, walls or buildings): every extent under 6 studs, one over 0.3."""
-    ext = np.abs(np.asarray(sp["scale"], float)) * (1.0 if not sp.get("native") else 1.0)
-    return bool(ext.max() < 6.0 and ext.max() > 0.3)
+    ext = np.abs(np.asarray(sp["scale"], float))
+    top = (float(sp["pos"][1]) if sp.get("pos") is not None else 0.0) + ext[1] / 2
+    return bool(ext.max() < 6.0 and ext.max() > 0.3 and top > 1.0)    # never floor tiles or rugs
 
 
 class Renderer:
@@ -610,9 +611,21 @@ class Renderer:
                     cut[wm] = self._cut(g["mats"][wm], cam_pos, look)
                 if sm.any():
                     # set dressing in the foreground (a stanchion, a plant, a chair between the lens and the subject)
-                    # is cleared for the shot, as a film crew would
-                    near = np.linalg.norm(g["mats"][sm][:, :, 3] - cam_pos, axis=1) < 3.2
-                    cut[sm] = self._cut(g["mats"][sm], cam_pos, look) | near
+                    # is cleared for the shot, as a film crew would: on the line of sight, against the lens, or
+                    # anywhere in view nearer than the subject
+                    P_ = g["pos"][sm] if g["pos"] is not None else g["mats"][sm][:, :, 3]
+                    v_ = P_ - cam_pos
+                    fw = look - cam_pos
+                    dl = float(np.linalg.norm(fw)) or 1.0
+                    fw = fw / dl
+                    rt = np.cross(fw, [0.0, 1.0, 0.0])
+                    rt /= np.linalg.norm(rt) + 1e-9
+                    upv = np.cross(rt, fw)
+                    dd = v_ @ fw
+                    th = math.tan(math.radians(fov) / 2)
+                    inview = (dd > 0.3) & (dd < dl * 0.8) & (np.abs(v_ @ rt) < dd * th * 9 / 16 * 1.15) &                         (np.abs(v_ @ upv) < dd * th * 1.15)
+                    near = np.linalg.norm(v_, axis=1) < 3.2
+                    cut[sm] = self._cut(g["mats"][sm], cam_pos, look) | near | inview
                 mask &= ~cut
                 if g["has_cg"]:
                     cut_groups.update(g["cg"][cut & (g["cg"] >= 0)].tolist())

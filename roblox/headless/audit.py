@@ -75,6 +75,16 @@ def judge(ck, ids, dep, pos, look, fov, subs, prop, t):
             if float((idw == 101 + 2 * names.index(s_)).mean()) < 0.004:
                 why = "faceless"
                 break
+    for s_i, s_ in enumerate(subs[:2] if (not why and subs and not prop) else []):
+        hi = ck.actor_index(s_, "Head")
+        if hi is not None and s_i > 0:      # the partner of a two-shot: its head inside the frame too
+            hp2, _hr2 = ck.part_world(hi, t)
+            q2 = _vp_of(pos, look, fov, CK) @ np.array([*hp2, 1.0])
+            if q2[3] > 1e-6:
+                u2, v2 = q2[0] / q2[3], q2[1] / q2[3]
+                k2 = math.tan(math.radians(fov) / 2) / math.tan(math.radians(min(fov * CK.WIDEN, 150)) / 2)
+                if abs(u2) > k2 * 0.9 or v2 > k2 * 0.85:
+                    why = "headless"
     if not why and subs and not prop:
         hi = ck.actor_index(subs[0], "Head")
         if hi is not None:
@@ -134,7 +144,9 @@ def search(shots, i, perf, t_end, ck, design=False, fix=None, avoid=None):
         sizes = ["close", "medium"] if c.shot not in ("close",) else ["close"]
     elif fix == "higher":
         lifts = (0.6, 1.1)
-    cands = [(sz, ang, lift) for sz in sizes for lift in lifts for ang in range(0, 360, 30)]
+    # the front arc only (the reference grammar: frontal; behind a stage line is the crowd and the set's walls)
+    arc = (0, 20, -20, 40, -40, 60, -60) if os.environ.get("PROMPTIMATE_FRONT_ARC", "1") != "0" else tuple(range(0, 360, 30))
+    cands = [(sz, ang, lift) for sz in sizes for lift in lifts for ang in arc]
     cams = [RR._cam_for(poses[0], other, sz, c.angle + ang, lift) for sz, ang, lift in cands]
     if avoid is not None and avoid[0] is not None and avoid[1] is not None:
         # a reviewer rejected this view: nothing within 35 degrees of it
@@ -174,7 +186,7 @@ def search(shots, i, perf, t_end, ck, design=False, fix=None, avoid=None):
                 cosang = float(pd[[0, 2]] @ d_[[0, 2]] / (np.linalg.norm(pd[[0, 2]]) * np.linalg.norm(d_[[0, 2]]) + 1e-9))
                 if cosang > 0.94 and abs(fv - (prev.fov or fv)) < 6:
                     comp[j] += 2.0
-    cost = [bad[j] * 10 + comp[j] + min(cands[j][1], 360 - cands[j][1]) / 60 + sizes.index(cands[j][0]) * 0.8
+    cost = [bad[j] * 10 + comp[j] + min(abs(cands[j][1]) % 360, 360 - abs(cands[j][1]) % 360) / 60 + sizes.index(cands[j][0]) * 0.8
             + cands[j][2] * 2 for j in range(len(cams))]
     j = int(np.argmin(cost))
     return (cams[j], int(bad[j]), cands[j])
