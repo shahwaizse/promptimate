@@ -283,6 +283,8 @@ def compile_story(spec, slug: str) -> str:
         for n in here.values():
             first_line.setdefault(n, sc["lines"][0]["id"])
         for p in sc.get("props", []):
+            if any(q["name"] == p["name"] for q in props):
+                continue          # the same prop declared again when a set is revisited: it's already there
             if p["prop"] not in props_ok:
                 warn.append(f"prop {p['prop']!r} unknown, skipped")
                 continue
@@ -412,9 +414,11 @@ def compile_story(spec, slug: str) -> str:
                 shown.setdefault(n, f"@{lid}")
             for n in ln.get("hide", []):
                 if n in shown:
+                    t_show = shown.pop(n)
                     for p in props:
                         if p["name"] == n:
-                            p["show"].append([shown.pop(n), f"@{lid}"])
+                            p["show"].append([t_show, f"@{lid}"])
+                            break
     for n, act in actors.items():
         if not act["beats"]:       # placed but never acting: stands there through its scene
             act["beats"].append({"at": f"@{first_line[n]}", "prompt": ACTIONS["happy"][0], "seconds": ACTIONS["happy"][1]})
@@ -423,6 +427,7 @@ def compile_story(spec, slug: str) -> str:
         for p in props:
             if p["name"] == n:
                 p["show"].append([t, end])
+                break
     for n in actors:
         faces.setdefault(n, [])
         if not faces[n] or faces[n][0][0] != 0:
