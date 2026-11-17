@@ -229,15 +229,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     ev = []
     keys = {k.upper() for k in getattr(captions, "keywords", ())}
 
-    def word(w):      # key words (episode KEYWORDS, numbers, money) pop in yellow
+    # key words pop in capitals, in a colour that changes line to line (reference shorts: yellow red green cyan pink)
+    pal = ["&H00E6FF&", "&H4848FF&", "&H50E05A&", "&HFFD840&", "&HC070FF&"]
+    cur_line = [0]
+
+    def word(w):
         bare = re.sub(r"[^A-Za-z0-9$]", "", w).upper()
         if bare and (bare in keys or re.search(r"[0-9$]", bare)):
-            return "{\\c&H00E6FF&}" + w + "{\\c&HFFFFFF&}"
+            return "{\\c" + pal[cur_line[0] % len(pal)] + "}" + w.upper() + "{\\c&HFFFFFF&}"
         return w
 
     def under_title(t0, t1):
         return any(a < t1 - 0.05 and t0 + 0.05 < b for a, b, _ in titles)
     for li, ln in enumerate(lines):
+        cur_line[0] = li
         nxt = lines[li + 1]["t"] if li + 1 < len(lines) else 1e9
         words = ln["text"].replace("—", " ").split()
         if not words:

@@ -83,7 +83,7 @@ def judge(ck, ids, dep, pos, look, fov, subs, prop, t):
             if q[3] > 1e-6:
                 u, v = q[0] / q[3], q[1] / q[3]
                 k_ = math.tan(math.radians(fov) / 2) / math.tan(math.radians(min(fov * CK.WIDEN, 150)) / 2)
-                if abs(u) > k_ * 0.92 or v > k_ * 0.95 or v < -k_ * 0.6:
+                if abs(u) > k_ * 0.85 or v > k_ * 0.82 or v < -k_ * 0.5:
                     why = "headless"
             to = np.asarray(pos, float) - hp
             face = float((hr @ np.array([0, 0, -1.0])) @ (to / max(np.linalg.norm(to), 1e-6)))
@@ -125,6 +125,8 @@ def search(shots, i, perf, t_end, ck, design=False, fix=None, avoid=None):
         return None
     other = poses[1] if len(poses) > 1 else None
     sizes = [c.shot] + [s_ for s_ in ("medium", "full", "close") if s_ != c.shot]
+    if not c.cover and c.with_:          # a size-difference two-shot: both whole bodies, never a close-up
+        sizes = [c.shot] + [s_ for s_ in ("full", "wide") if s_ != c.shot]
     lifts = (0.0, 0.5)
     if fix == "wider":
         sizes = ["full", "wide"] if c.shot in ("close", "medium") else ["wide", "full"]

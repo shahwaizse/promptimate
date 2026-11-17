@@ -8,6 +8,7 @@ Classic clothing maps the 585x559 shirt/pants template onto the R6 boxes; faces 
 from __future__ import annotations
 
 import json
+import os
 import math
 import re
 import subprocess
@@ -454,6 +455,15 @@ class Scene:
         return m
 
 
+CLEAR_PROPS = os.environ.get("PROMPTIMATE_CLEAR_PROPS", "1") != "0"
+
+
+def _smallish(sp) -> bool:
+    """A prop-sized static instance (no floors, walls or buildings): every extent under 6 studs, one over 0.3."""
+    ext = np.abs(np.asarray(sp["scale"], float)) * (1.0 if not sp.get("native") else 1.0)
+    return bool(ext.max() < 6.0 and ext.max() > 0.3)
+
+
 class Renderer:
     def __init__(self, scene_dir: Path, w=1080, h=1920, hide_paths=None):
         self.ctx = moderngl.create_standalone_context()
@@ -497,7 +507,8 @@ class Renderer:
             cg = sp.get("cutgroup")
             cgi = cut_ids.setdefault(cg, len(cut_ids)) if cg else -1
             groups.setdefault((k, sp.get("cast", True)), []).append(
-                (np.hstack([m.ravel(), sp["col"], sp["uvp"], (0, 0)]), sp["pos"], sp["wall"], m, cgi))
+                (np.hstack([m.ravel(), sp["col"], sp["uvp"], (0, 0)]), sp["pos"], sp["wall"], m, cgi,
+                 _smallish(sp)))
         self.static_groups = []
         for (k, cast), items in groups.items():
             M = np.array([it[0] for it in items], "f4")
@@ -505,6 +516,7 @@ class Renderer:
             self.static_groups.append({"k": k, "cast": cast, "cg": cgs, "has_cg": bool((cgs >= 0).any()),
                                        "inst": M, "pos": np.array([it[1] for it in items]),
                                        "wall": np.array([it[2] for it in items]),
+                                       "small": np.array([it[5] for it in items]),
                                        "mats": np.array([it[3] for it in items]),
                                        "buf": ctx.buffer(reserve=max(16, M.nbytes)), "n": 0, "mask": None})
         # dynamic: per-spec part index, grouped once by key (heads re-grouped per face each frame)
@@ -591,9 +603,16 @@ class Renderer:
         for g in self.static_groups:
             mask = np.einsum("ij,ij->i", g["pos"] - cam_pos, g["pos"] - cam_pos) < radius * radius
             wm = mask & g["wall"]
-            if wm.any():
+            sm = mask & g["small"] & ~g["wall"] if CLEAR_PROPS else np.zeros(len(mask), bool)
+            if wm.any() or sm.any():
                 cut = np.zeros(len(mask), bool)
-                cut[wm] = self._cut(g["mats"][wm], cam_pos, look)
+                if wm.any():
+                    cut[wm] = self._cut(g["mats"][wm], cam_pos, look)
+                if sm.any():
+                    # set dressing in the foreground (a stanchion, a plant, a chair between the lens and the subject)
+                    # is cleared for the shot, as a film crew would
+                    near = np.linalg.norm(g["mats"][sm][:, :, 3] - cam_pos, axis=1) < 3.2
+                    cut[sm] = self._cut(g["mats"][sm], cam_pos, look) | near
                 mask &= ~cut
                 if g["has_cg"]:
                     cut_groups.update(g["cg"][cut & (g["cg"] >= 0)].tolist())

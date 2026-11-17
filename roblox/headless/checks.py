@@ -18,7 +18,7 @@ import numpy as np
 import hlrender as RD
 import pose as PO
 
-W, H = 72, 128               # per-candidate buffer (9:16)
+W, H = 108, 192             # per-candidate buffer (9:16); 72x128 missed thin occluders (poles, plants)
 COLS = 8                     # candidates per atlas row
 WIDEN = 1.6                  # render a wider fov than the shot so off-frame targets can still be tested
 

@@ -78,8 +78,8 @@ SHOTS = {  # distance (in head heights above the floor ~ character height), came
 if os.environ.get("PROMPTIMATE_CAM_STYLE", "wide") == "wide":
     # the reference shorts' grammar: a wide-angle lens close to the subject, a little below eye line (punchy, frontal,
     # the subject big against a deep set) instead of a long lens from far away
-    SHOTS = {"close": (0.78, 0.86, 0.88, 66), "medium": (1.18, 0.78, 0.76, 66), "full": (1.6, 0.62, 0.5, 70),
-             "wide": (2.6, 0.9, 0.45, 74), "low": (0.9, -0.1, 0.8, 66)}
+    SHOTS = {"close": (0.98, 0.88, 0.88, 52), "medium": (1.5, 0.8, 0.76, 52), "full": (2.05, 0.64, 0.5, 56),
+             "wide": (3.1, 0.9, 0.45, 62), "low": (1.1, -0.1, 0.8, 52)}
 WIDER = {"close": "medium", "medium": "full", "low": "medium"}
 POSE_LUAU = r'''
 local D = _G.PromptimateDirector

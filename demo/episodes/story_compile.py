@@ -29,6 +29,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import os
 import re
 import sys
 from pathlib import Path
@@ -279,6 +280,44 @@ def compile_story(spec, slug: str) -> str:
             actors[n] = {"name": n, "start": [x, z], "facing": [round(x + fx * 5, 2), round(z + fz * 5, 2)], "beats": []}
             pos[n], facing[n] = (x, z), (fx, fz)
 
+    # ---- stage lines (the reference shorts' blocking): a scene's cast stands on one line across the open middle of
+    # the set, facing the camera side, 4.5 studs apart, in the left-to-right order of the spots the writer chose. Frontal
+    # shots then have a clear view of everyone (no walls, poles or backs between the camera and a face).
+    if os.environ.get("PROMPTIMATE_STAGE", "line") == "line":
+        restaged = set()
+        for sc in spec.SCENES:
+            m = maps[sc["set"]]
+            sx_, sz_ = m.get("camera_side", [-1, 0])
+            names_ = [copy(ch, sc["set"]) for ch in sc.get("place", {})]
+            new_ = [n for n in names_ if n in pos and n not in restaged]
+            if not new_:
+                continue
+            bx, bz = m["bounds"]["x"], m["bounds"]["z"]
+            # the line's centre: the open floor between the set's middle and its camera side
+            cx0, cz0 = (bx[0] + bx[1]) / 2, (bz[0] + bz[1]) / 2
+            half = abs(sx_) * (bx[1] - bx[0]) / 2 + abs(sz_) * (bz[1] - bz[0]) / 2
+            cx0, cz0 = cx0 + sx_ * min(4.0, half * 0.25), cz0 + sz_ * min(4.0, half * 0.25)
+            px_, pz_ = -sz_, sx_                      # along the line (the camera's left-right)
+            order = sorted(new_, key=lambda n: (pos[n][0] - cx0) * px_ + (pos[n][1] - cz0) * pz_)
+            k_ = len(order)
+            fy = m.get("floor_y", 0.0)
+            placed_ = [pos[n] for n in names_ if n in restaged]
+            yaw_ = round(math.degrees(math.atan2(-sx_, -sz_)), 1)
+            for j, n in enumerate(order):
+                off = (j - (k_ - 1) / 2) * 4.5
+                x_, z_ = cx0 + px_ * off, cz0 + pz_ * off
+                x_, z_ = _free_spot(x_, z_, fy, placed_, r=1.6, apart=3.8)
+                pos[n] = (x_, z_)
+                facing[n] = _yaw_dir(yaw_)
+                placed_.append((x_, z_))
+                restaged.add(n)
+                for c in cast:
+                    if c["name"] == n:
+                        c["at"], c["yaw"] = [x_, z_], yaw_
+                fx_, fz_ = _yaw_dir(yaw_)
+                actors[n]["start"] = [x_, z_]
+                actors[n]["facing"] = [round(x_ + fx_ * 5, 2), round(z_ + fz_ * 5, 2)]
+
     # ---- extras: each scene gets a crowd behind and around the cast, facing the action (library actions only)
     import random as _rnd
     rng = _rnd.Random(len(spec.TITLE))
@@ -469,7 +508,10 @@ def compile_story(spec, slug: str) -> str:
                 elif len(who) > 1 and who[1] in here:
                     cue.update({"with": here[who[1]], "shot": "full" if k_cam % 2 else "medium", "angle": 0})
                 else:
-                    cue.update({"shot": ["close", "medium", "close"][k_cam % 3], "angle": [0, 20, -15, 10][k_cam % 4]})
+                    # whole bodies read (acting, sizes); a close-up only for a big feeling
+                    big = (ln.get("feel") or {}).get(who[0]) in ("shocked", "crying", "scared", "love", "angry")
+                    cue.update({"shot": "close" if big and k_cam % 2 else ["full", "medium", "full"][k_cam % 3],
+                                "angle": [0, 20, -15, 10][k_cam % 4]})
                 cams.append(cue)
             for ch in ln.get("do", {}):
                 if ch in here and ch not in introduced:
@@ -593,6 +635,10 @@ def compile_story(spec, slug: str) -> str:
                 a = here[who]
                 if verb in ("grow", "shrink", "normal"):
                     to = 1.0 if verb == "normal" else float(arg or (1.7 if verb == "grow" else 0.55))
+                    if verb == "shrink":       # judges: "Max at -7 inches looks normal-sized": every change reads
+                        to = min(to, max(0.5, cur_scale.get(here[who], 1.0) * 0.75)) if who in here else min(to, 0.7)
+                    elif verb == "grow":
+                        to = max(to, min(2.0, cur_scale.get(here[who], 1.0) * 1.35)) if who in here else max(to, 1.4)
                     events.append({"kind": "scale", "actor": a, "at": at, "to": max(0.35, min(2.0, to)), "over": 0.7})
                     cur_scale[a] = max(0.35, min(2.0, to))
                     char_state.setdefault(who, {})["scale"] = cur_scale[a]

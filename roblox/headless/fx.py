@@ -146,7 +146,7 @@ def particles(kind: str, anchor: np.ndarray, t0: float, t1: float, times: np.nda
         u = np.clip(tt[:, None] / 0.9, 0, 1)
         r = 0.4 + 2.4 * (1 - (1 - u) ** 2)
         C = A[:, None] + np.array([0, 0.3, 0]) + dirs[None] * r[..., None] + np.array([0, 0.8, 0]) * u[..., None]
-        S = (0.8 + 1.0 * u) * np.clip((1 - u) / 0.45, 0, 1) * rng.uniform(0.8, 1.3, k)[None]
+        S = (0.45 + 0.6 * u) * np.clip((1 - u) / 0.45, 0, 1) * rng.uniform(0.8, 1.2, k)[None]
         shape, cols, Qc = "puff", [WHITE, GREY_L], _face_cam(nf, k)
         live = live & (tt < 0.9)
     elif kind == "dizzy":
@@ -179,7 +179,7 @@ def particles(kind: str, anchor: np.ndarray, t0: float, t1: float, times: np.nda
         k = 50
         base = np.stack([rng.uniform(-14, 14, k), rng.uniform(-3.0, 7.0, k), rng.uniform(-14, 14, k)], -1)
         ph = rng.uniform(0, 2 * np.pi, k)
-        drift = np.stack([0.6 * np.sin(tt[:, None] * 0.35 + ph[None]), 0.25 * tt[:, None] % 10 - 1.2,
+        drift = np.stack([0.6 * np.sin(tt[:, None] * 0.35 + ph[None]), (0.25 * tt[:, None] + 0 * ph[None]) % 10 - 1.2,
                           0.6 * np.cos(tt[:, None] * 0.3 + ph[None])], -1)
         C = A[:1][:, None] + base[None] + drift
         S = 0.13 * (0.6 + 0.4 * np.sin(tt[:, None] * 1.3 + ph[None]) ** 2)
