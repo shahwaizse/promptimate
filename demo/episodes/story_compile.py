@@ -346,8 +346,13 @@ def compile_story(spec, slug: str) -> str:
                 at = f"@{lid}" if t0 + j * step < 0.05 else f"@{lid}+{t0 + j * step:.1f}"
                 who = c.split("+")
                 if who[0] in {p["name"] for p in props}:
-                    cams.append({"name": f"{lid} {c}", "start": at, "prop": who[0], "shot": "close", "angle": 0})
-                    continue
+                    appears = {k for k, v in (ln.get("change") or {}).items() if str(v).strip().startswith("appear")}
+                    if who[0] in shown or who[0] in ln.get("show", []) or who[0] in appears:
+                        is_sign = any(e_["name"] == who[0] and e_["prop"] == "sign" for e_ in place)
+                        cams.append({"name": f"{lid} {c}", "start": at, "prop": who[0], "shot": "medium" if is_sign else "close", "angle": 0})
+                        continue
+                    warn.append(f"{lid}: cut to {who[0]} before it is shown; framing a person instead")
+                    who = [next(iter(ln.get("do", {})), next(iter(here)))]
                 if who[0] not in here:
                     warn.append(f"{lid}: camera subject {c!r} not in {st}")
                     continue
@@ -388,12 +393,18 @@ def compile_story(spec, slug: str) -> str:
                             px, pz = pos[a]
                             d = math.hypot(tx - px, tz - pz) or 1.0
                             pos[a] = (tx - (tx - px) / d * 2.5, tz - (tz - pz) / d * 2.5)
-                        elif tgt in spots:
-                            s = spots[tgt]
-                            b["to"] = [s["x"], s["z"]]
+                        elif tgt and tgt.partition(":")[0] in spots:
+                            nm_, _, off_ = tgt.partition(":")
+                            s = spots[nm_]
+                            try:
+                                dx_, dz_ = (float(v) for v in off_.split(",")) if off_ else (0.0, 0.0)
+                            except ValueError:
+                                dx_, dz_ = 0.0, 0.0
+                            gx_, gz_ = round(s["x"] + dx_, 2), round(s["z"] + dz_, 2)
+                            b["to"] = [gx_, gz_]
                             fx, fz = _yaw_dir(s["yaw"])
-                            b["face"] = [round(s["x"] + fx * 5, 2), round(s["z"] + fz * 5, 2)]
-                            pos[a] = (s["x"], s["z"])
+                            b["face"] = [round(gx_ + fx * 5, 2), round(gz_ + fz * 5, 2)]
+                            pos[a] = (gx_, gz_)
                         else:
                             warn.append(f"{lid}: {ch} {tok}: no target, walking in place")
                             b["prompt"] = "a person stands and talks, gesturing with both hands"

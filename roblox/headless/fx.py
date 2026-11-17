@@ -252,7 +252,7 @@ def sign_parts(text: str, style: str = "wood", width: float = 4.0, stand: bool =
     bg = _rgb(STYLES.get(style, STYLES["wood"])[0])
     board = {"kind": "box", "name": "sign_board", "size": [width, bh, 0.2], "color": bg, "mat": "SmoothPlastic", "tr": 0.0,
              "cf": [0, y0 + bh / 2, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
-             "decals": [{"face": "Front", "tex": "file:" + tex}]}
+             "decals": [{"face": "Front", "tex": "file:" + tex}, {"face": "Back", "tex": "file:" + tex}]}
     parts = [board]
     if stand:
         for sx in (-1, 1):

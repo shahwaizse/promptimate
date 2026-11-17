@@ -403,7 +403,7 @@ class Scene:
             # local frame of the decal quad: its -Z is the face normal (quad faces -Z), X = -u, Y = v
             R = np.stack([-u, v, -n], 1)
             w_, h_ = abs(u @ size), abs(v @ size)
-            off = n * (abs(n @ size) / 2 + 0.01)
+            off = n * (abs(n @ size) / 2 + 0.04)     # 0.01 z-fought at medium range (blank sign boards)
             uvp = (1.0, 1.0)
             if dc.get("tile"):
                 uvp = (w_ / max(dc["tile"][0], 1e-3), h_ / max(dc["tile"][1], 1e-3))
