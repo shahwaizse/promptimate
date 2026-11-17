@@ -47,6 +47,27 @@ PAIR_BAD = 0.3         # studs: two characters' parts overlapping this deep
 R15_SEAT_LIFT = 0.12     # m
 SRV = None               # server module (generate_motion, worker, ...), set by register()
 _GEN_LOCK = threading.Lock()
+_TLS = threading.local()
+
+
+class _TLWorker:
+    """The server's generation worker, with a per-thread override (a heading constraint for one beat). Beats of
+    different characters generate concurrently, so the old swap of the global worker under a lock is gone."""
+
+    def __init__(self, real):
+        self.real = real
+
+    def __getattr__(self, k):
+        o = getattr(_TLS, "override", None)
+        return getattr(o if o is not None else self.real, k)
+
+
+def _tls_install():
+    """Install the thread-aware worker once; return the real one underneath."""
+    w = SRV.worker
+    if not isinstance(w, _TLWorker):
+        w = SRV.worker = _TLWorker(w)
+    return w.real
 
 DIRS = {"+x": (1.0, 0.0), "-x": (-1.0, 0.0), "+z": (0.0, 1.0), "-z": (0.0, -1.0)}
 _STILL = re.compile(r"\b(stands?|standing|still|idles?|idling|waits?|waiting|cross(es)? their arms|arms crossed|talks?|"
@@ -825,6 +846,16 @@ def _save_beat_cache(c: dict) -> None:
     (STATE / "beats.json").write_text(json.dumps(c, indent=0))
 
 
+def _log_nan(actor, idx, spec, kw, err) -> None:
+    try:
+        with open(STATE / "nan_requests.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": time.time(), "actor": actor, "beat": idx, "err": str(err)[:200],
+                                "spec": {k: v for k, v in spec.items() if k != "label"}, "kw": list(kw)},
+                               default=lambda o: np.asarray(o).round(4).tolist()) + chr(10))
+    except Exception:
+        pass
+
+
 def _generate(actor: str, idx: int, spec: dict, prev: str | None) -> tuple[str, dict]:
     """generate_motion for one beat (with end facing via the heading constraint), retried with new seeds until the
     facing / mark / seat checks pass. Returns (motion name, info)."""
@@ -849,10 +880,10 @@ def _generate(actor: str, idx: int, spec: dict, prev: str | None) -> tuple[str, 
     if re.search(r"gets? up|stands? up|rises", " ".join(p for p, _ in spec["segments"]).lower()):
         n_att = max(n_att, 4)          # a failed get-up ruins the rest of the chain: worth more seeds
     for attempt in range(n_att):
-        with _GEN_LOCK:
-            real = SRV.worker
+        if True:
+            real = _tls_install()
             if spec.get("face_rel") is not None:
-                SRV.worker = _HeadingProxy(real, wrap(spec["face_rel"] + g[2]))
+                _TLS.override = _HeadingProxy(real, wrap(spec["face_rel"] + g[2]))
             try:
                 for tries in range(4):   # the shared GPU daemon may restart (other jobs, memory pressure): retry
                     try:
@@ -865,8 +896,17 @@ def _generate(actor: str, idx: int, spec: dict, prev: str | None) -> tuple[str, 
                         if tries == 3:
                             raise RuntimeError(f"motion engine unavailable: {e}") from e
                         time.sleep(10 * (tries + 1))
+                    except RuntimeError as e:
+                        # a degenerate request (a non-finite constraint, e.g. a target that wasn't placed yet when
+                        # characters generate in parallel) fails in the engine: drop the extra constraints and try
+                        # again rather than losing the whole episode
+                        if "non-finite" not in str(e) or tries == 3:
+                            raise
+                        _log_nan(actor, idx, spec, kw, e)
+                        _TLS.override = None
+                        kw = {k: v for k, v in kw.items() if k in ("continue_from", "in_place")}
             finally:
-                SRV.worker = real
+                _TLS.override = None
         meta = json.loads(res[0])
         root, rot = motion.load(Path(meta["files"]["raw_dir"]))
         score, issues, info = _evaluate(root, rot, spec)
@@ -1114,10 +1154,11 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
     # ---- generate each character's chain
     def gen_all(retry: dict) -> dict:
         results = {}
-        for a in actors:
+        plan_lock = threading.Lock()   # the planner's shared state and the beat cache file; generation runs outside it
+
+        def one(a):
             p, yaw, spm = starts[a.name]
             m = scene.actors[a.name]
-            plan.ground = m["ground"]
             old = scene.perf["actors"].get(a.name) if a.append else None
             prev = old["clips"][-1]["src"] if old and old.get("clips") else None
             clips = list(old["clips"]) if old else []
@@ -1131,7 +1172,9 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
                 occupied += r["seats"]
             seats_used, beat_info = [], []
             for i, e in enumerate(_expand(a)):
-                spec, extra = _spec(e, p, yaw, spm, seated, plan, a.name, occupied)
+                with plan_lock:
+                    plan.ground = m["ground"]
+                    spec, extra = _spec(e, p, yaw, spm, seated, plan, a.name, occupied)
                 if retry.get((a.name, i)):
                     spec["retry"] = retry[(a.name, i)]
                 key = _cache_key(a.name, spec, prev)
@@ -1148,7 +1191,8 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
                 else:
                     name, info = _generate(a.name, len(clips) + 1, spec, prev)
                     cache[key] = {"name": name, "info": info, "rejudged": True}
-                    _save_beat_cache(cache)
+                    with plan_lock:
+                        _save_beat_cache(cache)
                 warped = _warp(name, spec)
                 turned = _turn(name, spec)
                 if turned:
@@ -1160,7 +1204,8 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
                     _, iss, inf2 = _evaluate(r_, q_, spec)
                     info.update({k: v for k, v in inf2.items()}, issues=iss)
                     cache[key] = {"name": name, "info": info}
-                    _save_beat_cache(cache)
+                    with plan_lock:
+                        _save_beat_cache(cache)
                 raw = SRV.OUTPUT / name
                 root, rot = motion.load(raw)
                 dur = (len(root) - 1) / motion.FPS
@@ -1191,9 +1236,16 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
                     track.append([round(c["s"] + f / motion.FPS, 3), round(float(hips[f, 0]), 3), round(float(hips[f, 1]), 3)])
                 track.append([round(c["s"] + (n - 1) / motion.FPS, 3), round(float(hips[-1, 0]), 3), round(float(hips[-1, 1]), 3)])
             plan.tracks[a.name] = track
-            results[a.name] = {"clips": clips, "beats": beat_info, "spm": spm, "end": [float(p[0]), float(p[1]), float(yaw)],
-                               "seats": seats_used, "path": scene.actors[a.name]["path"], "track": track,
-                               "ground": m["ground"]}
+            return a.name, {"clips": clips, "beats": beat_info, "spm": spm, "end": [float(p[0]), float(p[1]), float(yaw)],
+                            "seats": seats_used, "path": scene.actors[a.name]["path"], "track": track,
+                            "ground": m["ground"]}
+
+        # characters' chains are independent: generate them side by side (motiond runs several engines)
+        n = max(1, min(len(actors), int(os.environ.get("MOTIOND_ENGINES", "3"))))
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(n) as ex:
+            for name, r in ex.map(one, actors):
+                results[name] = r
         return results
 
     # ---- push, check, repair: beats that clip (hands deep in the body, two bodies overlapping, the body passing

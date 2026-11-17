@@ -172,7 +172,12 @@ def prefetch_embeddings(generate, prompts: list[str], text_quant: str, extra_env
 
 
 class KimodoWorker:
-    def __init__(self, text_quant: str | None = None, engine_dir: Path | None = None, extra_env: dict | None = None):
+    def __init__(self, text_quant: str | None = None, engine_dir: Path | None = None, extra_env: dict | None = None,
+                 lock_path: Path | None = None, release_path: Path | None = None):
+        # a pool's extra engines get private lock / release files: they run beside the primary instead of
+        # queueing on the machine-wide GPU lock, and the primary's release requests don't unload them
+        self.lock_path = lock_path or GPU_LOCK
+        self.release_path = release_path or RELEASE_REQUEST
         self.text_quant = text_quant or os.environ.get("KIMODO_TEXT_QUANT", "q4_k_m")
         self.engine_dir = Path(engine_dir) if engine_dir else KIMODO_BUILD
         self.extra_env = dict(extra_env or {})
@@ -192,7 +197,7 @@ class KimodoWorker:
             if not self.alive():
                 continue
             try:
-                requested = RELEASE_REQUEST.stat().st_mtime > self.last_used
+                requested = self.release_path.stat().st_mtime > self.last_used
             except OSError:
                 requested = False
             # low-memory mode: free the text encoder after a short idle period (motion model stays warm)
@@ -280,7 +285,7 @@ class KimodoWorker:
             pf = out_dir / f"prompt_{i}.txt"
             pf.write_text(seg.prompt, encoding="utf-8")
             fields += [str(seg.frames), str(pf)]
-        with self.lock, gpu_lock():
+        with self.lock, gpu_lock(self.lock_path):
             cold = not self.alive()
             if cold:
                 self._start()

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import queue
 import os
 import shutil
 import socket
@@ -35,7 +36,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from kimodo_worker import KIMODO_BUILD, KimodoWorker, Segment, prefetch_embeddings  # noqa: E402
+from kimodo_worker import embedding_cache_file, KIMODO_BUILD, KimodoWorker, Segment, prefetch_embeddings  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PORT = int(os.environ.get("MOTIOND_PORT", "47613"))
@@ -52,9 +53,15 @@ def _engine_fingerprint(engine_dir: Path) -> str:
 
 class Daemon:
     def __init__(self) -> None:
-        self.lock = threading.Lock()  # one generation at a time; other clients queue here
+        self.lock = threading.Lock()  # the primary engine: one generation at a time; other clients queue here
         self.worker: KimodoWorker | None = None
         self.config_key: str | None = None
+        # extra engines (MOTIOND_ENGINES - 1): each holds only ~1 GB VRAM and ~0.15 GB RAM once a job's prompts are
+        # pre-encoded, and three run side by side at ~3x the throughput of one (engine A/B, 2026-11-17). They take
+        # only requests whose prompts are all in the embedding cache, so the 4.4 GB text encoder loads in one place.
+        self.n_engines = max(1, int(os.environ.get("MOTIOND_ENGINES", "3")))
+        self.extras: list[KimodoWorker] = []
+        self.free: "queue.Queue[KimodoWorker]" = queue.Queue()
         self.stats = {"requests": 0, "cache_hits": 0, "engine_starts": 0, "started_at": time.time()}
 
     def _ensure(self, config: dict) -> KimodoWorker:
@@ -68,6 +75,16 @@ class Daemon:
                                        extra_env=config.get("extra_env") or {})
             self.config_key = key
             self.stats["engine_starts"] += 1
+            for w in self.extras:
+                w.stop()
+            self.extras, self.free = [], queue.Queue()
+            for i in range(1, self.n_engines):
+                w = KimodoWorker(text_quant=config.get("text_quant"), engine_dir=engine,
+                                 extra_env=config.get("extra_env") or {},
+                                 lock_path=ROOT / "logs" / f"gpu.extra{i}.lock",
+                                 release_path=ROOT / "logs" / f"gpu.extra{i}.release")
+                self.extras.append(w)
+                self.free.put(w)
         return self.worker
 
     def _cache_key(self, req: dict, worker: KimodoWorker) -> str:
@@ -83,10 +100,40 @@ class Daemon:
             h.update(Path(cons).read_bytes())
         return h.hexdigest()[:24]
 
+    def _config_key(self, config: dict) -> str:
+        engine = Path(config.get("engine_dir") or KIMODO_BUILD)
+        return json.dumps({"engine": str(engine.resolve()), "quant": config.get("text_quant"),
+                           "env": config.get("extra_env") or {}}, sort_keys=True)
+
     def generate(self, req: dict) -> dict:
+        # only take the primary's lock when the engine set must change: a busy primary must not hold up requests
+        # that an idle extra engine can serve (that made the pool serial again)
+        if self.worker is None or self._config_key(req.get("config") or {}) != self.config_key:
+            with self.lock:
+                self._ensure(req.get("config") or {})
+        prompts = [p for p, _f in req["segments"]]
+        primary = self.worker
+        encoded = all(embedding_cache_file(p, primary.text_quant, primary.extra_env).exists() for p in prompts)
+        extra = None
+        if encoded and self.extras:
+            try:                                     # a free extra engine, else whichever frees up first
+                extra = self.free.get_nowait()
+            except queue.Empty:
+                if not self.lock.locked():
+                    extra = None
+                else:
+                    extra = self.free.get()
+        if extra is not None:
+            try:
+                return self._generate(req, extra)
+            finally:
+                self.free.put(extra)
         with self.lock:
+            return self._generate(req, self.worker)
+
+    def _generate(self, req: dict, worker: KimodoWorker) -> dict:
+        if True:
             self.stats["requests"] += 1
-            worker = self._ensure(req.get("config") or {})
             out_dir = Path(req["out_dir"])
             use_cache = req.get("cache", True)
             key = self._cache_key(req, worker) if use_cache else None
@@ -152,7 +199,8 @@ class Daemon:
                 "engine_dir": str(w.engine_dir) if w else str(KIMODO_BUILD),
                 "text_quant": w.text_quant if w else os.environ.get("KIMODO_TEXT_QUANT", "q4_k_m"),
                 "uptime_s": round(time.time() - w.started_at, 1) if w and w.alive() and w.started_at else None,
-                "pid": os.getpid()}
+                "pid": os.getpid(), "engines": 1 + len(self.extras),
+                "extras_loaded": sum(1 for w in self.extras if w.alive())}
 
 
 DAEMON = Daemon()
@@ -176,6 +224,8 @@ class Handler(socketserver.StreamRequestHandler):
                     with DAEMON.lock:
                         if DAEMON.worker:
                             DAEMON.worker.stop()
+                        for w in DAEMON.extras:
+                            w.stop()
                     res = {"ok": True, "result": DAEMON.status()}
                 elif op == "shutdown":
                     self.wfile.write(b'{"ok": true, "result": "bye"}\n')
@@ -183,6 +233,8 @@ class Handler(socketserver.StreamRequestHandler):
                     with DAEMON.lock:
                         if DAEMON.worker:
                             DAEMON.worker.stop()
+                        for w in DAEMON.extras:
+                            w.stop()
                     os._exit(0)
                 else:
                     res = {"ok": False, "error": f"unknown op {op!r}"}
@@ -221,8 +273,25 @@ class RemoteWorker:
                        "extra_env": dict(extra_env or {})}
         self.cache = cache
         self._lock = threading.Lock()
-        self._sock: socket.socket | None = None
-        self._file = None
+        # one connection per thread: the daemon runs several engines, so a producer generating several characters
+        # at once must not queue its requests behind one socket
+        self._tl = threading.local()
+
+    @property
+    def _sock(self):
+        return getattr(self._tl, "sock", None)
+
+    @_sock.setter
+    def _sock(self, v):
+        self._tl.sock = v
+
+    @property
+    def _file(self):
+        return getattr(self._tl, "file", None)
+
+    @_file.setter
+    def _file(self, v):
+        self._tl.file = v
 
     # connection -------------------------------------------------------------------------------------------
     def _connect(self) -> None:
@@ -260,7 +329,7 @@ class RemoteWorker:
                 time.sleep(0.2)
 
     def _call(self, req: dict) -> dict:
-        with self._lock:
+        if True:          # per-thread connection: no shared lock
             for attempt in range(2):
                 try:
                     self._connect()
