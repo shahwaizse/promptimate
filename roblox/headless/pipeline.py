@@ -94,10 +94,26 @@ def record_offline(ep, cues, name: str, fps: int = 30, end: float | None = None,
     names = json.loads((ep_dir / "dynamic.json").read_text())["order"]
     RR.BACKEND = CK.Checks(ep_dir, names, ep_dir / "frames.npz", fps)
     try:
-        shots, notes = RR.plan_shots(sorted(cues, key=lambda c: c.start), perf, (1080, 1920), t_end, image_check=True)
+        pk = os.environ.get("PROMPTIMATE_SHOT_PICKS")
         import audit as AU
-        shots, an, rep, after = AU.repair(shots, perf, t_end, RR.BACKEND, log=log)
-        notes = list(notes) + an
+        if pk and Path(pk).exists() and (ep_dir / "shots.json").exists():
+            # picks refer to the saved plan: reuse it exactly (a re-plan can shift shot boundaries)
+            shots = [RR.CameraCue(**c) for c in json.loads((ep_dir / "shots.json").read_text())]
+            notes, rep, after = [], {}, {}
+        else:
+            shots, notes = RR.plan_shots(sorted(cues, key=lambda c: c.start), perf, (1080, 1920), t_end, image_check=True)
+            shots, an, rep, after = AU.repair(shots, perf, t_end, RR.BACKEND, log=log)
+            notes = list(notes) + an
+        rv = os.environ.get("PROMPTIMATE_SHOT_REVIEW")
+        if rv and Path(rv).exists():          # a vision reviewer's marks on the last recording (shot_review.py)
+            import shot_review as SRV_
+            shots = SRV_.apply(shots, rv, perf, t_end, RR.BACKEND, log=log)
+        pk = os.environ.get("PROMPTIMATE_SHOT_PICKS")
+        if pk and Path(pk).exists():          # a vision reviewer's picks among rendered candidates (shot_pick.py)
+            import shot_pick as SPK
+            shots = SPK.apply(shots, pk, log=log)
+        else:     # the plan the picks refer to (a picked recording keeps the plan its candidates came from)
+            (ep_dir / "shots.json").write_text(json.dumps([c.model_dump() for c in shots], default=str))
         (ep_dir / "camera_audit.json").write_text(json.dumps({"before": rep, "after": after}, default=str, indent=1))
     finally:
         RR.BACKEND = None

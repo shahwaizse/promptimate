@@ -174,6 +174,20 @@ def particles(kind: str, anchor: np.ndarray, t0: float, t1: float, times: np.nda
         C = A[:, None] + np.stack([0.75 + 0.1 * np.arange(k)[None] * np.ones((nf, 1)), 0.6 - 1.0 * u, -0.2 * np.ones((nf, k))], -1)
         S = 0.8 * np.sin(np.pi * u) ** 0.4
         shape, cols, Qc = "drop", [_rgb("9fd8ff")], _face_cam(nf, k)
+    elif kind == "motes":
+        # ambient specks drifting through the scene (the reference shorts' floating light dust)
+        k = 50
+        base = np.stack([rng.uniform(-14, 14, k), rng.uniform(-3.0, 7.0, k), rng.uniform(-14, 14, k)], -1)
+        ph = rng.uniform(0, 2 * np.pi, k)
+        drift = np.stack([0.6 * np.sin(tt[:, None] * 0.35 + ph[None]), 0.25 * tt[:, None] % 10 - 1.2,
+                          0.6 * np.cos(tt[:, None] * 0.3 + ph[None])], -1)
+        C = A[:1][:, None] + base[None] + drift
+        S = 0.13 * (0.6 + 0.4 * np.sin(tt[:, None] * 1.3 + ph[None]) ** 2)
+        shape, cols, Qc = "puff", [WHITE, _rgb("fff4d6")], _face_cam(nf, k)
+        parts, P, Q, SS = _expand(shape, cols, C, Qc, S)
+        for d_ in parts:
+            d_["mat"] = "Neon"
+        return _finish(parts, P, Q, SS, live)
     else:
         raise KeyError(f"unknown fx kind {kind!r}")
     parts, P, Q, SS = _expand(shape, cols, C, Qc, S)
@@ -193,7 +207,7 @@ def _finish(parts, P, Q, S, live):
     return parts, P, Q, S
 
 
-KINDS = ("sparkle", "hearts", "confetti", "rain", "poof", "dizzy", "zzz", "anger", "sweat")
+KINDS = ("sparkle", "hearts", "confetti", "rain", "poof", "dizzy", "zzz", "anger", "sweat", "motes")
 
 
 # ------------------------------------------------------------------------------------------------- signs

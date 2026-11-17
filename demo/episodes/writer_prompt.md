@@ -16,7 +16,7 @@ Bright, funny, kid-safe. Never mention the camera.
 YOUR VISUAL TOOLS (per line):
 - "do": what each person physically does (ACTIONS list). Someone mentioned does something visible.
 - "change": the magic happening, timed inside the line:
-    {"Mia": "grow 1.8"}  (scale; 1 = normal, up to 3)      {"Leo": "shrink 0.5"}     {"Leo": "normal"}
+    {"Mia": "grow 1.8"}  (scale; 1 = normal, 0.35 to 2)      {"Leo": "shrink 0.5"}     {"Leo": "normal"}
     {"Leo": "look c_chef"}  (turns into that look, with a puff)   {"Mia": "swap Leo"}  (they swap bodies/looks)
     {"Bo": "vanish"} / {"Bo": "appear"}  (a person or a PROP vanishes / appears in a puff)
     add "@1.5" to time it 1.5 s into the line: {"Mia": "grow 2 @1.2"}. Changes stay until changed again, also in
@@ -41,7 +41,7 @@ STAGING RULES
 - "place" uses the set's spot names, optionally offset in studs: "door:0,3". People in one scene should be 4-10 studs
   apart (use offsets).
 - Every line: 1-3 people act, each with 1-3 actions in order. Add "@Name" to finish facing someone, ">Name" or ">spot"
-  to walk there (walk actions only). Keep the total action seconds near the line's length (words / 2.5 seconds).
+  to walk there (walk actions only). Keep the total action seconds near the line's length (words / 3.4 seconds).
 
 Write exactly this structure (valid Python, nothing else):
 

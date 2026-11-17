@@ -108,7 +108,7 @@ FEELINGS = ["neutral", "happy", "grin", "sad", "crying", "shocked", "scared", "a
 FX_KINDS = ["sparkle", "rain", "confetti", "hearts", "dizzy", "zzz", "anger", "sweat", "poof"]
 SIGN_STYLES = ["wood", "red", "blue", "green", "black", "white", "gold"]
 MUSIC_MOODS = ["whimsical", "happy", "funny", "dance", "mysterious", "piano", "creepy"]
-WORDS_PER_S = 2.55          # tv_M2 at 1.0x, measured on compliment_coins (for spreading cuts and fitting actions)
+WORDS_PER_S = 3.4           # tv_M2 at 1.2x with trimmed sentence gaps (audio hill-climb, 2026-11-18)
 HAND = [0, -0.6, -0.3, 0, 0, 0]
 SPREAD = 12.0             # studs: people placed further than this from a scene's first person are moved beside them
 
@@ -154,7 +154,7 @@ def _yaw_dir(yaw: float) -> tuple[float, float]:
 _WORLD = None
 
 
-def _free_spot(x: float, z: float, floor: float, others, r: float = 1.3, apart: float = 3.5):
+def _free_spot(x: float, z: float, floor: float, others, r: float = 2.2, apart: float = 3.5):
     """The nearest standing place to (x, z), checked against the set geometry (stage.World: furniture, fountains,
     benches) and at least `apart` studs from people already placed. Spiral search out to 10 studs."""
     global _WORLD
@@ -173,6 +173,11 @@ def _free_spot(x: float, z: float, floor: float, others, r: float = 1.3, apart: 
         if f:
             return round(c[0], 2), round(c[1], 2)
     return x, z
+
+
+def _free_spot_ok(x, z, floor, r=1.6):
+    _free_spot(x, z, floor, [], r=r)      # loads the world
+    return bool(_WORLD.stand_free({"pts": [(x, z)], "floor": floor, "r": r, "h": 4.6})[0])
 
 
 def _est(text: str, gap: float = 0.0) -> float:
@@ -274,6 +279,52 @@ def compile_story(spec, slug: str) -> str:
             actors[n] = {"name": n, "start": [x, z], "facing": [round(x + fx * 5, 2), round(z + fz * 5, 2)], "beats": []}
             pos[n], facing[n] = (x, z), (fx, fz)
 
+    # ---- extras: each scene gets a crowd behind and around the cast, facing the action (library actions only)
+    import random as _rnd
+    rng = _rnd.Random(len(spec.TITLE))
+    used_looks = {c["look"] for c in cast}
+    spare = [l_ for l_ in sorted(lks) if l_ not in used_looks and not l_.startswith("mannequin")]
+    extra_moves = ["happy", "clap", "talk", "nod", "cross_arms", "cheer", "point_smile", "laugh_at", "shrug", "wave"]
+    n_extra = 0
+    for sc in spec.SCENES:
+        want = int(sc.get("extras", 8))
+        if want <= 0 or not spare:
+            continue
+        m = maps[sc["set"]]
+        sx_, sz_ = m.get("camera_side", [-1, 0])
+        mains = [pos[copy(ch, sc["set"])] for ch in sc.get("place", {}) if copy(ch, sc["set"]) in pos]
+        if not mains:
+            continue
+        cx_ = sum(q[0] for q in mains) / len(mains)
+        cz_ = sum(q[1] for q in mains) / len(mains)
+        taken = list(mains)
+        for k in range(want * 3):
+            if sum(1 for a_ in actors if a_.startswith(f"x{sc['set'][:3]}")) >= want:
+                break
+            back = rng.uniform(4.0, 13.0)
+            side = rng.uniform(-11.0, 11.0)
+            x0, z0 = cx_ - sx_ * back + (-sz_) * side, cz_ - sz_ * back + sx_ * side
+            fx_, fz_ = _free_spot(x0, z0, m.get("floor_y", 0.0), taken, r=1.6, apart=3.0)
+            if (fx_, fz_) == (x0, z0) and not _free_spot_ok(x0, z0, m.get("floor_y", 0.0)):
+                continue
+            n_extra += 1
+            nm = f"x{sc['set'][:3]}{n_extra}"
+            look = spare[(n_extra * 7) % len(spare)]
+            # face the cast centre, cheated toward the camera
+            dx_, dz_ = cx_ - fx_, cz_ - fz_
+            dn_ = math.hypot(dx_, dz_) or 1.0
+            gx_, gz_ = 0.6 * dx_ / dn_ + sx_, 0.6 * dz_ / dn_ + sz_
+            yaw_ = round(math.degrees(math.atan2(-gx_, -gz_)), 1)
+            cast.append({"name": nm, "look": look, "at": [fx_, fz_], "yaw": yaw_})
+            first = sc["lines"][0]["id"]
+            mv = extra_moves[n_extra % len(extra_moves)]
+            beats = [{"at": f"@{first}+{rng.uniform(0.2, 2.5):.1f}", "prompt": ACTIONS[mv][0], "seconds": ACTIONS[mv][1]}]
+            mv2 = extra_moves[(n_extra * 3) % len(extra_moves)]
+            beats.append({"prompt": ACTIONS[mv2][0], "seconds": ACTIONS[mv2][1]})
+            actors[nm] = {"name": nm, "start": [fx_, fz_], "facing": [round(fx_ + gx_ * 5, 2), round(fz_ + gz_ * 5, 2)],
+                          "beats": beats}
+            pos[nm], facing[nm] = (fx_, fz_), _yaw_dir(yaw_)
+            taken.append((fx_, fz_))
     lines, cams, faces, place, props, fxs, sfx, titles = [], [], {}, [], [], [], [], []
     shown = {}     # prop name -> start ref of its open interval
     events = []
@@ -292,6 +343,17 @@ def compile_story(spec, slug: str) -> str:
         spots = {s["name"]: s for s in m["spots"]}
         fy = m.get("floor_y", 0.0)
         here = {ch: copy(ch, st) for ch in sc.get("place", {})}
+        csx, csz = m.get("camera_side", [-1, 0])
+
+        def cheat(a_, b_, csx=csx, csz=csz):
+            """Face a partner the film way: halfway between them and the camera side, so the face stays open to the
+            camera (judges: backs of heads, both figures seen from behind)."""
+            (ax, az), (bx, bz) = pos[a_], pos[b_]
+            dx, dz = bx - ax, bz - az
+            dn = math.hypot(dx, dz) or 1.0
+            fx, fz = 0.45 * dx / dn + csx, 0.45 * dz / dn + csz
+            fn = math.hypot(fx, fz) or 1.0
+            return [round(ax + fx / fn * 5, 2), round(az + fz / fn * 5, 2)]
         for n in here.values():
             first_line.setdefault(n, sc["lines"][0]["id"])
         for p in sc.get("props", []):
@@ -439,7 +501,7 @@ def compile_story(spec, slug: str) -> str:
                         tgt = arg if op == ">" else None
                         if tgt in here:
                             b["to"] = here[tgt]
-                            b["face"] = here[tgt]
+                            b["face"] = cheat(a, here[tgt])
                             tx, tz = pos[here[tgt]]
                             px, pz = pos[a]
                             d = math.hypot(tx - px, tz - pz) or 1.0
@@ -469,7 +531,7 @@ def compile_story(spec, slug: str) -> str:
                             warn.append(f"{lid}: {ch} {tok}: no target, walking in place")
                             b["prompt"] = "a person stands and talks, gesturing with both hands"
                     if op == "@":
-                        b["face"] = here.get(arg, arg if arg in ("+X", "-X", "+Z", "-Z") else None)
+                        b["face"] = cheat(a, here[arg]) if arg in here else (arg if arg in ("+X", "-X", "+Z", "-Z") else None)
                         if arg == "camera":
                             sx, sz = m.get("camera_side", [-1, 0])
                             b["face"] = ("+X" if sx > 0.5 else "-X" if sx < -0.5 else "+Z" if sz > 0 else "-Z")
@@ -510,6 +572,14 @@ def compile_story(spec, slug: str) -> str:
                 at = f"@{lid}+{off:.1f}"
                 prop_names = {q["name"] for q in props}
                 if who in prop_names:
+                    # the camera is on the object when it goes / comes (judges: "a poof over Bruno's chest, not the
+                    # cake disappearing")
+                    cams.append({"name": f"{lid} {who} {verb}", "start": f"@{lid}+{max(0.0, off - 0.5):.1f}",
+                                 "prop": who, "shot": "medium", "angle": 0})
+                    if j_next := next((t_ for t_ in (t0 + k_ * step for k_ in range(len(cuts))) if t_ > off + 1.1), None):
+                        pass
+                    cams.append({"name": f"{lid} after {who}", "start": f"@{lid}+{off + 1.3:.1f}",
+                                 "subject": here[next(iter(ln.get("do", {})), next(iter(here)))], "shot": "medium", "angle": 15})
                     if verb == "appear":
                         shown.setdefault(who, at)
                     elif verb == "vanish" and who in shown:
@@ -523,8 +593,8 @@ def compile_story(spec, slug: str) -> str:
                 a = here[who]
                 if verb in ("grow", "shrink", "normal"):
                     to = 1.0 if verb == "normal" else float(arg or (1.7 if verb == "grow" else 0.55))
-                    events.append({"kind": "scale", "actor": a, "at": at, "to": max(0.25, min(3.0, to)), "over": 0.7})
-                    cur_scale[a] = max(0.25, min(3.0, to))
+                    events.append({"kind": "scale", "actor": a, "at": at, "to": max(0.35, min(2.0, to)), "over": 0.7})
+                    cur_scale[a] = max(0.35, min(2.0, to))
                     char_state.setdefault(who, {})["scale"] = cur_scale[a]
                 elif verb == "look":
                     if arg in lks:
@@ -549,6 +619,9 @@ def compile_story(spec, slug: str) -> str:
                         warn.append(f"{lid}: swap {who} with {arg!r}: not in {st}")
                 elif verb in ("vanish", "appear", "poof"):
                     events.append({"kind": verb, "actor": a, "at": at, "poof": True})
+                if verb in ("look", "swap", "vanish", "appear"):    # the change on screen, whole body
+                    cams.append({"name": f"{lid} {who} {verb}", "start": f"@{lid}+{max(0.0, off - 0.5):.1f}", "subject": a,
+                                 "shot": "full", "angle": 0, "cover": False})
             for ch, f in ln.get("feel", {}).items():
                 if ch in here and f in FEELINGS:
                     faces.setdefault(here[ch], []).append((f"@{lid}", f))
@@ -579,6 +652,11 @@ def compile_story(spec, slug: str) -> str:
     for n, act in actors.items():
         if not act["beats"]:       # placed but never acting: stands there through its scene
             act["beats"].append({"at": f"@{first_line[n]}", "prompt": ACTIONS["happy"][0], "seconds": ACTIONS["happy"][1]})
+    # ambient motes in every scene (anchored on its first character)
+    for sc in spec.SCENES:
+        who_ = next((copy(ch, sc["set"]) for ch in sc.get("place", {})), None)
+        if who_:
+            fxs.append({"actor": who_, "kind": "motes", "show": [[f"@{sc['lines'][0]['id']}", f"@{sc['lines'][-1]['id']}.end+0.5"]]})
     end = f"@{line_ids[-1]}.end+2.0"
     for n, t in shown.items():
         for p in props:

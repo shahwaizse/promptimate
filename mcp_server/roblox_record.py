@@ -75,6 +75,11 @@ SHOTS = {  # distance (in head heights above the floor ~ character height), came
     "close": (1.35, 1.0, 0.9, 40), "medium": (2.1, 0.92, 0.80, 40), "full": (2.8, 0.8, 0.5, 44),
     "wide": (4.0, 1.2, 0.4, 50), "low": (1.4, -0.1, 0.85, 42),
 }
+if os.environ.get("PROMPTIMATE_CAM_STYLE", "wide") == "wide":
+    # the reference shorts' grammar: a wide-angle lens close to the subject, a little below eye line (punchy, frontal,
+    # the subject big against a deep set) instead of a long lens from far away
+    SHOTS = {"close": (0.78, 0.86, 0.88, 66), "medium": (1.18, 0.78, 0.76, 66), "full": (1.6, 0.62, 0.5, 70),
+             "wide": (2.6, 0.9, 0.45, 74), "low": (0.9, -0.1, 0.8, 66)}
 WIDER = {"close": "medium", "medium": "full", "low": "medium"}
 POSE_LUAU = r'''
 local D = _G.PromptimateDirector
@@ -111,6 +116,7 @@ def _cam_for(pose, other, shot: str, angle: float, lift: float = 0.0):
             ax, az = -ax, -az                                                    # on the side the subject faces
         a = math.radians(angle)
         dx, dz = ax * math.cos(a) - az * math.sin(a), ax * math.sin(a) + az * math.cos(a)
+        tall = max(tall, other[1] - other[8])       # frame the taller of the two (a grown partner's belly filled it)
         dist = max(k_dist * tall, sep * 1.5)
         aim_y = foot + tall * k_aim
         return [ox + dx * dist, foot + tall * (k_h + lift), oz + dz * dist], [ox, aim_y, oz], fov + 6

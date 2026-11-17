@@ -210,7 +210,11 @@ class Checks:
             arrs.append(np.hstack([P @ R.T + pos[:3], np.full((len(P), 1), pid)]))
         data = np.concatenate(arrs).astype("f4") if arrs else np.zeros((3, 4), "f4")
         if len(self.dyn_cache) > 8:
-            self.dyn_cache.pop(next(iter(self.dyn_cache))).release()
+            old = next(iter(self.dyn_cache))
+            self.dyn_cache.pop(old).release()
+            v = self.dyn_vao.pop(old, None)       # its VAO goes with it (keyed by frame: a VAO keyed by id() of a
+            if v is not None:                      # released buffer was reused for a new one = missing characters)
+                v.release()
         self.dyn_cache[k] = self.ctx.buffer(data.tobytes())
         return self.dyn_cache[k]
 
@@ -233,9 +237,10 @@ class Checks:
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.ctx.disable(moderngl.CULL_FACE)
         dyn = self._dyn_buffer(t)
-        vao_d = self.dyn_vao.get(id(dyn))
+        kf = self._frame(t)
+        vao_d = self.dyn_vao.get(kf)
         if vao_d is None:
-            vao_d = self.dyn_vao[id(dyn)] = self.ctx.vertex_array(self.prog, [(dyn, "3f 1f", "in_pos", "in_id")])
+            vao_d = self.dyn_vao[kf] = self.ctx.vertex_array(self.prog, [(dyn, "3f 1f", "in_pos", "in_id")])
         vps = _view_proj(cams)
         u_vp, u_cam = self.prog["vp"], self.prog["cam"]
         for j, (pos, look, fov) in enumerate(cams):

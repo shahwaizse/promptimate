@@ -12,6 +12,7 @@ Per sample, inside the shot's own frame (the checks render a wider view):
 from __future__ import annotations
 
 import math
+import os
 
 import numpy as np
 
@@ -34,6 +35,149 @@ def _vp_of(pos, look, fov, CK):
     return CK._view_proj([(pos, look, fov)])[0]
 
 
+def judge(ck, ids, dep, pos, look, fov, subs, prop, t):
+    """One rendered sample -> (why or None, cover, front)."""
+    import checks as CK
+    names = ck.names
+    ys, xs = _window(fov, CK.W, CK.H, CK.WIDEN)
+    idw, dw = ids[ys, xs], dep[ys, xs]
+    if prop:
+        tgt, lim = idw == 2, EMPTY_PROP
+    elif subs:
+        tgt, lim = np.isin(idw, [100 + 2 * names.index(s_) + k for s_ in subs for k in (0, 1)]), EMPTY
+    else:
+        tgt, lim = (idw >= 100) & (idw < 200), EMPTY
+    cover = float(tgt.mean())
+    front = 0.0
+    if tgt.any():
+        dt = float(np.median(dw[tgt]))
+        front = float(((dw < dt * 0.8) & ~tgt & np.isfinite(dw)).mean())
+    lens = float(((dw < LENS) & ~tgt).mean())
+    if lens > LENS_SHARE:
+        front = max(front, BLOCKED + lens)
+    why = "empty" if cover < lim else "blocked" if front > BLOCKED else None
+    if not why and tgt.any():
+        # something in front of the subject inside its own box (a lamp post across a face)
+        rr, cc = np.nonzero(tgt)
+        box = (slice(rr.min(), rr.max() + 1), slice(cc.min(), cc.max() + 1))
+        tb, db = tgt[box], dw[box]
+        dt_ = float(np.median(dw[tgt]))
+        occ = float(((db < dt_ - 0.6) & ~tb & np.isfinite(db)).mean())
+        if occ > 0.15:
+            why = "occluded"
+    if not why and not prop:
+        others = (idw >= 100) & (idw < 200) & ~tgt         # other people filling the frame (a giant's legs)
+        if float(others.mean()) > 0.35:
+            why = "crowded"
+    if not why and subs and not prop:
+        # every subject's face shows (a partner's body hiding the main subject's head passed as "target coverage")
+        for s_ in subs[:2]:
+            if float((idw == 101 + 2 * names.index(s_)).mean()) < 0.004:
+                why = "faceless"
+                break
+    if not why and subs and not prop:
+        hi = ck.actor_index(subs[0], "Head")
+        if hi is not None:
+            hp, hr = ck.part_world(hi, t)
+            q = _vp_of(pos, look, fov, CK) @ np.array([*hp, 1.0])
+            if q[3] > 1e-6:
+                u, v = q[0] / q[3], q[1] / q[3]
+                k_ = math.tan(math.radians(fov) / 2) / math.tan(math.radians(min(fov * CK.WIDEN, 150)) / 2)
+                if abs(u) > k_ * 0.92 or v > k_ * 0.95 or v < -k_ * 0.6:
+                    why = "headless"
+            to = np.asarray(pos, float) - hp
+            face = float((hr @ np.array([0, 0, -1.0])) @ (to / max(np.linalg.norm(to), 1e-6)))
+            if not why and face < -0.2:
+                why = "back"
+    return why, cover, front
+
+
+def composition(ck, ids, pos, look, fov, subject):
+    """Lower is better: a chest filling the frame, a head too low / too high, a subject that's a speck."""
+    import checks as CK
+    if subject not in ck.names:
+        return 0.0
+    ai = ck.names.index(subject)
+    ys, xs = _window(fov, CK.W, CK.H, CK.WIDEN)
+    idw = ids[ys, xs]
+    body, head = float((idw == 100 + 2 * ai).mean()), float((idw == 101 + 2 * ai).mean())
+    cost = max(0.0, body - 0.38) * 12              # judges: "the same striped torso filling the frame"
+    cost += max(0.0, 0.03 - (body + head)) * 40     # a speck
+    rows = np.nonzero((idw == 101 + 2 * ai).any(1))[0]
+    if len(rows):                                   # head centre, 0 = bottom of frame, 1 = top (GL rows grow upward)
+        hv = float(rows.mean()) / max(idw.shape[0] - 1, 1)
+        cost += max(0.0, 0.55 - hv) * 6 + max(0.0, hv - 0.9) * 6
+    return cost
+
+
+def search(shots, i, perf, t_end, ck, design=False, fix=None, avoid=None):
+    """Every framing of shot i's subject (12 angles x 3 sizes x 2 heights), each judged at three instants in one batched
+    render per instant: the best (fewest bad samples, then nearest the asked angle/size) or None."""
+    import roblox_record as RR
+    c = shots[i]
+    if not c.subject or c.subject not in ck.names:
+        return None
+    b = shots[i + 1].start if i + 1 < len(shots) else t_end
+    tm = (c.start + b) / 2
+    q = [[c.subject, tm]] + ([[c.with_, tm]] if c.with_ and c.with_ in ck.names else [])
+    poses = ck.poses(q)
+    if not poses or not poses[0]:
+        return None
+    other = poses[1] if len(poses) > 1 else None
+    sizes = [c.shot] + [s_ for s_ in ("medium", "full", "close") if s_ != c.shot]
+    lifts = (0.0, 0.5)
+    if fix == "wider":
+        sizes = ["full", "wide"] if c.shot in ("close", "medium") else ["wide", "full"]
+    elif fix == "closer":
+        sizes = ["close", "medium"] if c.shot not in ("close",) else ["close"]
+    elif fix == "higher":
+        lifts = (0.6, 1.1)
+    cands = [(sz, ang, lift) for sz in sizes for lift in lifts for ang in range(0, 360, 30)]
+    cams = [RR._cam_for(poses[0], other, sz, c.angle + ang, lift) for sz, ang, lift in cands]
+    if avoid is not None and avoid[0] is not None and avoid[1] is not None:
+        # a reviewer rejected this view: nothing within 35 degrees of it
+        ad = np.asarray(avoid[0], float) - np.asarray(avoid[1], float)
+        keep = []
+        for j, (p_, l_, fv) in enumerate(cams):
+            d_ = np.asarray(p_, float) - np.asarray(l_, float)
+            cosang = float(ad[[0, 2]] @ d_[[0, 2]] / (np.linalg.norm(ad[[0, 2]]) * np.linalg.norm(d_[[0, 2]]) + 1e-9))
+            if cosang < 0.82:
+                keep.append(j)
+        if keep:
+            cams = [cams[j] for j in keep]
+            cands = [cands[j] for j in keep]
+    subs = [c.subject] + ([c.with_] if other else [])
+    bad = np.zeros(len(cams))
+    for f in (0.2, 0.5, 0.8):
+        t = c.start + (b - c.start) * f
+        u = min(max((t - c.start) / max(b - c.start, 0.5), 0.0), 1.0)
+        shrink = 1 - (c.push or 0) * (u * u * (3 - 2 * u))          # RR.camera's eased push-in
+        cams_t = [(p_, l_, fv * shrink) for p_, l_, fv in cams]
+        ids, dep, _vp = ck._render(t, cams_t)
+        for j, (p_, l_, fv) in enumerate(cams_t):
+            why, _cv, _fr = judge(ck, ids[j], dep[j], p_, l_, fv, subs, None, t)
+            bad[j] += why is not None
+    comp = np.zeros(len(cams))
+    if design:
+        t = c.start + (b - c.start) * 0.5
+        ids, dep, _vp = ck._render(t, cams)
+        for j, (p_, l_, fv) in enumerate(cams):
+            comp[j] = composition(ck, ids[j], p_, l_, fv, c.subject)
+        # no jump cut: the previous shot of the same subject from (nearly) the same direction
+        prev = next((shots[k] for k in range(i - 1, -1, -1) if shots[k].subject), None)
+        if prev is not None and prev.subject == c.subject and prev.pos is not None and prev.look is not None:
+            pd = np.asarray(prev.pos, float) - np.asarray(prev.look, float)
+            for j, (p_, l_, fv) in enumerate(cams):
+                d_ = np.asarray(p_, float) - np.asarray(l_, float)
+                cosang = float(pd[[0, 2]] @ d_[[0, 2]] / (np.linalg.norm(pd[[0, 2]]) * np.linalg.norm(d_[[0, 2]]) + 1e-9))
+                if cosang > 0.94 and abs(fv - (prev.fov or fv)) < 6:
+                    comp[j] += 2.0
+    cost = [bad[j] * 10 + comp[j] + min(cands[j][1], 360 - cands[j][1]) / 60 + sizes.index(cands[j][0]) * 0.8
+            + cands[j][2] * 2 for j in range(len(cams))]
+    j = int(np.argmin(cost))
+    return (cams[j], int(bad[j]), cands[j])
+
+
 def audit(shots, perf, t_end: float, ck) -> dict:
     import checks as CK
     import roblox_record as RR
@@ -49,46 +193,11 @@ def audit(shots, perf, t_end: float, ck) -> dict:
             t = c.start + (b - c.start) * f
             _k, _c, pos, look, fov = RR.camera(shots, perf, t)
             ids, dep, _vp = ck._render(t, [(pos, look, fov)])
-            ids, dep = ids[0], dep[0]
-            ys, xs = _window(fov, CK.W, CK.H, CK.WIDEN)
-            idw, dw = ids[ys, xs], dep[ys, xs]
-            subs = [s for s in ((c.subjects if c.subjects else None) or ([c.subject] if c.subject else [])) if s in names]
-            if c.prop:
-                tgt = idw == 2
-                lim = EMPTY_PROP
-            elif subs:
-                ids_s = [100 + 2 * names.index(s) + k for s in subs for k in (0, 1)]
-                tgt = np.isin(idw, ids_s)
-                lim = EMPTY
-            else:
-                tgt = (idw >= 100) & (idw < 200)
-                lim = EMPTY
-            cover = float(tgt.mean())
-            if tgt.any():
-                dt = float(np.median(dw[tgt]))
-                front = float(((dw < dt * 0.8) & ~tgt & np.isfinite(dw)).mean())
-            else:
-                dt, front = None, 0.0
-            lens = float(((dw < LENS) & ~tgt).mean())
-            if lens > LENS_SHARE:
-                front = max(front, BLOCKED + lens)
+            subs = [s_ for s_ in ([c.subject] if c.subject else []) + ([c.with_] if c.with_ else []) if s_ in names]
+            if not subs and c.subjects:
+                subs = [s_ for s_ in c.subjects if s_ in names]
+            why, cover, front = judge(ck, ids[0], dep[0], pos, look, fov, subs, c.prop, t)
             samples += 1
-            why = "empty" if cover < lim else "blocked" if front > BLOCKED else None
-            if not why and subs and not c.prop:
-                hi = ck.actor_index(subs[0], "Head")
-                if hi is not None:
-                    hp, hr = ck.part_world(hi, t)
-                    vp = _vp_of(pos, look, fov, CK)
-                    q = vp @ np.array([*hp, 1.0])
-                    if q[3] > 1e-6:
-                        u, v = q[0] / q[3], q[1] / q[3]
-                        k_ = math.tan(math.radians(fov) / 2) / math.tan(math.radians(min(fov * CK.WIDEN, 150)) / 2)
-                        if abs(u) > k_ * 0.92 or v > k_ * 0.95 or v < -k_ * 0.6:
-                            why = "headless"
-                    to = np.asarray(pos, float) - hp
-                    face = float((hr @ np.array([0, 0, -1.0])) @ (to / max(np.linalg.norm(to), 1e-6)))
-                    if not why and face < -0.2 and len(subs) == 1:
-                        why = "back"
             if why:
                 bad.append({"t": round(t, 2), "shot": c.name or f"{c.start:.1f}", "why": why, "cover": round(cover, 3),
                             "front": round(front, 2), "kind": "prop" if c.prop else "subject" if subs else "wide"})
@@ -97,6 +206,8 @@ def audit(shots, perf, t_end: float, ck) -> dict:
     return {"bad_share": round(len(bad) / max(samples, 1), 3), "samples": samples,
             "empty": sum(b["why"] == "empty" for b in bad), "blocked": sum(b["why"] == "blocked" for b in bad),
             "headless": sum(b["why"] == "headless" for b in bad), "back": sum(b["why"] == "back" for b in bad),
+            "occluded": sum(b["why"] == "occluded" for b in bad), "crowded": sum(b["why"] == "crowded" for b in bad),
+            "faceless": sum(b["why"] == "faceless" for b in bad),
             "by_kind": {k: sum(b["kind"] == k for b in bad) for k in ("prop", "subject", "wide")},
             "bad": bad, "per_shot": per_shot}
 
@@ -122,10 +233,29 @@ def repair(shots, perf, t_end: float, ck, log=print):
         nbad[b["shot"]] = nbad.get(b["shot"], 0) + 1
     alts = getattr(RR.frame_subjects, "alts", {})
     out, notes, convert = list(shots), [], []
+    design = os.environ.get("PROMPTIMATE_DOP", "1") != "0"
     for i, c in enumerate(out):
         key = c.name or f"{c.start:.1f}"
+        if design and c.subject and not c.prop and nbad.get(key, 0) < 2:
+            r_ = search(out, i, perf, t_end, ck, design=True)
+            if r_ is not None and r_[1] <= nbad.get(key, 0):
+                (p_, l_, f_), nb_, cand_ = r_
+                out[i] = c.model_copy(update={"pos": [round(float(v), 3) for v in p_], "look": [round(float(v), 3) for v in l_],
+                                              "fov": float(f_)})
+            continue
         if nbad.get(key, 0) < 2:
             continue
+        if c.subject and not c.prop:
+            r_ = search(out, i, perf, t_end, ck, design=design)
+            if r_ is not None and r_[1] < nbad[key]:
+                (p_, l_, f_), nb_, cand_ = r_
+                out[i] = c.model_copy(update={"pos": [round(float(v), 3) for v in p_], "look": [round(float(v), 3) for v in l_],
+                                              "fov": float(f_)})
+                notes.append(f"{key}: {nbad[key]} bad -> {nb_} (search {cand_})")
+                if nb_ == 0:
+                    continue
+                c = out[i]
+                nbad[key] = nb_
         if c.subject and not c.prop and i in alts:
             best = (nbad[key], None)
             for cam in alts[i][:6]:
