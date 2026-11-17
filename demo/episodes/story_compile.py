@@ -102,6 +102,8 @@ ACTIONS = {
     "sneak": ("a person sneaks forward on tiptoes", 3.0),
 }
 MOVES = {"walk", "walk_sad", "walk_happy", "march", "run", "sneak"}
+REACT = {"happy": "clap", "grin": "laugh_at", "love": "heart", "sad": "sad", "crying": "cry", "shocked": "gasp",
+         "scared": "scared", "angry": "angry", "smug": "cross_arms", "tired": "yawn", "wink": "thumbs", "neutral": "nod"}
 FEELINGS = ["neutral", "happy", "grin", "sad", "crying", "shocked", "scared", "angry", "smug", "tired", "wink", "love"]
 FX_KINDS = ["sparkle", "rain", "confetti", "hearts", "dizzy", "zzz", "anger", "sweat", "poof"]
 SIGN_STYLES = ["wood", "red", "blue", "green", "black", "white", "gold"]
@@ -279,6 +281,8 @@ def compile_story(spec, slug: str) -> str:
     cur_scale = {}
     char_state = {}       # character -> {"scale", "look"} carried into its copies in later scenes
     started = set()
+    introduced = set()
+    last_feel = {}
     first_line = {}
     prev_set, k_cam = None, 0
     line_ids = []
@@ -399,6 +403,11 @@ def compile_story(spec, slug: str) -> str:
                 else:
                     cue.update({"shot": ["close", "medium", "close"][k_cam % 3], "angle": [0, 20, -15, 10][k_cam % 4]})
                 cams.append(cue)
+            for ch in ln.get("do", {}):
+                if ch in here and ch not in introduced:
+                    introduced.add(ch)
+                    events.append({"kind": "tag", "actor": here[ch], "text": ch, "at": f"@{lid}+0.2", "until": f"@{lid}+2.8"})
+            acted = {}
             # actions, chained from the line's start; drop what can't fit before the line is over
             for ch, acts in ln.get("do", {}).items():
                 if ch not in here:
@@ -454,6 +463,27 @@ def compile_story(spec, slug: str) -> str:
                     actors[a]["beats"].append(b)
                     used += secs
                     first = False
+                acted[ch] = used
+            # nobody just stands there: everyone in the scene fills the rest of the line with a reaction that matches
+            # their feeling (judges: "characters stand and talk instead of acting out the beat")
+            for ch, a in here.items():
+                feel_ = (ln.get("feel") or {}).get(ch) or last_feel.get(a, "neutral")
+                last_feel[a] = feel_
+                used = acted.get(ch, 0.0)
+                left = dur - used
+                if left < 1.9:
+                    continue
+                key = REACT.get(feel_, "nod")
+                if ch == next(iter(ln.get("do", {})), None) and key in ("nod", "cross_arms"):
+                    key = "talk"
+                prompt, secs = ACTIONS[key]
+                bt = {"prompt": prompt, "seconds": secs}
+                if not used:
+                    bt["at"] = f"@{lid}+0.3"
+                actors[a]["beats"].append(bt)
+                if left - secs >= 2.2:
+                    key2 = "nod" if key != "nod" else "shrug"
+                    actors[a]["beats"].append({"prompt": ACTIONS[key2][0], "seconds": ACTIONS[key2][1]})
             for n in ln.get("show", []):          # shown at the line's start (before this line's changes act on it)
                 shown.setdefault(n, f"@{lid}")
             for who, what in (ln.get("change") or {}).items():
@@ -484,6 +514,7 @@ def compile_story(spec, slug: str) -> str:
                 elif verb == "look":
                     if arg in lks:
                         events.append({"kind": "look", "actor": a, "at": at, "look": arg, "poof": True})
+                        events.append({"kind": "tag", "actor": a, "text": who, "at": at, "until": f"@{lid}+{off + 3.2:.1f}"})
                         cur_look[a] = arg
                         char_state.setdefault(who, {})["look"] = arg
                     else:
@@ -494,6 +525,8 @@ def compile_story(spec, slug: str) -> str:
                         la, lb = cur_look[a], cur_look[b]
                         events.append({"kind": "look", "actor": a, "at": at, "look": lb, "poof": True})
                         events.append({"kind": "look", "actor": b, "at": at, "look": la, "poof": True})
+                        events.append({"kind": "tag", "actor": a, "text": who, "at": at, "until": f"@{lid}+{off + 3.2:.1f}"})
+                        events.append({"kind": "tag", "actor": b, "text": arg, "at": at, "until": f"@{lid}+{off + 3.2:.1f}"})
                         cur_look[a], cur_look[b] = lb, la
                         char_state.setdefault(who, {})["look"] = lb
                         char_state.setdefault(arg, {})["look"] = la

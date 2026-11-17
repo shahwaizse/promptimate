@@ -295,13 +295,42 @@ def build(ep, perf_actors: dict, out: Path, fps: int, t_end: float, static: dict
             jobs.append(("poof", home[e["prop"]][0] + np.array([0, 0.5, 0]), t, t + 0.9))
         elif e.get("pos") is not None:
             jobs.append(("poof", np.asarray(e["pos"], float), t, t + 0.9))
+    extra_pose, extra_scale = [], []          # concatenated once at the end (per-job concatenation was O(n^2))
     for k, (kind, A, t0_, t1_) in enumerate(jobs):
         ps, P, Q, S = FXM.particles(kind, A, t0_, t1_, times, seed=k)
         for d in ps:
             d["owner"] = "fx"
         parts.extend(ps)
-        pose = np.concatenate([pose, np.concatenate([P, Q], -1).astype(np.float32)], 1)
-        scale = np.concatenate([scale, S.astype(np.float32)], 1)
+        extra_pose.append(np.concatenate([P, Q], -1).astype(np.float32))
+        extra_scale.append(S.astype(np.float32))
+    # overhead name tags (identity after swaps / look changes, introductions): follow the head, turn with its yaw
+    for e in events:
+        if e.get("kind") != "tag" or e.get("actor") not in names:
+            continue
+        part, _w = FXM.tag_parts(str(e.get("text", e["actor"])).upper())
+        part["owner"] = "fx"
+        n = e["actor"]
+        hp = anchor(n, "Head")
+        sv = sc_of.get(n, np.ones(nf))
+        hq = body[n]["Head"][1]
+        fwd = PO.qrot(hq, np.array([0, 0, -1.0]))
+        yaw = np.arctan2(-fwd[:, 0], -fwd[:, 2])
+        q = np.stack([np.zeros(nf), np.sin(yaw / 2), np.zeros(nf), np.cos(yaw / 2)], 1)
+        P = hp + np.stack([np.zeros(nf), 1.55 * sv + 0.35, np.zeros(nf)], 1)
+        live = (times >= float(e["at"])) & (times <= float(e.get("until", float(e["at"]) + 2.5)))
+        shown_ = np.zeros(nf, bool)        # hidden with its character (vanished, not yet appeared)
+        for o in group.get(n, [n]):
+            if owner_idx.get(o):
+                shown_ |= pose[:, owner_idx[o][0], 1] > HIDE_Y / 2
+        live &= shown_
+        P = P.copy()
+        P[~live, 1] += HIDE_Y
+        parts.append(part)
+        extra_pose.append(np.concatenate([P, q], -1).astype(np.float32)[:, None])
+        extra_scale.append(np.ones((nf, 1), np.float32))
+    if extra_pose:
+        pose = np.concatenate([pose] + extra_pose, 1)
+        scale = np.concatenate([scale] + extra_scale, 1)
     order = names + list(alias_of)
     if alias_of:
         fbytes = np.concatenate([fbytes] + [fbytes[:, [names.index(r_)]] for r_ in alias_of.values()], 1)

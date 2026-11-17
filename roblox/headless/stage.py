@@ -210,7 +210,9 @@ class Staging:
         self.perf_actors = {}          # set by push(): name -> {"clips": [...]}
 
     def _floor_at(self, x, z):
-        g, _ = self.w._down(x, 6.0, z, 30.0)
+        # from knee height: a shelter roof, a table or a counter top below 6 studs is not a floor (Grandma stood on
+        # the bus shelter)
+        g, _ = self.w._down(x, 2.5, z, 30.0)
         return g if g is not None else 0.1
 
     def scene(self, actor_names, target_names, perf):
@@ -223,7 +225,7 @@ class Staging:
             x, z = float(c["at"][0]), float(c["at"][1])
             floor = self._floor_at(x, z)
             yaw = math.radians(c.get("yaw", 0))
-            g, _ = self.w._down(x, floor + 3 + 3, z, 80)
+            g, _ = self.w._down(x, floor + 1.2, z, 80)     # a step up at most, never a roof
             out["actors"][n] = {"path": ["Workspace", "Cast", n], "stand": 2.0, "width": 4.0, "x": x, "z": z,
                                 "lookX": -math.sin(yaw), "lookZ": -math.cos(yaw), "floor": floor,
                                 "ground": g if g is not None else floor, "r15": False}

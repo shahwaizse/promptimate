@@ -200,7 +200,7 @@ KINDS = ("sparkle", "hearts", "confetti", "rain", "poof", "dizzy", "zzz", "anger
 STYLES = {   # board colour, text colour, border colour
     "wood": ("#c98b4f", "#fff6e0", "#7a4e2e"), "red": ("#e04848", "#ffffff", "#a83030"), "blue": ("#2f6fd6", "#ffffff", "#1d4a99"),
     "green": ("#2f9e55", "#ffffff", "#1f6e3a"), "black": ("#24262b", "#ffe14d", "#55585f"), "white": ("#f7f7f2", "#e04848", "#c8ccd2"),
-    "gold": ("#f0c43c", "#5a3a10", "#b8862a"),
+    "gold": ("#f0c43c", "#5a3a10", "#b8862a"), "tag": ("#1f2230", "#ffffff", "#1f2230"),
 }
 
 
@@ -259,3 +259,14 @@ def sign_parts(text: str, style: str = "wood", width: float = 4.0, stand: bool =
             parts.append({"kind": "box", "name": "sign_post", "size": [0.25, y0 + 0.2, 0.25], "color": _rgb("7a4e2e"),
                           "mat": "Wood", "tr": 0.0, "cf": [sx * width * 0.35, (y0 + 0.2) / 2, 0.15, 1, 0, 0, 0, 1, 0, 0, 0, 1]})
     return parts, y0 + bh
+
+
+def tag_parts(text: str) -> tuple[dict, float]:
+    """An overhead name tag (a dark rounded-looking plate, white text on both faces): (part, width)."""
+    w = max(1.6, min(5.0, 0.42 * len(text) + 0.8))
+    h = 0.75
+    tex = sign_png(text, "tag", w=1024, h=max(96, int(1024 * h / w)))
+    part = {"kind": "box", "name": "name_tag", "size": [w, h, 0.08], "color": _rgb("1f2230"), "mat": "SmoothPlastic",
+            "tr": 0.0, "cf": None, "cast": False,
+            "decals": [{"face": "Front", "tex": "file:" + tex, "offset": 0.06}, {"face": "Back", "tex": "file:" + tex, "offset": 0.06}]}
+    return part, w

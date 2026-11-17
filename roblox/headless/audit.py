@@ -121,8 +121,19 @@ def repair(shots, perf, t_end: float, ck, log=print):
                 notes.append(f"{key}: {nbad[key]} bad -> {best[0]} (alternative framing)")
                 continue
         # a prop insert / wide showing nothing: frame the nearest subject shot's subject instead
-        subj = next((out[j].subject for j in range(i - 1, -1, -1) if out[j].subject), None) or \
-            next((out[j].subject for j in range(i + 1, len(out)) if out[j].subject), None)
+        b_ = out[i + 1].start if i + 1 < len(out) else t_end
+        tm = (c.start + b_) / 2
+
+        def visible(n):
+            hi = ck.actor_index(n, "Head")
+            return hi is not None and ck.pose[ck._frame(tm), hi, 1] > -500
+        near = [out[j].subject for j in list(range(i - 1, -1, -1)) + list(range(i + 1, len(out))) if out[j].subject]
+        subj = next((n for n in near if n in ck.names and visible(n)), None)
+        if subj is None:          # whoever is visible closest to where the shot was looking
+            _k, _c, pos0, look0, _f = RR.camera(out, perf, tm)
+            vis = [n for n in ck.names if visible(n) and n not in ck.alias]
+            if vis:
+                subj = min(vis, key=lambda n: float(np.sum((ck.part_world(ck.actor_index(n, "Head"), tm)[0] - np.asarray(look0)) ** 2)))
         if subj and (c.prop or not c.subject or nbad[key] >= 3):
             out[i] = c.model_copy(update={"prop": None, "pos": None, "look": None, "subject": subj, "with_": None,
                                           "shot": "medium", "angle": 15.0, "subjects": [subj]})
