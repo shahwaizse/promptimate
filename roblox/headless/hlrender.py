@@ -25,6 +25,11 @@ import meshcache as MC  # noqa: E402
 MESHES = MC.OUT
 TEXDIR = MC.OUT.parent / "tex"
 MATDIR = MC.OUT.parent / "mat"
+# the look: sun colour/strength, sky and ground ambient (hemispheric), exposure. LIGHT_OVERRIDE is for A/B tests
+# 2026-11-17 critic: our sets read flat and evenly lit next to the references (raking sun, real shade): a stronger,
+# warmer sun and less fill, kept mild enough that a face in shade still reads
+LIGHT = {"sun": (1.6, 1.5, 1.32), "sky": (0.32, 0.36, 0.45), "ground": (0.19, 0.17, 0.16), "exp": 1.0}
+LIGHT_OVERRIDE = None
 MAT_NAMES = {p.stem for p in MATDIR.glob("*.png")} if MATDIR.exists() else set()
 MAT_TILE = {"Brick": 8.0, "WoodPlanks": 8.0, "Cobblestone": 8.0, "DiamondPlate": 4.0, "Fabric": 2.0, "Grass": 6.0}
 R6_PARTS = {"Torso": "r6:torso", "Right Arm": "r6:rlimb", "Right Leg": "r6:rlimb", "Left Arm": "r6:llimb",
@@ -387,7 +392,7 @@ class Scene:
         matname = p.get("mat") if p.get("mat") in MAT_NAMES and mode in (0, 1) and not tex else None
         out = [{"key": key, "scale": scale, "native": native, "col": col, "vcol": vcol, "tex": tex, "mode": mode, "mat": matname,
                 "uvp": (1.0, 1.0), "cf": cf, "pos": np.array(cf[:3]) if cf else None, "local": None,
-                "wall": self._wall(p)}]
+                "wall": self._wall(p), "cast": p.get("cast", True) is not False}]
         for dc in p.get("decals") or []:
             t = _asset(dc.get("tex"))
             if not t:
@@ -411,6 +416,8 @@ class Scene:
     @staticmethod
     def _wall(p) -> bool:
         """Parts the camera may see through (Studio's cutaway rule): wall-sized slabs standing upright, and poles."""
+        if p.get("wall") is not None:   # an explicit flag (own_sets.py: window strips, door headers, ceilings)
+            return bool(p["wall"])
         if not p.get("cf"):
             return False
         sz = np.array(p["size"])
@@ -475,11 +482,12 @@ class Renderer:
             c = sp["cf"]
             m = S.model(sp, np.array(c[:3]), np.array(c[3:12]).reshape(3, 3))
             k = (sp["key"], sp["tex"], sp["mode"], sp["vcol"], sp["col"][3] < 0.999 or sp["mode"] == 3, sp["mat"])
-            groups.setdefault(k, []).append((np.hstack([m.ravel(), sp["col"], sp["uvp"], (0, 0)]), sp["pos"], sp["wall"], m))
+            groups.setdefault((k, sp.get("cast", True)), []).append(
+                (np.hstack([m.ravel(), sp["col"], sp["uvp"], (0, 0)]), sp["pos"], sp["wall"], m))
         self.static_groups = []
-        for k, items in groups.items():
+        for (k, cast), items in groups.items():
             M = np.array([a for a, _, _, _ in items], "f4")
-            self.static_groups.append({"k": k, "inst": M, "pos": np.array([p for _, p, _, _ in items]),
+            self.static_groups.append({"k": k, "cast": cast, "inst": M, "pos": np.array([p for _, p, _, _ in items]),
                                        "wall": np.array([w_ for _, _, w_, _ in items]),
                                        "mats": np.array([m for _, _, _, m in items]),
                                        "buf": ctx.buffer(reserve=max(16, M.nbytes)), "n": 0, "mask": None})
@@ -560,6 +568,7 @@ class Renderer:
         ctx = self.ctx
         cam_pos, look = np.asarray(cam_pos, "f8"), np.asarray(look, "f8")
         draws = []
+        nocast = set()          # draws that cast no shadow (parts with "cast": false)
         for g in self.static_groups:
             mask = np.einsum("ij,ij->i", g["pos"] - cam_pos, g["pos"] - cam_pos) < radius * radius
             wm = mask & g["wall"]
@@ -575,6 +584,8 @@ class Renderer:
                 g["mask"] = mask
             if g["n"]:
                 draws.append((g["k"], g["buf"], g["n"]))
+                if not g["cast"]:
+                    nocast.add(len(draws) - 1)
         for k, M in dyn_draws:
             b = self.dyn_buf.get(k)
             if b is None or b.size < M.nbytes:
@@ -591,8 +602,8 @@ class Renderer:
         ctx.enable(moderngl.DEPTH_TEST)
         ctx.disable(moderngl.CULL_FACE)
         self.sprog["light_vp"].write(light_vp.T.tobytes())
-        for k, b, n in draws:
-            if not k[4]:
+        for di, (k, b, n) in enumerate(draws):
+            if not k[4] and di not in nocast:
                 self._vao(self.sprog, k[0], b).render(instances=n)
         self.fbo.use()
         ctx.viewport = (0, 0, self.w, self.h)
@@ -607,11 +618,12 @@ class Renderer:
         P["vp"].write(vp.T.tobytes())
         P["light_vp"].write(light_vp.T.tobytes())
         P["sun"].value = tuple(sun)
-        P["sun_col"].value = (1.25, 1.2, 1.12)
-        P["sky"].value = (0.42, 0.46, 0.56)
-        P["ground"].value = (0.22, 0.21, 0.20)
+        lo = LIGHT_OVERRIDE or LIGHT
+        P["sun_col"].value = tuple(lo["sun"])
+        P["sky"].value = tuple(lo["sky"])
+        P["ground"].value = tuple(lo["ground"])
         P["cam"].value = tuple(cam_pos)
-        P["exposure"].value = 1.0
+        P["exposure"].value = float((LIGHT_OVERRIDE or LIGHT).get("exp", 1.0))
         self.shadow_tex.use(0)
         P["shadow"].value = 0
         P["tex"].value = 1
