@@ -83,10 +83,30 @@ def openverse(query: str, kind: str, out_dir: Path, pick: int = 0, min_s: float 
 
 TINY_VOCA = Path(r"D:\tmp\tts_try")      # tiny-voca (Apache-2.0) venv + weights; voices "tv_M2" / "tv_F2"
 
+# Narration style, measured against the craftee_films reference shorts (D:\tmp\audio_hc\report.md): they speak
+# ~4.2-4.6 words/s almost wall to wall (sentence pauses ~0-0.15 s); tiny-voca at 1.0 with its own ~0.25 s
+# silence before every sentence gave 3.0 words/s with 20% silence. The owner rejected 1.6x: never above 1.2x.
+TV_SPEED_SCALE, TV_SPEED_MAX = 1.2, 1.2
+TV_STYLE = {"pitch_range": 1.45, "gap": 0.02, "max_pause": 0.12, "v": 2}
+# ^ wider pitch movement; pause between sentences in a line (s); longer silences inside a sentence cut to max_pause
+LINE_GAP = (0.03, 0.06, 0.20)      # between lines: after a statement, after ! ? ..., before a one/two-word reveal
+
+
+def narr_speed(ep, voice: str) -> float:
+    s = float(getattr(ep, "SPEED", 1.05))
+    return min(TV_SPEED_MAX, round(s * TV_SPEED_SCALE, 3)) if voice.startswith("tv_") else s
+
+
+def vo_path(out_dir: Path, k: int, text: str, voice: str, speed: float) -> Path:
+    import hashlib
+    style = json.dumps(TV_STYLE, sort_keys=True) if voice.startswith("tv_") else ""
+    return out_dir / "vo" / f"l{k:02d}_{voice}_{hashlib.sha1((text + str(speed) + style).encode()).hexdigest()[:8]}.wav"
+
 
 def tts_many(items) -> None:
-    """Synthesise every missing tiny-voca line in one process (one model load); items = [(text, voice, speed, out)]."""
-    todo = [{"text": t, "voice": v[3:], "speed": sp, "out": str(o)} for t, v, sp, o in items
+    """Synthesise every missing tiny-voca line in one process (one model load); items = [(text, voice, speed, out)].
+    Each sentence is trimmed of the model's own edge silence and joined with TV_STYLE["gap"]."""
+    todo = [{"text": t, "voice": v[3:], "speed": sp, "out": str(o), **TV_STYLE} for t, v, sp, o in items
             if v.startswith("tv_") and not Path(o).exists()]
     if not todo:
         return
@@ -104,10 +124,7 @@ def tts(text: str, voice: str, speed: float, out: Path) -> Path:
         return out
     out.parent.mkdir(parents=True, exist_ok=True)
     if voice.startswith("tv_"):
-        env = dict(os.environ, DIZIONE_DATA=str(TINY_VOCA / "tiny-voca" / "weights" / "phonemizer"), PYTHONIOENCODING="utf-8")
-        run([str(TINY_VOCA / "venv" / "Scripts" / "python.exe"), "-m", "tiny_voca.infer", "--checkpoint",
-             str(TINY_VOCA / "tiny-voca" / "weights" / "tiny-voca.pt"), "--voice", voice[3:], "--speed", str(speed),
-             "--text", text, "--output", str(out)], env=env)
+        tts_many([(text, voice, speed, out)])      # same trimming and sentence gaps as the batch
         return out
     npx = "npx.cmd" if os.name == "nt" else "npx"
     env = dict(os.environ)
@@ -125,33 +142,31 @@ _REF = re.compile(r"^@([A-Za-z_][\w-]*)(\.end)?\s*([+-]\s*\d+(?:\.\d+)?)?$")
 
 def pace(ep, out_dir: Path) -> None:
     """Narration-driven timing. LINES may be dicts {"id", "text", "gap"?, "voice"?} (no times): the narration is
-    synthesised first and laid back to back (gap after the previous line, default 0.12 s), and every time anywhere
+    synthesised first and laid back to back (gap after the previous line: LINE_GAP), and every time anywhere
     in the episode written as "@id", "@id.end", "@id+0.4" or "@id.end-0.2" becomes seconds. Fast narration then
     never leaves dead air, and retiming a line moves its beats, shots, faces and sound effects with it."""
     if not any(isinstance(ln, dict) for ln in ep.LINES):
         return
     voice = getattr(ep, "VOICE", "af_heart")
-    speed = getattr(ep, "SPEED", 1.05)
-    t = float(getattr(ep, "LEAD_IN", 0.25))
+    t = float(getattr(ep, "LEAD_IN", 0.05))     # the references speak within the first 0.1 s
     marks, lines = {}, []
-    import hashlib
     items = []
     for k, ln in enumerate(ep.LINES):
         txt = ln["text"] if isinstance(ln, dict) else ln[1]
         v = (ln.get("voice") if isinstance(ln, dict) else (ln[2] if len(ln) > 2 else None)) or voice
-        items.append((txt, v, speed, out_dir / "vo" / f"l{k:02d}_{v}_{hashlib.sha1((txt + str(speed)).encode()).hexdigest()[:8]}.wav"))
+        items.append((txt, v, narr_speed(ep, v), vo_path(out_dir, k, txt, v, narr_speed(ep, v))))
     tts_many(items)
     for k, ln in enumerate(ep.LINES):
         if not isinstance(ln, dict):
             ln = {"text": ln[1], "at": ln[0], "voice": ln[2] if len(ln) > 2 else None}
         v = ln.get("voice") or voice
-        p = tts(ln["text"], v, speed, out_dir / "vo" / f"l{k:02d}_{v}_{hashlib.sha1((ln['text'] + str(speed)).encode()).hexdigest()[:8]}.wav")
+        p = tts(ln["text"], v, narr_speed(ep, v), vo_path(out_dir, k, ln["text"], v, narr_speed(ep, v)))
         d = duration(p)
         prev_txt = (ep.LINES[k - 1]["text"] if isinstance(ep.LINES[k - 1], dict) else ep.LINES[k - 1][1]) if k else ""
-        breath = 0.35 if prev_txt.rstrip().endswith(("!", "?", "…", "...")) else 0.22   # a breath between sentences
+        breath = LINE_GAP[1] if prev_txt.rstrip().endswith(("!", "?", "…", "...")) else LINE_GAP[0]
         txt_k = ln["text"] if isinstance(ln, dict) else ln[1]
         if len(txt_k.split()) <= 2:
-            breath = 0.45                     # a beat before a one- or two-word reveal ("Zero." "Forty-eight.")
+            breath = LINE_GAP[2]              # a beat before a one- or two-word reveal ("Zero." "Forty-eight.")
         t0 = float(ln["at"]) if isinstance(ln.get("at"), (int, float)) else (t + (ln.get("gap", breath) if k else 0))
         marks[ln.get("id") or f"L{k}"] = (t0, t0 + d)
         lines.append((round(t0, 3), ln["text"]) + ((ln["voice"],) if ln.get("voice") else ()))
@@ -178,7 +193,7 @@ def pace(ep, out_dir: Path) -> None:
         if hasattr(ep, name):
             setattr(ep, name, res(getattr(ep, name)))
     ep.LINES = lines
-    tail = float(getattr(ep, "TAIL", 1.6))
+    tail = float(getattr(ep, "TAIL", 0.5))       # the references end 0.1-0.3 s after the last word
     if not hasattr(ep, "LENGTH") or ep.LENGTH is None or float(ep.LENGTH) < t + tail:
         ep.LENGTH = round(t + tail, 2)        # never cut off mid-line: hold the last shot after the last word
     log(f"paced: {len(lines)} lines, narration ends {t:.1f}s, length {ep.LENGTH}s")
@@ -273,47 +288,94 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 # ------------------------------------------------------------------------------------------------ audio mix
+# Levels and tone measured against the craftee_films reference shorts (D:\tmp\audio_hc\report.md): the voice sits
+# on top, a dark steady bed ~12 dB under it (barely ducked, never swelling to the voice in the gaps), effects that
+# are actually heard. Every source is measured (EBU R128) and set to its target relative to the voice, so a loud or
+# quiet Openverse file no longer decides the balance; the episode's gains are offsets from their usual values
+# (music 0.45, SFX 0.5).
+MIX = {"voice_lufs": -16.0, "bed_rel": -9.5, "sfx_rel": -8.0,
+       "duck": {"threshold": 0.1, "ratio": 1.0, "attack": 40, "release": 600}}
+VOICE_FX = ("highpass=f=80,equalizer=f=300:t=q:w=1.2:g=-1,equalizer=f=2500:t=q:w=1.0:g=3.5,"
+            "deesser=i=0.5:m=0.5:f=0.5,"
+            "acompressor=threshold=0.1:ratio=3:attack=5:release=90:makeup=1")
+BED_FX = "highpass=f=40,lowshelf=f=200:g=3,lowpass=f=2200,equalizer=f=2500:t=q:w=1.3:g=-6"    # out of the voice's presence band
+SFX_FX = "silenceremove=start_periods=1:start_threshold=-50dB,atrim=0:3,afade=t=out:st=2.6:d=0.4"   # hit on the cue
+
+
+def levels(path, af: str = "") -> dict:
+    """Integrated loudness and loudest momentary (400 ms) loudness of a file (after filter `af`), cached."""
+    cache = BUILD / "_media" / "_levels.json"
+    key = f"{Path(path).resolve()}|{os.path.getmtime(path):.0f}|{af}"
+    db = json.loads(cache.read_text()) if cache.exists() else {}
+    if key in db and "vo" not in Path(path).name:
+        return db[key]
+    r = subprocess.run([FF, "-hide_banner", "-nostats", "-i", str(path), "-vn", "-af",
+                        (af + "," if af else "") + "aresample=48000,ebur128=framelog=info", "-f", "null", "-"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    ms = [float(x) for x in re.findall(r"\sM:\s*(-?[\d.]+)", r.stderr)]
+    i = re.findall(r"I:\s+(-?[\d.]+) LUFS", r.stderr)
+    out = {"I": float(i[-1]) if i else -70.0, "Mmax": max(ms) if ms else -70.0}
+    if "vo" not in Path(path).name:          # media files only (the voice stem changes every run)
+        db[key] = out
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(db, indent=0))
+    return out
+
+
+def _db(x: float) -> float:
+    import math
+    return 20 * math.log10(max(x, 1e-4))
+
+
 def mix(ep, total: float, out_dir: Path) -> tuple[Path, list[dict], list[str]]:
-    """Narration clips at their times, music bed ducked under the voice, SFX; loudness -14 LUFS. Returns
-    (wav, placed lines with durations, credits)."""
+    """Narration clips at their times (voice EQ, de-essing, compression), a steady music bed under the voice, SFX;
+    loudness -14 LUFS (two-pass, linear). Returns (wav, placed lines with durations, credits)."""
     voice = getattr(ep, "VOICE", "af_heart")
-    speed = getattr(ep, "SPEED", 1.05)
     placed, credits = [], []
     inputs, filters, vo_labels = [], [], []
-    import hashlib as _h
-    tts_many([(ln[1], ln[2] if len(ln) > 2 else voice, speed,
-               out_dir / "vo" / f"l{k:02d}_{ln[2] if len(ln) > 2 else voice}_{_h.sha1((ln[1] + str(speed)).encode()).hexdigest()[:8]}.wav")
-              for k, ln in enumerate(ep.LINES)])
+    items = []
+    for k, ln in enumerate(ep.LINES):
+        v = ln[2] if len(ln) > 2 else voice
+        items.append((ln[1], v, narr_speed(ep, v), vo_path(out_dir, k, ln[1], v, narr_speed(ep, v))))
+    tts_many(items)
     for k, ln in enumerate(ep.LINES):
         t, text = ln[0], ln[1]
-        v = ln[2] if len(ln) > 2 else voice
-        p = tts(text, v, speed, out_dir / "vo" / f"l{k:02d}_{v}_{__import__("hashlib").sha1((text + str(speed)).encode()).hexdigest()[:8]}.wav")
+        p = tts(*items[k])
         d = duration(p)
         placed.append({"t": t, "text": text, "dur": d, "path": str(p)})
         if k and placed[k - 1]["t"] + placed[k - 1]["dur"] > t + 0.05:
             log(f"  note: line {k} starts {placed[k - 1]['t'] + placed[k - 1]['dur'] - t:.2f}s before line {k - 1} ends")
+    # 1) the voice stem (EQ, de-essing, compression), measured
     for k, ln in enumerate(placed):
         inputs += ["-i", ln["path"]]
-        filters.append(f"[{k}:a]aresample={SR},aformat=channel_layouts=stereo,adelay={int(ln['t'] * 1000)}|{int(ln['t'] * 1000)},"
-                       f"volume={getattr(ep, 'VO_GAIN', 1.0)}[v{k}]")
+        filters.append(f"[{k}:a]aresample={SR},aformat=channel_layouts=stereo,adelay={int(ln['t'] * 1000)}|{int(ln['t'] * 1000)}[v{k}]")
         vo_labels.append(f"[v{k}]")
-    n = len(placed)
-    filters.append(f"{''.join(vo_labels)}amix=inputs={n}:normalize=0,apad=whole_dur={total:.3f}[vo]")
-    filters.append("[vo]asplit=2[vo1][vosc]")
-    idx = n
+    filters.append(f"{''.join(vo_labels)}amix=inputs={len(placed)}:normalize=0,apad=whole_dur={total:.3f},"
+                   f"atrim=0:{total:.3f},{VOICE_FX}[out]")
+    vo_wav = out_dir / "vo_stem.wav"
+    run([FF, "-y", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filters), "-map", "[out]",
+         "-ar", str(SR), "-c:a", "pcm_f32le", str(vo_wav)])
+    vo_gain = MIX["voice_lufs"] - levels(vo_wav)["I"] + _db(getattr(ep, "VO_GAIN", 1.0))
+    # 2) voice + bed + effects
+    inputs = ["-i", str(vo_wav)]
+    filters = [f"[0:a]volume={vo_gain:.2f}dB,asplit=2[vo1][vosc]"]
+    idx = 1
     mus = ep.MUSIC
     m = openverse(mus["query"], "music", BUILD / "_media", pick=mus.get("pick", 0), min_s=total * 0.6)
     credits.append(f"Music: \"{m['title']}\" by {m['creator']} ({m['license'].upper()} {m.get('license_version') or ''}) {m['url']}")
     inputs += ["-stream_loop", "-1", "-ss", str(mus.get("from", 0)), "-i", m["path"]]   # loop: never run out
-    fade_out = max(total - 1.2, 0)
-    filters.append(f"[{idx}:a]aresample={SR},aformat=channel_layouts=stereo,atrim=0:{total:.3f},asetpts=N/SR/TB,"
-                   f"volume={mus.get('gain', 0.5)},afade=t=in:d=0.6,afade=t=out:st={fade_out:.2f}:d=1.2[mraw]")
-    filters.append("[mraw][vosc]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=350[mus]")
+    bed_gain = MIX["voice_lufs"] + MIX["bed_rel"] - levels(m["path"], BED_FX)["I"] + _db(mus.get("gain", 0.45) / 0.45)
+    fo = min(0.3, max(total - 0.1, 0.1))        # the references end near full level
+    dk = MIX["duck"]
+    filters.append(f"[{idx}:a]aresample={SR},aformat=channel_layouts=stereo,atrim=0:{total:.3f},asetpts=N/SR/TB,{BED_FX},"
+                   f"volume={bed_gain:.2f}dB,afade=t=in:d=0.05,afade=t=out:st={total - fo:.2f}:d={fo:.2f}[mraw]")
+    filters.append(f"[mraw][vosc]sidechaincompress=threshold={dk['threshold']}:ratio={dk['ratio']}:attack={dk['attack']}:"
+                   f"release={dk['release']}[mus]")
     idx += 1
     sfx_labels = []
     for k, s in enumerate(getattr(ep, "SFX", [])):
         t, q = s[0], s[1]
-        g = s[2] if len(s) > 2 else 0.8
+        g = s[2] if len(s) > 2 else 0.5
         try:
             f = openverse(q, "sound_effect", BUILD / "_media", max_s=8)
         except SystemExit as e:
@@ -321,15 +383,25 @@ def mix(ep, total: float, out_dir: Path) -> tuple[Path, list[dict], list[str]]:
             continue
         credits.append(f"SFX: \"{f['title']}\" by {f['creator']} ({f['license'].upper()}) {f['url']}")
         inputs += ["-i", f["path"]]
-        filters.append(f"[{idx}:a]aresample={SR},aformat=channel_layouts=stereo,atrim=0:6,adelay={int(t * 1000)}|{int(t * 1000)},"
-                       f"volume={g}[s{k}]")
+        sg = MIX["voice_lufs"] + MIX["sfx_rel"] - levels(f["path"], SFX_FX)["Mmax"] + _db(g / 0.5)
+        filters.append(f"[{idx}:a]aresample={SR},aformat=channel_layouts=stereo,{SFX_FX},volume={min(sg, 24):.2f}dB,"
+                       f"adelay={int(t * 1000)}|{int(t * 1000)}[s{k}]")
         sfx_labels.append(f"[s{k}]")
         idx += 1
     filters.append(f"[vo1][mus]{''.join(sfx_labels)}amix=inputs={2 + len(sfx_labels)}:normalize=0,"
-                   f"atrim=0:{total:.3f},acompressor=threshold=0.25:ratio=3:attack=10:release=200,"
-                   f"loudnorm=I=-14:TP=-1.2:LRA=9[out]")
+                   f"atrim=0:{total:.3f},acompressor=threshold=0.35:ratio=2:attack=10:release=200[out]")
+    pre = out_dir / "premix.wav"
+    run([FF, "-y", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filters), "-map", "[out]",
+         "-ar", str(SR), "-c:a", "pcm_f32le", str(pre)])
+    # 3) -14 LUFS, two-pass linear loudnorm (one-pass loudnorm rides the gain and pumps the bed)
+    ln_args = "loudnorm=I=-14:TP=-1.2:LRA=11"
+    r = subprocess.run([FF, "-hide_banner", "-nostats", "-i", str(pre), "-af", ln_args + ":print_format=json", "-f", "null", "-"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    st = json.loads(r.stderr[r.stderr.rindex("{"):r.stderr.rindex("}") + 1])
     wav = out_dir / "mix.wav"
-    run([FF, "-y", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filters), "-map", "[out]", "-ar", str(SR), str(wav)])
+    run([FF, "-y", "-loglevel", "error", "-i", str(pre), "-af",
+         f"{ln_args}:linear=true:measured_I={st['input_i']}:measured_TP={st['input_tp']}:measured_LRA={st['input_lra']}:"
+         f"measured_thresh={st['input_thresh']}:offset={st['target_offset']},aresample={SR}", "-ar", str(SR), str(wav)])
     return wav, placed, credits
 
 
