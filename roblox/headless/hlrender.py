@@ -392,7 +392,7 @@ class Scene:
         matname = p.get("mat") if p.get("mat") in MAT_NAMES and mode in (0, 1) and not tex else None
         out = [{"key": key, "scale": scale, "native": native, "col": col, "vcol": vcol, "tex": tex, "mode": mode, "mat": matname,
                 "uvp": (1.0, 1.0), "cf": cf, "pos": np.array(cf[:3]) if cf else None, "local": None,
-                "wall": self._wall(p), "cast": p.get("cast", True) is not False}]
+                "wall": self._wall(p), "cast": p.get("cast", True) is not False, "cutgroup": p.get("cutgroup")}]
         for dc in p.get("decals") or []:
             t = _asset(dc.get("tex"))
             if not t:
@@ -477,19 +477,24 @@ class Renderer:
         self.faces = {}
         # static instances grouped by (mesh, texture, mode, vcol, transparent)
         groups = {}
+        cut_ids = {}            # "cutgroup" name -> id: parts cut away together (a wall with its windows and trims)
         S = self.sc
         for sp in S.static:
             c = sp["cf"]
             m = S.model(sp, np.array(c[:3]), np.array(c[3:12]).reshape(3, 3))
             k = (sp["key"], sp["tex"], sp["mode"], sp["vcol"], sp["col"][3] < 0.999 or sp["mode"] == 3, sp["mat"])
+            cg = sp.get("cutgroup")
+            cgi = cut_ids.setdefault(cg, len(cut_ids)) if cg else -1
             groups.setdefault((k, sp.get("cast", True)), []).append(
-                (np.hstack([m.ravel(), sp["col"], sp["uvp"], (0, 0)]), sp["pos"], sp["wall"], m))
+                (np.hstack([m.ravel(), sp["col"], sp["uvp"], (0, 0)]), sp["pos"], sp["wall"], m, cgi))
         self.static_groups = []
         for (k, cast), items in groups.items():
-            M = np.array([a for a, _, _, _ in items], "f4")
-            self.static_groups.append({"k": k, "cast": cast, "inst": M, "pos": np.array([p for _, p, _, _ in items]),
-                                       "wall": np.array([w_ for _, _, w_, _ in items]),
-                                       "mats": np.array([m for _, _, _, m in items]),
+            M = np.array([it[0] for it in items], "f4")
+            cgs = np.array([it[4] for it in items], int)
+            self.static_groups.append({"k": k, "cast": cast, "cg": cgs, "has_cg": bool((cgs >= 0).any()),
+                                       "inst": M, "pos": np.array([it[1] for it in items]),
+                                       "wall": np.array([it[2] for it in items]),
+                                       "mats": np.array([it[3] for it in items]),
                                        "buf": ctx.buffer(reserve=max(16, M.nbytes)), "n": 0, "mask": None})
         # dynamic: per-spec part index, grouped once by key (heads re-grouped per face each frame)
         self.dyn_idx = np.array(S.dyn_part, int)
@@ -561,7 +566,9 @@ class Renderer:
             tmin = np.nanmax(np.where(np.isfinite(t1), np.minimum(t1, t2), -np.inf), 1)
             tmax = np.nanmin(np.where(np.isfinite(t1), np.maximum(t1, t2), np.inf), 1)
             inside = np.all(np.abs(pa) <= 0.5 + 0.05, 1)
-            hit |= ((tmin <= tmax) & (tmax >= 0) & (tmin <= 1)) | inside
+            # a segment parallel to a slab only crosses the box if it lies within that slab
+            par_ok = np.all(np.isfinite(t1) | (np.abs(pa) <= 0.5), 1)
+            hit |= ((tmin <= tmax) & (tmax >= 0) & (tmin <= 1) & par_ok) | inside
         return hit
 
     def frame(self, cam_pos, look, fov, dyn_draws=(), radius=160.0):
@@ -569,6 +576,7 @@ class Renderer:
         cam_pos, look = np.asarray(cam_pos, "f8"), np.asarray(look, "f8")
         draws = []
         nocast = set()          # draws that cast no shadow (parts with "cast": false)
+        masks, cut_groups = [], set()
         for g in self.static_groups:
             mask = np.einsum("ij,ij->i", g["pos"] - cam_pos, g["pos"] - cam_pos) < radius * radius
             wm = mask & g["wall"]
@@ -576,6 +584,15 @@ class Renderer:
                 cut = np.zeros(len(mask), bool)
                 cut[wm] = self._cut(g["mats"][wm], cam_pos, look)
                 mask &= ~cut
+                if g["has_cg"]:
+                    cut_groups.update(g["cg"][cut & (g["cg"] >= 0)].tolist())
+            masks.append(mask)
+        if cut_groups:          # a cut wall takes the rest of its cutgroup with it
+            cga = np.fromiter(cut_groups, int)
+            for g, mask in zip(self.static_groups, masks):
+                if g["has_cg"]:
+                    mask &= ~np.isin(g["cg"], cga)
+        for g, mask in zip(self.static_groups, masks):
             if g["mask"] is None or not np.array_equal(mask, g["mask"]):
                 sel = g["inst"][mask]
                 g["n"] = len(sel)
