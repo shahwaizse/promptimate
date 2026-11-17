@@ -410,7 +410,9 @@ def _main():
         todo.insert(0, "cast")      # rigs back on their marks: perform measures where they stand
     import server  # noqa: F401  (registers the Roblox tools: sets their server module)
     import roblox_record as RR
-    if "cast" in todo:
+    if "cast" in todo and a.offline:
+        log("cast: offline (looks and props come from the headless library)")
+    elif "cast" in todo:
         import cast as CAST
         t = time.time()
         r = CAST.ensure(ep.CAST)
@@ -444,11 +446,12 @@ def _main():
             log("prefetch skipped:", e)
         # a clean cue sheet: only this episode's characters perform (earlier episodes' entries would be posed too)
         from roblox_studio import studio
-        studio().luau('local f = game:GetService("ReplicatedStorage"):FindFirstChild("Promptimate"); '
+        if not a.offline:
+          studio().luau('local f = game:GetService("ReplicatedStorage"):FindFirstChild("Promptimate"); '
                       'local m = f and f:FindFirstChild("Performance"); '
                       'if m then m.Source = "return [[{\\"version\\":1,\\"actors\\":{}}]]" end; return 1')
-        # props back home (a previous recording may have left one hidden or in a hand): seats must be where they live
-        studio().luau('for _, d in workspace:GetDescendants() do if d:IsA("PVInstance") and typeof(d:GetAttribute("PromptimateHome")) == "CFrame" '
+          # props back home (a previous recording may have left one hidden or in a hand): seats must be where they live
+          studio().luau('for _, d in workspace:GetDescendants() do if d:IsA("PVInstance") and typeof(d:GetAttribute("PromptimateHome")) == "CFrame" '
                       'then d:PivotTo(d:GetAttribute("PromptimateHome")) end end; return 1')
         os.environ["PROMPTIMATE_REPAIR_ROUNDS"] = str(a.rounds)
         os.environ["PROMPTIMATE_RBX_ATTEMPTS"] = str(a.attempts)
@@ -458,11 +461,24 @@ def _main():
         sys.path.insert(0, str(ROOT / "roblox" / "short"))
         import fastgrab as FG
         t = time.time()
-        FG.minimize_studio()          # a rendering Studio steals the GPU from motion generation (~6x slower)
-        try:
-            res = RT.perform([RT.Actor(**x) for x in ep.ACTORS])
-        finally:
-            FG.pin_studio(True)
+        if a.offline:       # staging on our own geometry (roblox/headless/stage.py), no Studio
+            sys.path.insert(0, str(ROOT / "roblox" / "headless"))
+            import stage as WLD
+            import director as DRC
+            import pipeline as HL0
+            st_json = json.loads((HL0.CACHE / "scene" / "static.json").read_text())
+            RT.WORLD = WLD.Staging(WLD.World(st_json, DRC.props_at_home(ep, st_json)), ep.CAST)
+            log(f"staging world {time.time() - t:.1f}s")
+            try:
+                res = RT.perform([RT.Actor(**x) for x in ep.ACTORS])
+            finally:
+                RT.WORLD = None
+        else:
+            FG.minimize_studio()          # a rendering Studio steals the GPU from motion generation (~6x slower)
+            try:
+                res = RT.perform([RT.Actor(**x) for x in ep.ACTORS])
+            finally:
+                FG.pin_studio(True)
         info = json.loads(res[0])
         (out / "perform.json").write_text(json.dumps(info, indent=1))
         T["perform"] = time.time() - t

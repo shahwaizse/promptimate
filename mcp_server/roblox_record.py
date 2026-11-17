@@ -628,23 +628,31 @@ def image_qa(cues, perf, size, t_end):
     """Look at each subject shot's actual picture (mid-shot frame): when one flat colour fills most of it (camera inside
     a prop, a hat, a body), the next-best framing candidates are tried until one is readable."""
     alts = getattr(frame_subjects, "alts", {})
-    fast = _fast_setup(size)
-    if not fast or not alts:
+    if BACKEND is None:
+        fast = _fast_setup(size)
+        if not fast or not alts:
+            return cues, []
+        FG = fast["FG"]
+        vp = _viewport()
+        FG.pin_studio(True)
+        rect = FG.calibrate(studio(), vp)
+        studio().luau(FG.HIDE_NAMES)
+    elif not alts:
         return cues, []
-    FG = fast["FG"]
-    vp = _viewport()
-    FG.pin_studio(True)
-    rect = FG.calibrate(studio(), vp)
-    studio().luau(FG.HIDE_NAMES)
+
+    def picture(pos, look, fov, t):
+        if BACKEND is not None:
+            return BACKEND.portrait(pos, look, fov, t)
+        return FG.portrait(studio(), rect, vp, list(pos), list(look), fov, seek_t=t, out=(270, 480))
     out, notes = list(cues), []
 
     def badness(c, pos, look, fov, t):
         """0 = readable; adds the flat-colour share, +1 when the subject's head is outside the frame, +1 when its head
         and body are both hidden behind something."""
-        im = FG.portrait(studio(), rect, vp, list(pos), list(look), fov, seek_t=t, out=(270, 480))
+        im = picture(pos, look, fov, t)
         bl = _blank(im)
         sc = max(0.0, bl - BLANK_MAX) * 4 + (bl > BLANK_MAX)
-        r = studio().luau_json(f"return _G.PromptimateDirector.camcheck({t:.3f}, game:GetService('HttpService'):JSONDecode("
+        r = BACKEND.camcheck_full(t, {'pos': list(map(float, pos)), 'look': list(map(float, look)), 'fov': fov, 'subjects': [c.subject], 'r': 0.6}) if BACKEND else studio().luau_json(f"return _G.PromptimateDirector.camcheck({t:.3f}, game:GetService('HttpService'):JSONDecode("
                                f"{long_str(json.dumps([{'pos': list(map(float, pos)), 'look': list(map(float, look)), 'fov': fov, 'subjects': [c.subject], 'r': 0.6}]))}))")[0]
         v = (r.get("subjects") or {}).get(c.subject)
         if v:
@@ -687,18 +695,19 @@ def image_qa(cues, perf, size, t_end):
         b = out[i + 1].start if i + 1 < len(out) else t_end
         t = (c.start + b) / 2
         _k, _c, pos, look, fov = camera(out, perf, t)
-        im = FG.portrait(studio(), rect, vp, list(pos), list(look), fov, seek_t=t, out=(270, 480))
+        im = picture(pos, look, fov, t)
         bl = _blank(im)
         if bl <= BLANK_MAX:
             continue
-        hips = json.loads(studio().luau(f"return _G.PromptimateDirector.hips({t:.3f})"))
+        hips = BACKEND.hips(t) if BACKEND else json.loads(studio().luau(f"return _G.PromptimateDirector.hips({t:.3f})"))
         if not hips:
             continue
         lk = c.look or c.pos
         name = min(hips, key=lambda n: (hips[n][0] - lk[0]) ** 2 + (hips[n][2] - lk[2]) ** 2)
         out[i] = c.model_copy(update={"pos": None, "look": None, "subject": name, "shot": "full", "angle": 20.0})
         notes.append(f"{c.name or c.start}: flat {bl:.2f} (camera in a wall?) -> full shot of {name}")
-    studio().luau(FG.RESTORE_NAMES)
+    if BACKEND is None:
+        studio().luau(FG.RESTORE_NAMES)
     return out, notes
 
 

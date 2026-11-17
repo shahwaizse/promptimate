@@ -179,3 +179,28 @@ def build(ep, perf_actors: dict, out: Path, fps: int, t_end: float, static: dict
     (out / "dynamic.json").write_text(json.dumps({"parts": parts, "actors": actors, "order": names}))
     np.savez(out / "frames.npz", pose=pose, face=fbytes, fps=fps, t0=0.0)
     return {"parts": len(parts), "frames": nf, "seconds": round(time.time() - t0, 1), "hidden_static": hidden_static}
+
+
+def props_at_home(ep, static: dict | None = None) -> list[dict]:
+    """The episode's props (PLACE) as world-space parts at their home pivots: staging sees them like set pieces."""
+    lib = L.props()
+    out = []
+    for i, it in enumerate(getattr(ep, "PLACE", [])):
+        m = lib.get(it["prop"])
+        if m is None:
+            continue
+        nm = it.get("name") or f"{it['prop']}{i + 1}"
+        s = (it["height"] / m["size"][1]) if it.get("height") and m["size"][1] > 0 else 1.0
+        y = it.get("y")
+        if y is None:
+            y = ground_y((static or {}).get("parts", []), it["at"][0], it["at"][1])
+        hp, hr = np.array([it["at"][0], y, it["at"][1]], float), euler_xy(it.get("tilt", 0), it.get("yaw", 0))
+        for p in m["parts"]:
+            d = dict(p)
+            d["size"] = [v * s for v in p["size"]]
+            rp, rr = np.asarray(p["cf"][:3]) * s, np.asarray(p["cf"][3:12]).reshape(3, 3)
+            wp, wr = hp + hr @ rp, hr @ rr
+            d["cf"] = [*wp, *wr.ravel()]
+            d["path"] = f"Workspace.Sets.EpisodeProps.{nm}.{p['name']}"
+            out.append(d)
+    return out

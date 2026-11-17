@@ -41,6 +41,7 @@ REACH = range(-2, 3)         # bins drawn around the camera (+-40 studs)
 class Checks:
     def __init__(self, scene_dir: Path, names: list[str], frames_npz: Path, fps: float):
         scene_dir = Path(scene_dir)
+        self._scene_dir, self._frames = scene_dir, Path(frames_npz)
         self.R = RD.Renderer(scene_dir, w=64, h=64)       # reuses its scene loading (meshes, matrices, walls)
         self.ctx = self.R.ctx
         ctx = self.ctx
@@ -404,4 +405,33 @@ class Checks:
                     if v is not None and m >= n0 and v > bestv and not blocked and not self._near(p, 0.5, t):
                         bestv, best = v, [*p, deg, v]
             out.append(best)
+        return out
+
+    # ------------------------------------------------------------------------------------- image QA support
+    def portrait(self, pos, look, fov, t):
+        """The shot's actual picture at 270x480 (our renderer, this instant's poses and faces)."""
+        from PIL import Image
+        if not hasattr(self, "_qa"):
+            self._qa = RD.Renderer(self._scene_dir, w=270, h=480)
+            self._qa_order = self.dyn.get("order", [])
+            self._qa_faces = np.load(self._frames)["face"]
+        k = self._frame(t)
+        img = self._qa.frame(np.asarray(pos, float), np.asarray(look, float), float(fov),
+                             RD.dyn_draws(self._qa, self.pose[k], self._qa_faces[k], self._qa_order))
+        return Image.frombytes("RGB", (270, 480), img).transpose(Image.FLIP_TOP_BOTTOM)
+
+    def camcheck_full(self, t, cam):
+        """One camera's check with the subject's head / hips / feet (image QA frames the head)."""
+        r = self.camcheck([t], [cam])[0][0]
+        for s, v in r["subjects"].items():
+            hp, _ = self.part_world(self.actor_index(s, "Head"), t)
+            tp, tr = self.part_world(self.actor_index(s, "Torso"), t)
+            v.update(head=list(map(float, hp)), hips=list(map(float, tp + tr @ np.array([0, -0.8, 0]))))
+        return r
+
+    def hips(self, t):
+        out = {}
+        for n in self.names:
+            tp, tr = self.part_world(self.actor_index(n, "Torso"), t)
+            out[n] = list(map(float, tp + tr @ np.array([0, -0.8, 0])))
         return out

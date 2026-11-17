@@ -86,7 +86,7 @@ def record_offline(ep, cues, name: str, fps: int = 30, end: float | None = None,
     names = json.loads((ep_dir / "dynamic.json").read_text())["order"]
     RR.BACKEND = CK.Checks(ep_dir, names, ep_dir / "frames.npz", fps)
     try:
-        shots, notes = RR.plan_shots(sorted(cues, key=lambda c: c.start), perf, (1080, 1920), t_end, image_check=False)
+        shots, notes = RR.plan_shots(sorted(cues, key=lambda c: c.start), perf, (1080, 1920), t_end, image_check=True)
     finally:
         RR.BACKEND = None
     n = int(t_end * fps)

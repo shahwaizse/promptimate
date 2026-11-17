@@ -425,7 +425,10 @@ class Scene:
     def __init__(self, actor_names: list[str], target_names: list[str]):
         code = (SCENE_LUAU.replace("__ACTORS__", long_str(json.dumps(actor_names)))
                 .replace("__TARGETS__", long_str(json.dumps(sorted(set(target_names))))))
-        d = studio().luau_json(code)
+        if WORLD is not None:
+            d = WORLD.scene(actor_names, sorted(set(target_names)), {"version": 1, "actors": {}})   # a clean cue sheet, as the producer resets Studio's
+        else:
+            d = studio().luau_json(code)
         self.actors = d["actors"]
         self.targets = d.get("targets") or {}
         self.parts = d.get("parts") or []
@@ -458,6 +461,10 @@ return HttpService:JSONEncode(out)
 """
 
 
+# staging backend: None = Studio; the headless pipeline plugs in roblox/headless/stage.Staging (our own geometry)
+WORLD = None
+
+
 def _stand_free(pts, floor, radius: float, spm: float) -> list[bool]:
     """Whether a character standing at each ground point (x, z) is clear of scenery (Studio overlap query)."""
     if floor is None:
@@ -465,6 +472,8 @@ def _stand_free(pts, floor, radius: float, spm: float) -> list[bool]:
     q = {"pts": [[float(p[0]), float(p[1])] for p in pts], "floor": float(floor), "r": float(radius),
          "h": float(1.7 * spm)}
     try:
+        if WORLD is not None:
+            return list(WORLD.stand_free(q))
         return list(studio().luau_json(STANDFREE_LUAU.replace("__Q__", long_str(json.dumps(q)))))
     except Exception:
         return [True] * len(pts)
@@ -1044,9 +1053,9 @@ def _spec(e: dict, p, yaw, spm, seated, plan: Planner, actor: str, occupied: lis
 
 def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> list:
     t_all = time.time()
-    st = studio()
-    calls0 = st.calls
-    inst = install()
+    st = studio() if WORLD is None else None
+    calls0 = st.calls if st else 0
+    inst = install() if WORLD is None else {"offline": True}
     scene = Scene([a.name for a in actors], _target_names(actors))
     plan = Planner(scene, actors)
     errors = [f"{a.name}: character not found (characters in the place: {', '.join(scene.humanoids[:15])})"
@@ -1082,8 +1091,8 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
                 yaw = yaw_of((m["lookX"], m["lookZ"]))
         starts[a.name] = (p, yaw, spm)
     # floor height under each start point (cast from just above the rig's floor, so benches aren't taken for it)
-    gs = studio().luau_json(GROUND_LUAU.replace("__PTS__", long_str(json.dumps(
-        [[float(starts[a.name][0][0]), float(max(scene.actors[a.name]["floor"], scene.actors[a.name]["ground"])), float(starts[a.name][0][1])] for a in actors]))))
+    gs = (WORLD.ground if WORLD is not None else lambda q: studio().luau_json(GROUND_LUAU.replace("__PTS__", long_str(json.dumps(q)))))((
+        [[float(starts[a.name][0][0]), float(max(scene.actors[a.name]["floor"], scene.actors[a.name]["ground"])), float(starts[a.name][0][1])] for a in actors]))
     for a, g in zip(actors, gs):
         scene.actors[a.name]["ground"] = float(g)
     plan.ground = None
@@ -1249,7 +1258,7 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
     if len(rounds) > 1:
         out["repair"] = rounds
     out["seconds"] = round(time.time() - t_all, 1)
-    log = {"studio_calls": st.calls - calls0, "push_calls": push_calls, "install": inst}
+    log = {"studio_calls": (st.calls - calls0) if st else 0, "push_calls": push_calls, "install": inst}
     (STATE / "last_perform.json").write_text(json.dumps({"out": out, "log": log, "beats": {
         n: r["beats"] for n, r in results.items()}}, indent=1, default=lambda o: np.asarray(o).tolist()))
     res = [json.dumps(out, separators=(",", ":"), ensure_ascii=False)]
@@ -1285,7 +1294,45 @@ return HttpService:JSONEncode(out)
 '''
 
 
+def _push_offline(scene: Scene, results: dict) -> int:
+    """_push without Studio: clip heights from our own geometry, clip files exported locally, the cue sheet handed
+    to the staging backend (its probes and body checks pose from it)."""
+    for r in results.values():
+        refs = [c for c in r["clips"] if "y" not in c]
+        if refs:
+            ys = WORLD.ground([[c["x"], r["ground"], c["z"]] for c in refs])
+            raw = {id(c): float(y) for c, y in zip(refs, ys)}
+            prev_y = r["ground"]
+            for k, c in enumerate(r["clips"]):
+                if id(c) not in raw:
+                    prev_y = c["y"]
+                    continue
+                y = raw[id(c)]
+                if k > 0 and (c.get("seated_start") or abs(y - prev_y) > 0.6):
+                    y = prev_y
+                c["y"] = round(y, 4)
+                prev_y = c["y"]
+    out_dir = STATE / "clips"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for r in results.values():
+        for c in r["clips"]:
+            f = out_dir / f"{c['m']}.json"
+            if not f.exists():
+                roblox.export(SRV.OUTPUT / c["src"], f, c["m"])
+    perf = scene.perf
+    perf["version"] = 1
+    for name, r in results.items():
+        perf["actors"][name] = {"path": r["path"], "spm": round(r["spm"], 4),
+                                "clips": [{k: v for k, v in c.items() if k in ("m", "src", "s", "d", "x", "y", "z", "yaw", "label", "seated_start")}
+                                          for c in r["clips"]],
+                                "end": [round(v, 4) for v in r["end"]], "track": r["track"], "seats": r["seats"]}
+    WORLD.perf_actors = {n: {"clips": a["clips"]} for n, a in perf["actors"].items() if n in WORLD.cast}
+    return 0
+
+
 def _push(scene: Scene, results: dict) -> int:
+    if WORLD is not None:
+        return _push_offline(scene, results)
     st = studio()
     calls = 0
     # ground height under every clip origin
@@ -1381,6 +1428,9 @@ def _stage_checks(name: str, r: dict, plan: Planner) -> list[str]:
     seats = {s["name"]: s["top"] for s in r["seats"] if s.get("name") and s.get("top") is not None}
     data = []
     for i in range(0, len(times), 120):     # batches: Studio truncates tool output at 100k characters
+        if WORLD is not None:
+            data += WORLD.probe(name, times[i:i + 120], {"seats": seats})
+            continue
         data += studio().luau_json(
             "local D = _G.PromptimateDirector or require(game:GetService('ReplicatedStorage').Promptimate.ShortDirector:Clone())\n"
             f"return D.probe({json.dumps(name)}, {{{','.join(map(str, times[i:i + 120]))}}}, "
@@ -1487,6 +1537,9 @@ def _body_checks(results: dict) -> tuple[list[str], dict]:
     times = [round(t, 2) for t in np.arange(0, t1, 0.2)]
     data = []
     for i in range(0, len(times), 40):      # batches: Studio truncates tool output at 100k characters
+        if WORLD is not None:
+            data += WORLD.bodycheck(times[i:i + 40])
+            continue
         data += studio().luau_json(
             "local D = _G.PromptimateDirector or require(game:GetService('ReplicatedStorage').Promptimate.ShortDirector:Clone())\n"
             "_G.PromptimateDirector = D; D.options = nil" + ("; D.load()" if i == 0 else "") + "\n"

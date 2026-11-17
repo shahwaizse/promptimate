@@ -63,7 +63,8 @@ local function info(p)
   return { kind = kind, size = { p.Size.X, p.Size.Y, p.Size.Z },
     cf = { x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 },
     color = { p.Color.R, p.Color.G, p.Color.B }, mat = p.Material.Name, tr = p.Transparency, refl = p.Reflectance,
-    shadow = p.CastShadow, mesh = mesh, decals = (#decals > 0) and decals or nil }
+    shadow = p.CastShadow, cc = p.CanCollide, cq = p.CanQuery, block = p:IsA("Part") and p.Shape == Enum.PartType.Block,
+    mesh = mesh, decals = (#decals > 0) and decals or nil }
 end
 '''
 
