@@ -38,6 +38,32 @@ BIN = 16                     # studs per geometry bin
 REACH = range(-2, 3)         # bins drawn around the camera (+-40 studs)
 
 
+def _view_proj(cams) -> np.ndarray:
+    """RD.perspective(min(fov * WIDEN, 150), W / H, 0.05, 400) @ RD.look_at(pos, look) for every camera at once."""
+    n = len(cams)
+    E = np.array([c[0] for c in cams], "f8").reshape(n, 3)
+    T = np.array([c[1] for c in cams], "f8").reshape(n, 3)
+    fov = np.array([min(float(c[2]) * WIDEN, 150) for c in cams], "f8")
+    f = T - E
+    f /= np.linalg.norm(f, axis=1, keepdims=True)
+    s = np.cross(f, np.array([0.0, 1.0, 0.0]))
+    sn = np.linalg.norm(s, axis=1)
+    s[sn < 1e-6] = [1.0, 0.0, 0.0]
+    s /= np.linalg.norm(s, axis=1, keepdims=True)
+    u = np.cross(s, f)
+    V = np.zeros((n, 4, 4))
+    V[:, 0, :3], V[:, 1, :3], V[:, 2, :3] = s, u, -f
+    V[:, :3, 3] = -np.einsum("nij,nj->ni", V[:, :3, :3], E)
+    V[:, 3, 3] = 1.0
+    near, far = 0.05, 400.0
+    F = 1 / np.tan(np.radians(fov) / 2)
+    Pm = np.zeros((n, 4, 4))
+    Pm[:, 0, 0], Pm[:, 1, 1] = F / (W / H), F
+    Pm[:, 2, 2], Pm[:, 2, 3] = (far + near) / (near - far), 2 * far * near / (near - far)
+    Pm[:, 3, 2] = -1.0
+    return Pm @ V
+
+
 class Checks:
     def __init__(self, scene_dir: Path, names: list[str], frames_npz: Path, fps: float):
         scene_dir = Path(scene_dir)
@@ -182,15 +208,15 @@ class Checks:
         vao_d = self.dyn_vao.get(id(dyn))
         if vao_d is None:
             vao_d = self.dyn_vao[id(dyn)] = self.ctx.vertex_array(self.prog, [(dyn, "3f 1f", "in_pos", "in_id")])
-        vps = []
+        vps = _view_proj(cams)
+        u_vp, u_cam = self.prog["vp"], self.prog["cam"]
         for j, (pos, look, fov) in enumerate(cams):
-            pos, look = np.asarray(pos, float), np.asarray(look, float)
+            pos = np.asarray(pos, float)
             x, y = (j % COLS) * W, (j // COLS) * H
             self.ctx.viewport = (x, y, W, H)
-            vp = RD.perspective(min(fov * WIDEN, 150), W / H, 0.05, 400) @ RD.look_at(pos, look)
-            vps.append(vp)
-            self.prog["vp"].write(vp.astype("f4").T.tobytes())
-            self.prog["cam"].value = tuple(pos)
+            vp = vps[j]
+            u_vp.write(vp.astype("f4").T.tobytes())
+            u_cam.value = tuple(pos)
             bx, bz = int(math.floor(pos[0] / BIN)), int(math.floor(pos[2] / BIN))
             for dx in REACH:
                 for dz in REACH:
@@ -203,14 +229,11 @@ class Checks:
             vao_d.render()
         ids = np.frombuffer(self.fbo.read(attachment=0, components=4), np.uint8).reshape(size[1], size[0], 4)
         dep = np.frombuffer(self.fbo.read(attachment=1, components=1, dtype="f4"), np.float32).reshape(size[1], size[0])
-        idv = ids[:, :, 0].astype(int) + 256 * ids[:, :, 1].astype(int)
-        dep = np.where(ids[:, :, 3] > 0, dep, np.inf)
-        out_i = np.zeros((n, H, W), int)
-        out_d = np.zeros((n, H, W), np.float32)
-        for j in range(n):
-            x, y = (j % COLS) * W, (j // COLS) * H
-            out_i[j], out_d[j] = idv[y:y + H, x:x + W], dep[y:y + H, x:x + W]
-        return out_i, out_d, vps
+        idv = ids[:, :, 0].astype(np.int32) + 256 * ids[:, :, 1].astype(np.int32)
+        dep = np.where(ids[:, :, 3] > 0, dep, np.float32(np.inf))
+        out_i = idv.reshape(rows, H, COLS, W).transpose(0, 2, 1, 3).reshape(rows * COLS, H, W)[:n]
+        out_d = dep.reshape(rows, H, COLS, W).transpose(0, 2, 1, 3).reshape(rows * COLS, H, W)[:n]
+        return out_i, out_d, list(vps)
 
     @staticmethod
     def _px(vp, p):
@@ -245,8 +268,20 @@ class Checks:
                 self._box_c = self.static_boxes[:, :, 3]
                 self._box_rad = 0.5 * np.linalg.norm(self.static_boxes[:, :, :3], axis=(1, 2))
                 self._box_sc = np.linalg.norm(self.static_boxes[:, :, :3], axis=1)
-            for n, pos in enumerate(P):
-                cand = np.nonzero(np.sum((self._box_c - pos) ** 2, 1) < (self._box_rad + r + 0.5) ** 2)[0]
+            if not hasattr(self, "_box_tree"):
+                # small boxes through a KD-tree, the few big ones (floors, walls) brute force
+                from scipy.spatial import cKDTree
+                big = self._box_rad > 6.0
+                self._box_big = np.nonzero(big)[0]
+                self._box_small = np.nonzero(~big)[0]
+                self._box_tree = cKDTree(self._box_c[self._box_small])
+                self._box_rmax = float(self._box_rad[self._box_small].max()) if len(self._box_small) else 0.0
+            thr = (self._box_rad + r + 0.5) ** 2
+            smalls = self._box_tree.query_ball_point(P, self._box_rmax + r + 0.5 + 1e-3)
+            for n, near_c in enumerate(smalls):
+                pos = P[n]
+                near_c = np.sort(np.concatenate([self._box_big, self._box_small[np.asarray(near_c, int)]]))
+                cand = near_c[np.sum((self._box_c[near_c] - pos) ** 2, 1) < thr[near_c]]
                 if len(cand):
                     loc = np.einsum("nij,nj->ni", self.box_inv[cand], pos[None, :] - self._box_c[cand])
                     inside = np.all(np.abs(loc) <= 0.5 + r / np.maximum(self._box_sc[cand], 1e-3), axis=1)
@@ -277,57 +312,114 @@ class Checks:
         return self._ab
 
     # ------------------------------------------------------------------------------------------- the checks
+    def _hits(self, ids, dep, vp, cam, P, own: set) -> np.ndarray:
+        """_hit for many points at once: P (n, 3) -> bool (n,)."""
+        P = np.asarray(P, float)
+        c = np.hstack([P, np.ones((len(P), 1))]) @ vp.T
+        w = c[:, 3]
+        ok = w > 1e-6
+        u = np.where(ok, c[:, 0] / np.where(ok, w, 1), 9)
+        v = np.where(ok, c[:, 1] / np.where(ok, w, 1), 9)
+        ok &= (np.abs(u) <= 1) & (np.abs(v) <= 1)
+        x = np.minimum(W - 1, ((u * 0.5 + 0.5) * W).astype(int).clip(0, W - 1))
+        y = np.minimum(H - 1, ((v * 0.5 + 0.5) * H).astype(int).clip(0, H - 1))
+        i, d = ids[y, x], dep[y, x]
+        dist = np.linalg.norm(P - cam, axis=1)
+        own_m = np.isin(i, list(own)) if own else np.zeros(len(P), bool)
+        return ok & np.isfinite(d) & (d < dist - 0.25) & ~own_m & (i != 0)
+
+    _GRID = {}
+
+    @classmethod
+    def _grid(cls, fov):
+        """The 6x9 sample grid of a shot's own frame inside the widened render (pixel x, y)."""
+        k = round(float(fov), 3)
+        g = cls._GRID.get(k)
+        if g is None:
+            th, thw = math.tan(math.radians(fov) / 2), math.tan(math.radians(min(fov * WIDEN, 150)) / 2)
+            k_ = th / thw
+            iy, ix = np.meshgrid(np.arange(9), np.arange(6), indexing="ij")
+            u = ((ix + 0.5) / 6 * 2 - 1) * k_
+            v = ((iy + 0.5) / 9 * 2 - 1) * k_
+            g = cls._GRID[k] = (np.minimum(W - 1, ((u * 0.5 + 0.5) * W).astype(int)).ravel(),
+                                np.minimum(H - 1, ((v * 0.5 + 0.5) * H).astype(int)).ravel())
+        return g
+
     def camcheck(self, times, cams):
+        """Per time and camera: static parts it sits in, per subject (blocked body points, facing, head self-hit) and
+        the foreground fraction. Vectorised over every camera x subject (the planner sends ~100 candidates)."""
         runs = []
+        HEAD_PTS = np.array([[ix * 0.4, iy * 0.35, -0.6] for iy in (-1, 0, 1) for ix in (-1, 0, 1)])
+        n = len(cams)
+        if not n:
+            return [[] for _ in times]
+        P = np.array([c["pos"] for c in cams], float)
+        pairs = [(j, s, self.names.index(s)) for j, c in enumerate(cams) for s in (c.get("subjects") or []) if s in self.names]
+        gx = np.zeros((n, 54), int)
+        gy = np.zeros((n, 54), int)
+        has_look = np.zeros(n, bool)
+        dist_l = np.zeros(n)
+        subj_m = np.zeros((n, len(self.names) + 1), bool)
+        for j, c in enumerate(cams):
+            gx[j], gy[j] = self._grid(c.get("fov", 40))
+            if c.get("look") is not None:
+                has_look[j] = True
+                dist_l[j] = float(np.linalg.norm(np.asarray(c["look"], float) - P[j]))
+            for s_ in c.get("subjects") or []:
+                if s_ in self.names:
+                    subj_m[j, self.names.index(s_)] = True
+        jj = np.arange(n)[:, None]
         for t in times:
             ids, dep, vps = self._render(t, [(c["pos"], c["look"], c.get("fov", 40)) for c in cams])
-            nears = self.near_batch([c["pos"] for c in cams], cams[0].get("r", 0.6) if cams else 0.6, t)
-            res = []
-            for j, c in enumerate(cams):
-                pos = np.asarray(c["pos"], float)
-                subs = {}
-                for s in c.get("subjects") or []:
-                    if s not in self.names:
-                        continue
-                    ai = self.names.index(s)
-                    own = {100 + 2 * ai, 101 + 2 * ai}
-                    hp, hr = self.part_world(self.actor_index(s, "Head"), t)
-                    tp, tr = self.part_world(self.actor_index(s, "Torso"), t)
-                    nb = 0
-                    for p in (hp, tp + tr @ np.array([0, 0.5, 0]), tp + tr @ np.array([0, -0.8, 0])):
-                        nb += self._hit(ids[j], dep[j], vps[j], pos, p, own)
-                    to = pos - hp
+            VP = np.array(vps)
+            nears = self.near_batch(P, cams[0].get("r", 0.6), t)
+            subs = [dict() for _ in range(n)]
+            if pairs:
+                geo = {}
+                for _j, s, _ai in pairs:
+                    if s not in geo:
+                        hp, hr = self.part_world(self.actor_index(s, "Head"), t)
+                        tp, tr = self.part_world(self.actor_index(s, "Torso"), t)
+                        geo[s] = (hp, hr, np.vstack([[hp, tp + tr @ np.array([0, 0.5, 0]), tp + tr @ np.array([0, -0.8, 0])],
+                                                     hp + HEAD_PTS @ hr.T]))
+                J = np.array([j for j, _s, _a in pairs])
+                AI = np.array([a for _j, _s, a in pairs])
+                Q = np.array([geo[s][2] for _j, s, _a in pairs])                        # (m, 12, 3)
+                c4 = np.einsum("mij,mpj->mpi", VP[J], np.concatenate([Q, np.ones(Q.shape[:2] + (1,))], 2))
+                w = c4[..., 3]
+                ok = w > 1e-6
+                ws = np.where(ok, w, 1.0)
+                u, v = np.where(ok, c4[..., 0] / ws, 9), np.where(ok, c4[..., 1] / ws, 9)
+                ok &= (np.abs(u) <= 1) & (np.abs(v) <= 1)
+                x = ((u * 0.5 + 0.5) * W).astype(int).clip(0, W - 1)
+                y = ((v * 0.5 + 0.5) * H).astype(int).clip(0, H - 1)
+                i_ = ids[J[:, None], y, x]
+                d_ = dep[J[:, None], y, x]
+                dist = np.linalg.norm(Q - P[J][:, None, :], axis=2)
+                base = ok & np.isfinite(d_) & (d_ < dist - 0.25) & (i_ != 0)
+                own_h = (i_ == (101 + 2 * AI)[:, None])
+                own_b = own_h | (i_ == (100 + 2 * AI)[:, None])
+                nb = (base[:, :3] & ~own_b[:, :3]).sum(1)
+                hb = (base[:, 3:] & ~own_h[:, 3:]).sum(1)
+                for k, (j, s, _a) in enumerate(pairs):
+                    hp, hr, _q = geo[s]
+                    to = P[j] - hp
                     face = float((hr @ np.array([0, 0, -1.0])) @ (to / max(np.linalg.norm(to), 1e-6)))
-                    hb = 0
-                    for iy in (-1, 0, 1):
-                        for ix in (-1, 0, 1):
-                            fp = hp + hr @ np.array([ix * 0.4, iy * 0.35, -0.6])
-                            hb += self._hit(ids[j], dep[j], vps[j], pos, fp, {101 + 2 * ai})
-                    subs[s] = {"blocked": int(nb), "face": round(face, 2), "selfhit": round(hb / 9, 2)}
+                    subs[j][s] = {"blocked": int(nb[k]), "face": round(face, 2), "selfhit": round(int(hb[k]) / 9, 2)}
+            d_ = dep[jj, gy, gx]
+            i_ = ids[jj, gy, gx]
+            hits = np.sum(d_ < dist_l[:, None] * 0.55, 1)
+            body_i = np.clip((i_ - 100) // 2, 0, len(self.names))
+            isb = (i_ >= 100) & (i_ < 200) & ~subj_m[jj, body_i] & (d_ < dist_l[:, None] * 0.9)
+            body = isb.sum(1)
+            res = []
+            for j in range(n):
                 fg = 0.0
-                if c.get("look") is not None:
-                    look = np.asarray(c["look"], float)
-                    dist = float(np.linalg.norm(look - pos))
-                    # the shot's own frame inside the widened render: its central 1/WIDEN-ish window, a 6x9 grid
-                    th, thw = math.tan(math.radians(c.get("fov", 40)) / 2), math.tan(math.radians(min(c.get("fov", 40) * WIDEN, 150)) / 2)
-                    k_ = th / thw
-                    hits, n_, body = 0, 0, 0
-                    subj_idx = {self.names.index(s_) for s_ in (c.get("subjects") or []) if s_ in self.names}
-                    for iy in range(9):
-                        for ix in range(6):
-                            u = ((ix + 0.5) / 6 * 2 - 1) * k_
-                            v = ((iy + 0.5) / 9 * 2 - 1) * k_
-                            x = int(min(W - 1, (u * 0.5 + 0.5) * W))
-                            y = int(min(H - 1, (v * 0.5 + 0.5) * H))
-                            n_ += 1
-                            hits += bool(dep[j][y, x] < dist * 0.55)
-                            # a body that isn't one of this shot's subjects, between the camera and them: the critic's
-                            # "blurry plaid block in the foreground" / "an arm fills the frame"
-                            i_ = ids[j][y, x]
-                            if 100 <= i_ < 200 and (i_ - 100) // 2 not in subj_idx and dep[j][y, x] < dist * 0.9:
-                                body += 1
-                    fg = max(hits / n_, min(1.0, 1.6 * max(0.0, body / n_ - 0.15)))   # a hug partner is fine; a body wall isn't
-                res.append({"near": nears[j], "subjects": subs, "fg": round(fg, 3)})
+                if has_look[j]:
+                    # foreground: a wall right in front of the lens, or a body that isn't one of this shot's subjects
+                    # (the critic's "an arm fills the frame"); a hug partner is fine, a body wall isn't
+                    fg = max(hits[j] / 54, min(1.0, 1.6 * max(0.0, body[j] / 54 - 0.15)))
+                res.append({"near": nears[j], "subjects": subs[j], "fg": round(float(fg), 3)})
             runs.append(res)
         return runs
 
