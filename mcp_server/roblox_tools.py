@@ -834,7 +834,7 @@ def _turn(name: str, spec: dict) -> float:
 
 def _cache_key(actor: str, spec: dict, prev: str | None) -> str:
     s = json.dumps({"a": actor, "spec": {k: v for k, v in spec.items() if k != "label"}, "prev": prev,
-                    "v": 3}, sort_keys=True, default=lambda o: np.asarray(o).round(4).tolist())
+                    "v": 4 if _library_beat(spec) else 3}, sort_keys=True, default=lambda o: np.asarray(o).round(4).tolist())
     return hashlib.sha1(s.encode()).hexdigest()[:16]
 
 
@@ -846,6 +846,19 @@ def _beat_cache() -> dict:
 def _save_beat_cache(c: dict) -> None:
     STATE.mkdir(parents=True, exist_ok=True)
     (STATE / "beats.json").write_text(json.dumps(c, indent=0))
+
+
+def _library_beat(spec: dict) -> float | None:
+    """The library length (s) for an in-place single-action beat, or None when it must be generated in its chain
+    (walks, seats, multi-part beats). PROMPTIMATE_MOTION_LIBRARY=0 turns the library off."""
+    if os.environ.get("PROMPTIMATE_MOTION_LIBRARY", "1") == "0":
+        return None
+    if spec.get("path_local") or spec.get("seat_local") or len(spec.get("segments") or []) != 1:
+        return None
+    secs = float(spec["segments"][0][1])
+    if secs > 6.0:
+        return None
+    return max(1.0, round(secs * 2) / 2)
 
 
 def _log_nan(actor, idx, spec, kw, err) -> None:
@@ -877,6 +890,14 @@ def _generate(actor: str, idx: int, spec: dict, prev: str | None) -> tuple[str, 
     if spec.get("in_place"):
         kw["in_place"] = True
     segs = [SRV.MotionSegment(prompt=p, seconds=s) for p, s in spec["segments"]]
+    lib = _library_beat(spec)
+    if lib:
+        # a reusable library clip: from and back to the shared idle pose, no continuation, no heading constraint
+        # (perform's _turn post-pass turns it), duration snapped to 0.5 s. The request is then identical wherever
+        # this action appears (any character, any episode), so the generation cache serves it after the first time.
+        prompt, secs = spec["segments"][0]
+        segs = [SRV.MotionSegment(prompt=prompt, seconds=lib)]
+        kw = {"start_pose": "idle", "end_pose": "idle", **({"in_place": True} if spec.get("in_place") else {})}
     best = None
     n_att = int(os.environ.get("PROMPTIMATE_RBX_ATTEMPTS", MAX_ATTEMPTS))
     if re.search(r"gets? up|stands? up|rises", " ".join(p for p, _ in spec["segments"]).lower()):
@@ -884,7 +905,7 @@ def _generate(actor: str, idx: int, spec: dict, prev: str | None) -> tuple[str, 
     for attempt in range(n_att):
         if True:
             real = _tls_install()
-            if spec.get("face_rel") is not None:
+            if spec.get("face_rel") is not None and not lib:
                 _TLS.override = _HeadingProxy(real, wrap(spec["face_rel"] + g[2]))
             try:
                 for tries in range(4):   # the shared GPU daemon may restart (other jobs, memory pressure): retry

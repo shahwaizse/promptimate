@@ -600,7 +600,8 @@ def _assemble(out_dir: Path, name: str, segs, prompt_text: str, best: dict, resu
         unity = {"pending": True, "note": "running in the background; see get_motion_preview"}
     meta["unity_validation"] = unity
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2))
-    _bg(_export_bg, out_dir)
+    if not os.environ.get("PROMPTIMATE_SKIP_PREVIEW"):     # batch callers read the raw files only: no GLB/BVH
+        _bg(_export_bg, out_dir)
     if unity_check == "background":
         _bg(_unity_bg, out_dir, asset)
     return meta
