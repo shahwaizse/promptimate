@@ -95,6 +95,10 @@ def record_offline(ep, cues, name: str, fps: int = 30, end: float | None = None,
     RR.BACKEND = CK.Checks(ep_dir, names, ep_dir / "frames.npz", fps)
     try:
         shots, notes = RR.plan_shots(sorted(cues, key=lambda c: c.start), perf, (1080, 1920), t_end, image_check=True)
+        import audit as AU
+        shots, an, rep, after = AU.repair(shots, perf, t_end, RR.BACKEND, log=log)
+        notes = list(notes) + an
+        (ep_dir / "camera_audit.json").write_text(json.dumps({"before": rep, "after": after}, default=str, indent=1))
     finally:
         RR.BACKEND = None
     n = int(t_end * fps)

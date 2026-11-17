@@ -212,7 +212,13 @@ class Checks:
         return self.dyn_cache[k]
 
     def _render(self, t, cams):
-        """cams: [(pos, look, fov)] -> (ids (n,H,W) int, depth (n,H,W), vps)"""
+        """cams: [(pos, look, fov)] -> (ids (n,H,W) int, depth (n,H,W), vps). Makes this GL context current first:
+        image QA's portrait renderer is a second standalone context, and once it existed every later id render drew
+        into the wrong context and came back empty (the second framing pass then chose angles blind)."""
+        with self.ctx:
+            return self._render_impl(t, cams)
+
+    def _render_impl(self, t, cams):
         n = len(cams)
         rows = math.ceil(n / COLS)
         size = (COLS * W, rows * H)
@@ -537,8 +543,10 @@ class Checks:
             self._qa_order = self.dyn.get("order", [])
             self._qa_faces = np.load(self._frames)["face"]
         k = self._frame(t)
-        img = self._qa.frame(np.asarray(pos, float), np.asarray(look, float), float(fov),
-                             RD.dyn_draws(self._qa, self.pose[k], self._qa_faces[k], self._qa_order, scale_row=None if self.scale is None else self.scale[k]))
+        with self._qa.ctx:
+            img = self._qa.frame(np.asarray(pos, float), np.asarray(look, float), float(fov),
+                                 RD.dyn_draws(self._qa, self.pose[k], self._qa_faces[k], self._qa_order,
+                                              scale_row=None if self.scale is None else self.scale[k]))
         return Image.frombytes("RGB", (270, 480), img).transpose(Image.FLIP_TOP_BOTTOM)
 
     def camcheck_full(self, t, cam):
