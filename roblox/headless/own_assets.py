@@ -283,22 +283,75 @@ BEARD = [("box", (0, -0.25, -0.5), (1.05, 0.5, 0.25)), ("box", (0.55, -0.05, -0.
          ("box", (-0.55, -0.05, -0.1), (0.12, 0.7, 0.8))]
 
 
+def _flat_normals(p):
+    t = p.reshape(-1, 3, 3)
+    n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+    n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
+    return np.repeat(n, 3, axis=0)
+
+
+def piece_tris(shape, c, s, opt=None):
+    """One primitive piece -> (positions, normals). Shapes: box, ball, spike (box tapered to its top), cyl / cylx /
+    cylz (a cylinder along Y / X / Z), wedge (Roblox wedge: the slope falls from +Z top to -Z bottom).
+    opt: {"R": 3x3 rotation applied after scaling, "taper": top scale for box / cyl (cones, frustums), "seg": sides}."""
+    import hlrender as RD
+    opt = opt or {}
+    s = np.asarray(s, float)
+    taper = opt.get("taper")
+    if shape == "box":
+        p, n = _box_tris((0, 0, 0), s)
+    elif shape == "ball":
+        P_, N_, _ = RD._sphere(opt.get("seg", 14), max(6, opt.get("seg", 14) * 5 // 7))
+        p, n = P_ * s, N_ / np.maximum(s, 1e-6)
+        n = n / np.linalg.norm(n, axis=1, keepdims=True)
+    elif shape == "spike":
+        p, n = _box_tris((0, 0, 0), s)
+        taper = 0.25 if taper is None else taper
+    elif shape in ("cyl", "cylx", "cylz"):
+        P_, N_, _ = RD._cylinder(opt.get("seg", 20), axis=1 if shape == "cyl" else 0)
+        P_, N_ = P_.astype(float), N_.astype(float)
+        if shape == "cylz":
+            P_, N_ = P_[:, [2, 1, 0]], N_[:, [2, 1, 0]]
+        p, n = P_ * s, N_
+    elif shape == "wedge":
+        P_, N_, _ = RD._wedge()
+        p = P_.astype(float) * s
+        n = _flat_normals(p)
+    else:
+        raise ValueError(shape)
+    if taper is not None and taper != 1:
+        ax = {"cylx": 0, "cylz": 2}.get(shape, 1)
+        t = p[:, ax] / max(s[ax], 1e-9) + 0.5           # 0 at the bottom, 1 at the top
+        k = 1 - t * (1 - taper)
+        for j in range(3):
+            if j != ax:
+                p[:, j] *= k
+        n = _flat_normals(p) if shape in ("box", "spike") else n
+        if shape in ("cyl", "cylx", "cylz"):          # tilt the side normals by the cone slope
+            rr = s[[j for j in range(3) if j != ax]].mean() / 2
+            slope = rr * (1 - taper) / max(s[ax], 1e-9)
+            side = np.abs(n[:, ax]) < 0.5
+            n = n.copy()
+            n[side, ax] = slope
+            n /= np.linalg.norm(n, axis=1, keepdims=True)
+    R = opt.get("R")
+    if R is not None:
+        R = np.asarray(R, float)
+        p, n = p @ R.T, n @ R.T
+    return p + np.asarray(c, float), n
+
+
 def build_mesh(key: str, pieces, colors: dict) -> dict:
-    """Pieces [(shape, centre, size[, colour key])] -> a cached mesh (vertex colours baked); returns its info."""
+    """Pieces [(shape, centre, size[, colour key or rgb[, opt]])] -> a cached mesh (vertex colours baked); returns its
+    info. See piece_tris for the shapes and options."""
     P, N, C = [], [], []
     for pc in pieces:
         shape, c, s = pc[:3]
-        col = colors.get(pc[3] if len(pc) > 3 else "main", colors["main"])
-        if shape == "box":
-            p, n = _box_tris(c, s)
-        elif shape == "ball":
-            p, n = _ball_tris(c, s)
-        elif shape == "spike":       # a tapered block: a box squeezed toward its top
-            p, n = _box_tris((0, 0, 0), s)
-            k = 1 - (p[:, 1:2] / s[1] + 0.5) * 0.75
-            p = p * np.hstack([k, np.ones_like(k), k]) + np.asarray(c, float)
+        ck = pc[3] if len(pc) > 3 else "main"
+        col = tuple(ck) if isinstance(ck, (tuple, list)) else colors.get(ck, colors.get("main", (200, 200, 200)))
+        p, n = piece_tris(shape, c, s, pc[4] if len(pc) > 4 else None)
         P.append(p); N.append(n)
-        C.append(np.tile(np.array(list(col) + [255], np.uint8), (len(p), 1)))
+        C.append(np.tile(np.array(list(col)[:3] + [255], np.uint8), (len(p), 1)))
     P, N, C = np.concatenate(P), np.concatenate(N), np.concatenate(C)
     lo, hi = P.min(0), P.max(0)
     faces = np.arange(len(P), dtype=np.uint32).reshape(-1, 3)
@@ -429,7 +482,7 @@ def make_look(name: str) -> dict:
             c = HAIRC.get(ex.split("_")[1], (30, 30, 30))
             add(f"own_beard_{ex.split('_')[1]}", BEARD, {"main": c})
     return {"actor": name, "shirt": "file:" + str(sh_p), "pants": "file:" + str(pa_p), "tee": "", "body": body,
-            "acc": acc, "arms": 0.55, "own": True}
+            "acc": acc, "arms": 0.85, "own": True}   # critic: held half-raised arms read stiff; act with the arms
 
 
 def build(names=None) -> dict:
