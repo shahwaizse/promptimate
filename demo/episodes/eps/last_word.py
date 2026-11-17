@@ -2,7 +2,7 @@
 is played by a second grandpa rig)"""
 TITLE = "In This Town, Your Last Word Before Bed Is What You Wake Up As"
 VOICE, SPEED = "tv_M2", 1.0
-CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
+CAPTIONS = {"size": 120, "highlight": False, "max_words": 2}
 KEYWORDS = ["word", "cheetah", "Grandpa", "Timmy", "turtle", "eightieth", "sixty", "Wednesday", "two"]
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)

@@ -71,7 +71,9 @@ for b0 in range(0, len(combos), 12):
         im = FG.portrait(st, rect, vp, [x + 2.2, 3.6, 509], [x, 2.9, 500], 36).resize((216, 384))
         dr = ImageDraw.Draw(im)
         dr.rectangle((0, 0, 216, 14), fill=(0, 0, 0)); dr.text((3, 1), c["label"][:34], fill=(255, 255, 0))
-        if r.get(str(i + 1), r[i] if isinstance(r, list) else "ok") != "ok":
+        ri = r[i] if isinstance(r, list) else r.get(str(i + 1), "ok")
+        if ri != "ok":
+            print(c["label"], ri)
             dr.text((3, 20), "ERR", fill=(255, 0, 0))
         tiles.append(im)
 cols = 10

@@ -3,7 +3,7 @@ TITLE = "In This World, Sitting Down Costs Money"
 LENGTH = 83.0
 VOICE, SPEED = "tv_M2", 1.0
 KEYWORDS = ["PRESTON", "PRESTON.", "FREE", "FREE.", "MONEY", "TIMMY", "MOM"]
-CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
+CAPTIONS = {"size": 120, "highlight": False, "max_words": 2}
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)
 CAST = [

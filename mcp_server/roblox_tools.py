@@ -388,8 +388,21 @@ for _, name in targetNames do
       names = (function() local t = {} for i, d in keep do if i <= 12 then table.insert(t, d.Name) end end return t end)() }
   end
 end
+-- only parts near the performing characters (sourced sets are big: the whole world overflows the tool output)
+local centres = {}
+for _, n in actorNames do
+  local rig = hums[n]
+  local hrp = rig and rig:FindFirstChild("HumanoidRootPart")
+  if hrp then table.insert(centres, hrp.Position) end
+end
+local function near(p)
+  if #centres == 0 then return true end
+  for _, c in centres do if math.abs(p.X - c.X) < 45 and math.abs(p.Z - c.Z) < 45 then return true end end
+  return false
+end
 for _, d in all do
-  if d:IsA("BasePart") and d.Transparency < 0.95 and not d:IsA("Terrain") and d.Size.Y >= 0.3 and d.Size.X * d.Size.Z < 2500 then
+  if d:IsA("BasePart") and d.Transparency < 0.95 and not d:IsA("Terrain") and d.Size.Y >= 0.3 and d.Size.X * d.Size.Z < 2500
+     and near(d.Position) then
     local inRig = false
     local m = d:FindFirstAncestorOfClass("Model")
     if m and m:FindFirstChildOfClass("Humanoid") then inRig = true end

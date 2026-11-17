@@ -1020,7 +1020,14 @@ function R6:_sample(t: number)
 	end
 	local world = {}
 	world.Torso = src.LowerTorso:Lerp(src.UpperTorso, 0.6)
-	world.Head = src.Head
+	-- the head relative to the torso, damped and capped: a big block head copying a human neck's full tilt reads as a
+	-- broken neck (critic: the king's head ~70 degrees onto his shoulder)
+	local axis, ang = (world.Torso:Inverse() * src.Head):ToAxisAngle()
+	if ang > 1e-4 and axis.Magnitude > 1e-4 then
+		world.Head = world.Torso * CFrame.fromAxisAngle(axis.Unit, math.min(ang * 0.75, math.rad(30)))
+	else
+		world.Head = world.Torso
+	end
 	for n, v in R6LIMBS do
 		local up, lo = src[v[1]], src[v[2]]
 		local d1, d2 = up * Vector3.new(0, -1, 0), lo * Vector3.new(0, -1, 0)

@@ -45,6 +45,277 @@ LOOKS.update({
     "c_grandpa": {"classic": {"skin": SKIN, "shirt": [120, 90, 60], "legs": [60, 60, 70]}, "hairIds": [265133385]},
 })
 
+# catalog clothing per classic look (2D Shirt/Pants templates + hair/hats; picked from popular free-to-wear catalog
+# items and checked on an R6 body: demo/episodes/wardrobe_vet.py). Standard R6 arms: the reference creators use
+# them, and shirt sleeves read cleanly at full width (thin arms squash the sleeve texture).
+WARDROBE = json.loads(r'''{
+"c_timmy": {
+"shirtId": 398635081,
+"pantsId": 129458426,
+"hairIds": [
+1772336109
+]
+},
+"c_mom": {
+"shirtId": 7724798674,
+"pantsId": 4899180116,
+"hairIds": [
+6065692853
+]
+},
+"c_preston": {
+"shirtId": 10323632497,
+"pantsId": 10323666547,
+"hairIds": [
+6682451716
+],
+"faceIds": [
+"4435441139"
+]
+},
+"c_kid": {
+"shirtId": 382538059,
+"pantsId": 129458426,
+"hairIds": [
+376548738
+]
+},
+"c_lady": {
+"shirtId": 140009393008498,
+"pantsId": 6314613214,
+"hairIds": [
+4684968628
+],
+"faceIds": [
+"4197739997"
+]
+},
+"c_man": {
+"shirtId": 118681302097075,
+"pantsId": 129458426,
+"hairIds": [
+5920341268
+]
+},
+"c_worker": {
+"shirtId": 14044679440,
+"pantsId": 5493883498,
+"hairIds": [
+4903929776
+],
+"hatIds": [
+"12907721610"
+]
+},
+"c_butler": {
+"shirtId": 12786197,
+"pantsId": 12786204,
+"hairIds": [
+6682451716
+]
+},
+"c_girl": {
+"shirtId": 103194173084950,
+"pantsId": 85926546050440,
+"hairIds": [
+11913660
+]
+},
+"c_grandpa": {
+"shirtId": 6318210443,
+"pantsId": 6314525488,
+"hairIds": [
+7611004838
+],
+"faceIds": [
+"4531092806",
+"4143016822"
+]
+},
+"c_police": {
+"shirtId": 1090150851,
+"pantsId": 2430769797,
+"hairIds": [
+4875445470
+],
+"hatIds": [
+"15752686682"
+]
+},
+"c_police_f": {
+"shirtId": 6529204400,
+"pantsId": 2430769797,
+"hairIds": [
+376527350
+],
+"hatIds": [
+"15752686682"
+]
+},
+"c_guard": {
+"shirtId": 130909881572749,
+"pantsId": 129459077,
+"hairIds": [
+4482868732
+]
+},
+"c_chef": {
+"shirtId": 6228088109,
+"pantsId": 7141531784,
+"hairIds": [
+4903930464
+],
+"hatIds": [
+"6603386310"
+]
+},
+"c_doctor": {
+"shirtId": 2240854871,
+"pantsId": 129459077,
+"hairIds": [
+4875445470
+]
+},
+"c_nurse": {
+"shirtId": 5993541401,
+"pantsId": 5993540851,
+"hairIds": [
+6065692853
+]
+},
+"c_mailman": {
+"shirtId": 1035337097,
+"pantsId": 1035334148,
+"hairIds": [
+376548738
+],
+"hatIds": [
+"111084870456431"
+]
+},
+"c_king": {
+"shirtId": 102411430195122,
+"pantsId": 10914703582,
+"hairIds": [
+376548738
+],
+"hatIds": [
+"4962613368"
+],
+"faceIds": [
+"158066137"
+]
+},
+"c_teacher": {
+"shirtId": 11490594621,
+"pantsId": 93503639842677,
+"hairIds": [
+4903929776
+]
+},
+"c_nerd": {
+"shirtId": 101480094562057,
+"pantsId": 5775263215,
+"hairIds": [
+4903930464
+],
+"faceIds": [
+"11884330"
+]
+},
+"c_prisoner": {
+"shirtId": 9397038839,
+"pantsId": 9397046880,
+"hairIds": [
+4482868732
+]
+},
+"c_mayor": {
+"shirtId": 722943014,
+"pantsId": 722943216,
+"hairIds": [
+5163620561
+],
+"faceIds": [
+"4435441139"
+]
+},
+"c_teen": {
+"shirtId": 382538295,
+"pantsId": 382537569,
+"hairIds": [
+6823338112
+]
+},
+"c_grandma": {
+"shirtId": 5856191589,
+"pantsId": 6349178346,
+"hairIds": [
+134988931540034
+],
+"faceIds": [
+"4197739997"
+]
+},
+"c_businessman": {
+"shirtId": 12142438478,
+"pantsId": 128408651512576,
+"hairIds": [
+12299883619
+]
+},
+"c_rich": {
+"shirtId": 6553199,
+"pantsId": 10323666547,
+"hairIds": [
+4906657416
+],
+"faceIds": [
+"4435441139"
+]
+},
+"c_punk": {
+"shirtId": 106490033362940,
+"pantsId": 15901064855,
+"hairIds": [
+20573103
+]
+},
+"c_boy2": {
+"shirtId": 382537085,
+"pantsId": 382538503,
+"hairIds": [
+6823411442
+]
+},
+"c_girl2": {
+"shirtId": 398634295,
+"pantsId": 398634487,
+"hairIds": [
+6849134538
+]
+},
+"c_dad2": {
+"shirtId": 134676844684876,
+"pantsId": 93503639842677,
+"hairIds": [
+4903930464
+]
+},
+"c_pajamas": {
+"shirtId": 134059288596544,
+"pantsId": 107286959512889,
+"hairIds": [
+6823338112
+]
+}
+}''')
+for _k, _v in WARDROBE.items():
+    _base = dict(LOOKS.get(_k, {"classic": {"skin": SKIN, "shirt": [200, 200, 200], "legs": [60, 60, 70]}}))
+    _base.update(_v)
+    _base["armWidth"] = 1.0
+    LOOKS[_k] = _base
+
 ENSURE = r'''
 local Players = game:GetService("Players"); local AssetService = game:GetService("AssetService")
 local MS = game:GetService("MarketplaceService"); local SS = game:GetService("ServerStorage")

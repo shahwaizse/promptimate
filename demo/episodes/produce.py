@@ -191,7 +191,8 @@ def _ass_time(t: float) -> str:
     return f"{int(h)}:{int(m):02d}:{s:05.2f}"
 
 
-def captions(lines: list[dict], out: Path, size=(1080, 1920), titles=(), highlight=True, max_words=3) -> Path:
+def captions(lines: list[dict], out: Path, size=(1080, 1920), titles=(), highlight=True, max_words=3,
+             labels=()) -> Path:
     """TikTok-style captions: 1-3 word chunks timed across each narration clip (proportional to characters), big
     white text with a black outline, the current word in yellow."""
     W, H = size
@@ -204,6 +205,7 @@ WrapStyle: 0
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Cap,Montserrat ExtraBold,{int(getattr(captions, "size", 84))},&H00FFFFFF,&H00FFFFFF,&H00101010,&H78000000,0,0,0,0,100,100,0,0,1,{max(5, int(getattr(captions, "size", 84) * 0.09))},3,{8 if getattr(captions, "pos", "low") == "top" else 2},90,90,{int(H * (0.17 if getattr(captions, "pos", "low") == "top" else 0.30))},1
+Style: Label,Montserrat Black,118,&H0030C8FF,&H0030C8FF,&H00101010,&H78000000,0,0,0,0,100,100,2,0,1,9,5,8,60,60,{int(H * 0.19)},1
 Style: Title,Montserrat Black,104,&H00FFFFFF,&H00FFFFFF,&H00101010,&H78000000,0,0,0,0,100,100,1,0,1,8,4,8,60,60,{int(H * 0.08)},1
 
 [Events]
@@ -261,6 +263,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                                for j in ch)
                 pop = "{\\fscx108\\fscy108\\t(0,90,\\fscx100\\fscy100)}" if i == ch[0] else ""
                 ev.append(f"Dialogue: 0,{_ass_time(starts[i])},{_ass_time(ends[i] if i != ch[-1] else chunk_end)},Cap,,0,0,0,,{pop}{txt}")
+    for t0, t1, text in labels:      # the story's numbers/verdicts ("11 MINUTES"): big gold, popping in
+        ev.append(f"Dialogue: 2,{_ass_time(t0)},{_ass_time(t1)},Label,,0,0,0,,"
+                  r"{\fad(60,150)\fscx40\fscy40\t(0,140,\fscx112\fscy112)\t(140,240,\fscx100\fscy100)}" + text)
     for t0, t1, text in titles:
         ev.append(f"Dialogue: 1,{_ass_time(t0)},{_ass_time(t1)},Title,,0,0,0,,{{\\fad(120,120)}}{text}")
     out.write_text(head + "\n".join(ev) + "\n", encoding="utf-8")
@@ -345,7 +350,8 @@ def annotate(ep):
     perf["props"] = props
     perf["fx"] = [{"actor": f["actor"], "kind": f["kind"], "text": f.get("text"),
                    "show": [[float(sp[0]), float(sp[1])] + ([str(sp[2])] if len(sp) > 2 else []) for sp in f["show"]]}
-                  for f in fx if f.get("actor") in perf.get("actors", {})]
+                  for f in fx if f.get("actor") in perf.get("actors", {}) and f.get("kind") != "label"]
+    # (labels are drawn as screen overlays by captions(): over heads they were cut off by close-ups)
     src = "return " + long_str(json.dumps(perf, separators=(",", ":")))
     st.luau('local m = game:GetService("ReplicatedStorage").Promptimate.Performance; m.Source = ' + long_str(src) + '; return 1')
 
@@ -471,14 +477,21 @@ def _main():
             log("   cam!", w)
         for w in info.get("image_qa", []):
             log("   qa:", w)
+        last = None
         while True:
             time.sleep(3)
             st = json.loads(RR.record([], job=info["job"])[0])
+            if st.get("state") != last:      # where record time goes: lock wait, live pass, filling skipped frames
+                last = st.get("state")
+                log("   record:", last, {k: st[k] for k in ("done", "total", "live", "live_error") if k in st})
             if st.get("state") in ("done", "failed", "cancelled"):
+                log("   record done:", {k: st[k] for k in ("render_s", "mode", "live", "live_frames", "live_error", "fast_error") if k in st})
                 break
         if st["state"] != "done":
             raise SystemExit(f"record {st}")
         (out / "silent.mp4").write_bytes(Path(st["mp4"]).read_bytes())
+        # the PNG frames are 3-11 GB per episode and nothing reads them after the encode (a full disk killed a record)
+        shutil.rmtree(RR.STATE / "record" / a.episode / "frames_final", ignore_errors=True)
         T["record"] = time.time() - t
         log(f"record {T['record']:.0f}s")
     if "audio" in todo:
@@ -491,12 +504,14 @@ def _main():
         captions.keywords = getattr(ep, "KEYWORDS", ())
         captions.pos = cap.get("pos", "low")      # below the faces (~65% down); at the top they sat on hats
         ass = captions(placed, out / "captions.ass", titles=getattr(ep, "TITLES", []), highlight=cap.get("highlight", True),
-                       max_words=cap.get("max_words", 3))
+                       max_words=cap.get("max_words", 3),
+                       labels=[(float(sp[0]), float(sp[1]), str(sp[2]) if len(sp) > 2 else str(f.get("text") or ""))
+                               for f in getattr(ep, "FX", []) if f.get("kind") == "label" for sp in f["show"]])
         final = out / f"{a.episode}{a.suffix}.mp4"
         fonts = str(BUILD / "_media" / "fonts").replace("\\", "/").replace(":", "\\:")   # Montserrat (OFL, not in git)
         assp = str(ass).replace("\\", "/").replace(":", "\\:")
         run([FF, "-y", "-loglevel", "error", "-i", str(silent), "-i", str(wav), "-filter_complex",
-             f"[0:v]vignette=angle=PI/5,noise=alls=4:allf=t,ass='{assp}':fontsdir='{fonts}'[v]", "-map", "[v]", "-map", "1:a", *RR._venc(), "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(final)])
+             f"[0:v]ass='{assp}':fontsdir='{fonts}'[v]", "-map", "[v]", "-map", "1:a", *RR._venc(), "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(final)])
         (out / "credits.txt").write_text("\n".join([getattr(ep, "TITLE", a.episode), "", *credits,
                                                     "Narration: Kokoro TTS (Apache-2.0)"]) + "\n", encoding="utf-8")
         T["audio"] = time.time() - t

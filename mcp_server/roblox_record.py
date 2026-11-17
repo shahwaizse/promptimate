@@ -59,6 +59,9 @@ class CameraCue(BaseModel):
     angle: float = Field(25.0, description="With subject: degrees around it, 0 = straight in front of its face, "
                                            "+ = toward its left, 180 = from behind")
     with_: str | None = Field(None, alias="with", description="With subject: a second character for a two-shot")
+    prop: str | None = Field(None, description="Insert shot of an object (no pos/look needed): a model under "
+                                               "workspace.Sets (e.g. an EpisodeProps name), framed from its real "
+                                               "bounding box; angle = degrees around its front, shot close|medium|wide")
     cover: bool = Field(True, description="With subject: a long shot (> ~2.4 s) is cut into ~1.5 s coverage shots "
                                           "(close / medium / other angle; two-shots alternate with singles)")
     push: float = Field(0.12, description="Slow push-in over the shot: field of view narrows by this fraction by its "
@@ -180,6 +183,143 @@ def cover(cues, t_end: float, target: float | None = None):
 cover.cut_times = None
 
 
+PROP_LUAU = r'''
+local out = {}
+local sets = workspace:FindFirstChild("Sets")
+for _, q in game:GetService("HttpService"):JSONDecode(__Q__) do
+  local m = sets and (sets:FindFirstChild("EpisodeProps") and sets.EpisodeProps:FindFirstChild(q[1]) or sets:FindFirstChild(q[1], true))
+  if m and m:IsA("Model") then
+    _G.PromptimateDirector.seek(q[2])
+    local cf, s = m:GetBoundingBox()
+    if cf.Y < -500 then cf = cf + Vector3.new(0, 2000, 0) end     -- parked (hidden) at this instant: frame its home
+    local lv = m:GetPivot().LookVector
+    -- per 30-degree side: how many of 3 sight lines (centre, top, middle-low) from the camera spot reach the
+    -- object unblocked (people, furniture, walls), and the camera spot itself must not be inside anything
+    local fill, fov = q[3], math.rad(40)
+    local size = math.max(s.Y, 0.6 * math.max(s.X, s.Z), 0.5)
+    local dist = math.max(1.6, size / fill / (2 * math.tan(fov / 2)))
+    local rp = RaycastParams.new(); rp.FilterType = Enum.RaycastFilterType.Exclude; rp.FilterDescendantsInstances = { m }
+    local open = {}
+    for k = 0, 11 do
+      local a = math.rad(k * 30)
+      local d = Vector3.new(lv.X * math.cos(a) + lv.Z * math.sin(a), 0, lv.Z * math.cos(a) - lv.X * math.sin(a))
+      local cam = cf.Position + d * dist + Vector3.new(0, math.max(0.18 * dist, s.Y * 0.3), 0)
+      local clear = 0
+      for _, off in { Vector3.zero, Vector3.new(0, s.Y * 0.4, 0), Vector3.new(0, -s.Y * 0.25, 0) } do
+        local to = cf.Position + off
+        if workspace:Raycast(cam, to - cam, rp) == nil then clear += 1 end
+      end
+      if #workspace:GetPartBoundsInRadius(cam, 0.4) > 0 then clear = 0 end
+      open[k + 1] = clear
+    end
+    table.insert(out, { cf.X, cf.Y, cf.Z, s.X, s.Y, s.Z, lv.X, lv.Z, open })
+  else
+    table.insert(out, false)
+  end
+end
+return game:GetService("HttpService"):JSONEncode(out)'''
+
+EXPLICIT_LUAU = r"""
+local D = _G.PromptimateDirector
+local out = {}
+for _, q in game:GetService("HttpService"):JSONDecode(__Q__) do
+  D.seek(q[1])
+  local pos, look, fov = Vector3.new(q[2], q[3], q[4]), Vector3.new(q[5], q[6], q[7]), q[8]
+  local function facing(p)
+    local f = (look - p).Unit
+    local sum, n = 0, 0
+    for _, a in D.actors do
+      local tg = a._player and a._player.targets
+      local h = tg and tg.Head
+      if h then
+        local to = h.Position - p
+        if to.Magnitude < 45 and to.Unit:Dot(f) > math.cos(math.rad(fov * 0.45)) then
+          -- the nearest (biggest in frame) character counts most: a back filling the foreground ruins the shot even
+          -- when the people behind it face the camera
+          local w = 1 / math.max(to.Magnitude, 3) ^ 2
+          sum += w * h.LookVector:Dot(-to.Unit); n += w
+        end
+      end
+    end
+    return n > 0 and sum / n or nil, n > 0 and 1 or 0
+  end
+  local base, n = facing(pos)
+  local best = false
+  if base and base < 0.25 then        -- backs or profiles: look for a side with faces
+    local rp = RaycastParams.new(); rp.FilterType = Enum.RaycastFilterType.Exclude
+    local ex = {}
+    for _, a in D.actors do table.insert(ex, a.rig) end
+    rp.FilterDescendantsInstances = ex
+    local off = pos - look
+    local bestv = base + 0.3          -- only move for a clear gain
+    for _, deg in { 180, 150, -150, 120, -120, 90, -90 } do
+      local p = look + CFrame.Angles(0, math.rad(deg), 0) * off
+      local v, m = facing(p)
+      local hit = workspace:Raycast(p, (look - p) * 0.9, rp)
+      if v and m >= n and v > bestv and not hit and #workspace:GetPartBoundsInRadius(p, 0.5) == 0 then
+        bestv = v; best = { p.X, p.Y, p.Z, deg, v }
+      end
+    end
+  end
+  table.insert(out, best)
+end
+return game:GetService("HttpService"):JSONEncode(out)"""
+
+
+def turn_explicit(cues, t_end: float):
+    """Writer-placed shots (pos/look, no subject) that see mostly backs of heads swing around their aim point to the
+    side the characters face, when that spot is free and sees the aim point (critic: establishing shots from behind)."""
+    todo = [(i, c) for i, c in enumerate(cues) if c.pos and c.look and not c.subject and not c.track and not c.prop]
+    if not todo:
+        return cues, []
+    q = []
+    for i, c in todo:
+        b = cues[i + 1].start if i + 1 < len(cues) else t_end
+        q.append([(c.start + b) / 2, *c.pos, *c.look, c.fov])
+    res = studio().luau_json(EXPLICIT_LUAU.replace("__Q__", long_str(json.dumps(q))))
+    out, notes = list(cues), []
+    for (i, c), r in zip(todo, res):
+        if r:
+            out[i] = c.model_copy(update={"pos": [round(v, 3) for v in r[:3]]})
+            notes.append(f"{c.name or c.start}: turned {r[3]} deg toward the faces ({r[4]:.2f})")
+    return out, notes
+
+
+def frame_props(cues, t_end: float):
+    """Insert shots (cue.prop): camera from the object's real bounding box, on an open side near the asked angle,
+    at a distance that fills ~55% of the frame height (close) / 35% (medium) / 18% (wide)."""
+    todo = [(i, c) for i, c in enumerate(cues) if c.prop and not c.pos]
+    if not todo:
+        return cues
+    q = []
+    for i, c in todo:
+        b = cues[i + 1].start if i + 1 < len(cues) else t_end
+        q.append([c.prop, (c.start + b) / 2, {"close": 0.55, "medium": 0.35, "wide": 0.18}.get(c.shot, 0.4)])
+    boxes = studio().luau_json(PROP_LUAU.replace("__Q__", long_str(json.dumps(q))))
+    out = list(cues)
+    for (i, c), bx in zip(todo, boxes):
+        if not bx:
+            continue
+        cx, cy, cz, sx, sy, sz, lx, lz, open_ = bx
+        fill = {"close": 0.55, "medium": 0.35, "wide": 0.18}.get(c.shot, 0.4)
+        fov = 40.0
+        size = max(sy, 0.6 * max(sx, sz), 0.5)
+        dist = max(1.6, size / fill / (2 * math.tan(math.radians(fov / 2))))
+        ln = math.hypot(lx, lz) or 1.0
+        lx, lz = lx / ln, lz / ln
+        want = c.angle
+        # nearest open 30-degree step to the asked angle
+        steps = sorted(range(12), key=lambda k: abs(((k * 30 - want + 180) % 360) - 180))
+        best_clear = max(open_)
+        k = next(k for k in steps if open_[k] == best_clear)      # the clearest side nearest the asked angle
+        a = math.radians(k * 30)
+        dx, dz = lx * math.cos(a) + lz * math.sin(a), lz * math.cos(a) - lx * math.sin(a)
+        pos = [cx + dx * dist, cy + max(0.18 * dist, sy * 0.3), cz + dz * dist]      # a slight look down
+        out[i] = c.model_copy(update={"pos": [round(v, 3) for v in pos], "look": [cx, cy, cz], "fov": fov,
+                                      "subjects": c.subjects if c.subjects is not None else []})
+    return out
+
+
 def frame_subjects(cues, t_end: float):
     """Cues with a subject get pos/look from the subject's real pose at the shot start (+0.4 s); when the camera would
     sit inside something or the subject is blocked, nearby angles are tried and the clearest one is used."""
@@ -217,8 +357,8 @@ def frame_subjects(cues, t_end: float):
             cams.append({"pos": pos, "look": look, "fov": fov, "subjects": [c.subject] + ([c.with_] if c.with_ else []),
                          "r": 0.6, "lean": True})
         b = cues[i + 1].start if i + 1 < len(cues) else t_end
-        times = sorted({round(min(c.start + 0.4, (c.start + b) / 2), 2), round((c.start + b) / 2, 2),
-                        round(max(b - 0.4, (c.start + b) / 2), 2)})
+        # five instants across the shot: a head that turns away for half a second is still a back-of-head shot
+        times = sorted({round(c.start + (b - c.start) * f, 2) for f in (0.08, 0.3, 0.5, 0.7, 0.92)})
         runs = studio().luau_json(
             "local H = game:GetService('HttpService'); local D = _G.PromptimateDirector\n"
             f"local cams = H:JSONDecode({long_str(json.dumps(cams))}); local out = {{}}\n"
@@ -229,17 +369,20 @@ def frame_subjects(cues, t_end: float):
         ranked = []
         for j in range(len(cams)):
             score = 0.0
+            worst = {}           # per subject: the least-visible face over the shot (penalised in full, not averaged)
             for run in runs:     # the shot is judged over its length, not one instant (arms move)
                 r = run[j]
                 near = list(r.get("near") or [])      # inside anything, the subject's own hat included
                 subs = r.get("subjects") if isinstance(r.get("subjects"), dict) else {}
                 blocked = sum(v.get("blocked", 0) for v in subs.values())
                 score += (len(near) * 10 + blocked * 3 + r.get("fg", 0) * 25) / len(runs)
-                for v in subs.values():
+                for sk, v in subs.items():
                     f = v.get("face", 1.0)
-                    hook = 2.0 if c.start < 2.0 else 1.0      # the opening shot must show a face: it decides the swipe
-                    score += hook * (14 if f < 0 else 6 if f < 0.35 else 1.5 if f < 0.6 else 0) / len(runs)   # critic: 12% back-of-head frames
+                    worst[sk] = min(worst.get(sk, 1.0), f)
                     score += float(v.get("selfhit") or 0) * 10 / len(runs)                # face covered (arms, props)
+            hook = 2.0 if c.start < 2.0 else 1.0      # the opening shot must show a face: it decides the swipe
+            for f in worst.values():                  # critics: 6-12 back-of-head frames per video
+                score += hook * (14 if f < 0 else 6 if f < 0.35 else 1.5 if f < 0.6 else 0)
             pos = cams[j]["pos"]
             look = cams[j]["look"]
             horiz = math.hypot(pos[0] - look[0], pos[2] - look[2]) or 1e-3
@@ -446,7 +589,12 @@ def _viewport() -> tuple[int, int]:
 def _ensure_running():
     studio().luau('local RS = game:GetService("RunService"); if not RS:IsRunning() then RS:Run() end; '
                   'local D = require(game:GetService("ReplicatedStorage").Promptimate.ShortDirector:Clone()); '
-                  '_G.PromptimateDirector = D; D.load(); return 1')
+                  '_G.PromptimateDirector = D; D.load(); '
+                  # props parked at y=-2000 until their scene never got their meshes streamed in a fresh Studio
+                  # (tiny_court: the bird and backpack close-ups recorded as empty grass): load them all up front
+                  'local ep = workspace:FindFirstChild("Sets") and workspace.Sets:FindFirstChild("EpisodeProps"); '
+                  'if ep then pcall(function() game:GetService("ContentProvider"):PreloadAsync(ep:GetDescendants()) end) end; '
+                  'return 1')
 
 
 def frame(cues, perf, t, size, vp, draft, cid, state):
@@ -529,6 +677,25 @@ def image_qa(cues, perf, size, t_end):
             out[i] = c.model_copy(update={"pos": [round(v, 3) for v in pos2], "look": [round(v, 3) for v in look2],
                                           "fov": fov2})
         notes.append(f"{c.name or c.start}: bad {sc:.2f} (flat {bl:.2f}) -> {best[0]:.2f}")
+    # explicit-position shots (establishing views, prop inserts) are written blind: a flat picture there (camera in a
+    # wall) becomes a full shot of the character nearest to where it was looking
+    for i, c in enumerate(out):
+        if not c.pos or c.subject or c.track:
+            continue
+        b = out[i + 1].start if i + 1 < len(out) else t_end
+        t = (c.start + b) / 2
+        _k, _c, pos, look, fov = camera(out, perf, t)
+        im = FG.portrait(studio(), rect, vp, list(pos), list(look), fov, seek_t=t, out=(270, 480))
+        bl = _blank(im)
+        if bl <= BLANK_MAX:
+            continue
+        hips = json.loads(studio().luau(f"return _G.PromptimateDirector.hips({t:.3f})"))
+        if not hips:
+            continue
+        lk = c.look or c.pos
+        name = min(hips, key=lambda n: (hips[n][0] - lk[0]) ** 2 + (hips[n][2] - lk[2]) ** 2)
+        out[i] = c.model_copy(update={"pos": None, "look": None, "subject": name, "shot": "full", "angle": 20.0})
+        notes.append(f"{c.name or c.start}: flat {bl:.2f} (camera in a wall?) -> full shot of {name}")
     studio().luau(FG.RESTORE_NAMES)
     return out, notes
 
@@ -687,35 +854,41 @@ def _render_job_locked(job: dict, cues, perf, size, fps, t0, t1, draft):
         if fast and os.environ.get("PROMPTIMATE_RBX_REALTIME", "1") != "0":
             # live pass first: Studio plays the performance, every frame it shows is captured; the loop below then
             # only fills the frames it skipped
-            missing = [i for i in range(n0, n1 + 1) if not (out_dir / f"f{i - n0:05d}.png").exists()]
-            if len(missing) > fps * 3:
-                try:
-                    import realtime as RTL
-                    from PIL import Image as _Im
-                    FG = fast["FG"]
-                    cams = {}
-                    for i in missing:
-                        _k, _c, pos, look, fov = camera(cues, perf, i / fps)
-                        cams[i] = [*map(float, pos), *map(float, look), FG.roblox_fov(fov, vp, tuple(size))]
-                    job["state"] = "rendering (live pass)"
-                    live_pending = []
+            live_total = 0
+            for live_pass in range(int(os.environ.get("PROMPTIMATE_RBX_LIVE_PASSES", "2"))):
+              # each live pass catches ~80% of the frames still missing; the slow per-frame fill (~0.6 s a frame) only
+              # gets the rest
+              missing = [i for i in range(n0, n1 + 1) if not (out_dir / f"f{i - n0:05d}.png").exists()]
+              if len(missing) <= fps * 3:
+                break
+              if True:
+                  try:
+                      import realtime as RTL
+                      from PIL import Image as _Im
+                      FG = fast["FG"]
+                      cams = {}
+                      for i in missing:
+                          _k, _c, pos, look, fov = camera(cues, perf, i / fps)
+                          cams[i] = [*map(float, pos), *map(float, look), FG.roblox_fov(fov, vp, tuple(size))]
+                      job["state"] = "rendering (live pass)"
+                      live_pending = []
 
-                    def on_frame(k, img):
-                        def w(k=k, img=img):
-                            FG.finish(_Im.fromarray(img[:, :, 2::-1]), vp, tuple(size)).save(
-                                out_dir / f"f{k - n0:05d}.png", compress_level=1)
-                        live_pending.append(pool.submit(w))
-                        job["done"] = len(live_pending)
-                    lo, hi = min(missing), max(missing)
-                    got = RTL.record(studio(), fast["rect"], cams, lo, hi, fps, on_frame,
-                                     speed=float(os.environ.get("PROMPTIMATE_RBX_RT_SPEED", "0.6")),
-                                     log=lambda m: job.__setitem__("live", m))
-                    for f in live_pending:
-                        f.result()
-                    job["live_frames"] = len(got)
-                    job["state"] = "rendering (filling skipped frames)"
-                except Exception as e:
-                    job["live_error"] = f"{type(e).__name__}: {e}"[:300]
+                      def on_frame(k, img):
+                          def w(k=k, img=img):
+                              FG.finish(_Im.fromarray(img[:, :, 2::-1]), vp, tuple(size)).save(
+                                  out_dir / f"f{k - n0:05d}.png", compress_level=1)
+                          live_pending.append(pool.submit(w))
+                          job["done"] = len(live_pending)
+                      lo, hi = min(missing), max(missing)
+                      got = RTL.record(studio(), fast["rect"], cams, lo, hi, fps, on_frame,
+                                       speed=float(os.environ.get("PROMPTIMATE_RBX_RT_SPEED", "0.6")),
+                                       log=lambda m: job.__setitem__("live", m))
+                      for f in live_pending:
+                          f.result()
+                      job["live_frames"] = len(got)
+                      job["state"] = "rendering (filling skipped frames)"
+                  except Exception as e:
+                      job["live_error"] = f"{type(e).__name__}: {e}"[:300]
             if any(out_dir.glob("f*.png")) and enc:
                 enc.stdin.close(); enc.wait(); enc = None       # frames on disk now: encode from PNGs at the end
         for i in range(n0, n1 + 1):
@@ -806,13 +979,18 @@ def record(shots: list[CameraCue], start: float = 0.0, end: float | None = None,
     _ensure_running()
     if os.environ.get("PROMPTIMATE_RBX_COVER", "1") != "0":
         shots = cover(shots, t_end)
+    shots = frame_props(shots, t_end)
+    shots, turn_notes = turn_explicit(shots, t_end)
     shots = frame_subjects(shots, t_end)
-    qa_notes = []
+    qa_notes = list(turn_notes)
     if os.environ.get("PROMPTIMATE_RBX_IMAGE_QA", "1") != "0":
         try:
-            shots, qa_notes = image_qa(shots, perf, size, t_end)
+            shots, qn = image_qa(shots, perf, size, t_end)
+            qa_notes += qn
+            if any(c.subject and not c.pos and not c.track for c in shots):
+                shots = frame_subjects(shots, t_end)     # shots image QA turned into subject shots
         except Exception as e:
-            qa_notes = [f"image QA skipped: {e}"[:200]]
+            qa_notes += [f"image QA skipped: {e}"[:200]]
     warns, _ = check_cameras(shots, perf, size, t_end)
     out = {"shots": len(shots), "seconds": round(t_end - start, 2)}
     if qa_notes:

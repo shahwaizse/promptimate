@@ -1,7 +1,7 @@
 """In this world, if you laugh at someone, you owe them a dollar. (craftee-style story episode, narration-paced)"""
 TITLE = "In This World, Laughing At Someone Costs A Dollar"
 VOICE, SPEED = "tv_M2", 1.0
-CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
+CAPTIONS = {"size": 120, "highlight": False, "max_words": 2}
 KEYWORDS = ["laugh", "dollar", "Timmy", "Preston", "Leo", "bakery", "free", "clown"]
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)

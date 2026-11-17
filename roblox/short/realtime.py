@@ -151,8 +151,10 @@ def record(st, rect, cams: dict[int, list[float]], n0: int, n1: int, fps: int, o
     worker: the capture loop must keep up). Returns the set of frame indices captured. cams[k] =
     [px,py,pz,lx,ly,lz,roblox_fov]."""
     import dxcam
-    idx, ml, mt, _ = _monitor_of(rect)
-    region = (rect[0] - ml, rect[1] - mt, rect[2] - ml, rect[3] - mt)
+    idx, ml, mt, (mw, mh) = _monitor_of(rect)
+    # the viewport may run past the monitor edge (wide recording layout): grab only its on-screen part; the portrait
+    # crop and the frame marker both sit inside it
+    region = (max(rect[0] - ml, 0), max(rect[1] - mt, 0), min(rect[2] - ml, mw), min(rect[3] - mt, mh))
     st.luau(_sub(SETUP, N=BITS, SQ=SQ, X0=X0, Y0=Y0, STEP=STEP))
     ks = list(range(n0, n1 + 1))
     for i in range(0, len(ks), 250):

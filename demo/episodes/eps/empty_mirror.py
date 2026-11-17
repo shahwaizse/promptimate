@@ -2,7 +2,7 @@
 mirror: characters looking into one face the camera)"""
 TITLE = "In This Town, Mirrors Show You In 10 Years. Mine Is Empty."
 VOICE, SPEED = "tv_M2", 1.0
-CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
+CAPTIONS = {"size": 120, "highlight": False, "max_words": 2}
 KEYWORDS = ["mirror", "empty", "ten", "Ghost", "Timmy", "Mom", "Preston", "apron", "hairnet"]
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)

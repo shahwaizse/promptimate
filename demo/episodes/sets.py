@@ -129,6 +129,13 @@ for i, p in L do
     m:PivotTo(CFrame.new(p.at[1], y, p.at[2]) * CFrame.Angles(math.rad(p.tilt or 0), math.rad(p.yaw or 0), 0))
     m.Parent = f
     m:SetAttribute("PromptimateHome", nil)
+    -- sign/board text: the story's words (p.text), never the asset's placeholder ("your text here")
+    for _, d in m:GetDescendants() do
+      if d:IsA("TextLabel") or d:IsA("TextBox") or d:IsA("TextButton") then
+        if p.text then d.Text = p.text; d.TextScaled = true
+        elseif string.find(string.lower(d.Text), "text") then d.Text = "" end
+      end
+    end
     table.insert(out, m.Name)
   end
 end
