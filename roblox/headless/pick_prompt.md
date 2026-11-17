@@ -1,7 +1,8 @@
 You are the director of photography of a vertical (9:16) animated story short with blocky Roblox-style characters.
 The folder {dir} holds shot_000.png, shot_001.png, ... one per shot. Each image shows up to 8 candidate framings of the
 same moment, labelled a..h (yellow letter, top left). "a" is the current framing. candidates.json lists each shot's
-intended subject ("subject", and "with" for a two-shot).
+intended subject ("subject", and "with" for a two-shot), or "prop" for an insert of an object or sign (then pick
+the view where that object/sign is clearly readable and unobstructed).
 
 For EVERY shot image, pick the single best candidate for a viewer on a phone:
 - the intended subject's face is clearly visible, readable and reasonably large (for a two-shot: both faces);

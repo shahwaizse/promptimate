@@ -116,7 +116,7 @@ def composition(ck, ids, pos, look, fov, subject):
     rows = np.nonzero((idw == 101 + 2 * ai).any(1))[0]
     if len(rows):                                   # head centre, 0 = bottom of frame, 1 = top (GL rows grow upward)
         hv = float(rows.mean()) / max(idw.shape[0] - 1, 1)
-        cost += max(0.0, 0.55 - hv) * 6 + max(0.0, hv - 0.9) * 6
+        cost += max(0.0, 0.55 - hv) * 6 + max(0.0, hv - 0.78) * 14     # judges: "heads cropped at the top edge"
     return cost
 
 

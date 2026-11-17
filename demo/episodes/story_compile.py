@@ -63,7 +63,7 @@ ACTIONS = {
     "flex": ("a person flexes both arms proudly", 1.5),
     "clap": ("a person claps their hands excitedly", 2.0),
     "thumbs": ("a person gives a thumbs up with their right hand", 2.0),
-    "spread": ("a person spreads both arms wide proudly", 2.0),
+    "spread": ("a person raises both fists high in the air in triumph", 2.0),     # "arms wide" read as a T-pose
     "hips": ("a person stands with their hands on their hips, unimpressed", 3.0),
     "frustrated": ("a person throws both arms up in frustration", 2.0),
     "spin": ("a person turns around in a full circle, showing off", 2.5),
@@ -520,10 +520,15 @@ def compile_story(spec, slug: str) -> str:
                     cue.update({"shot": "close" if big else ["full", "close", "full"][k_cam % 3],
                                 "angle": [0, 20, -15, 10][k_cam % 4]})
                 cams.append(cue)
-            for ch in ln.get("do", {}):
-                if ch in here and ch not in introduced:
-                    introduced.add(ch)
-                    events.append({"kind": "tag", "actor": here[ch], "text": ch, "at": f"@{lid}+0.2", "until": f"@{lid}+2.8"})
+            # one introduction tag per line at most, none on the hook (judges: overlapping name tags clutter the opening)
+            if line_ids[0] != lid:
+                for ch in ln.get("do", {}):
+                    if ch in here and ch not in introduced:
+                        introduced.add(ch)
+                        events.append({"kind": "tag", "actor": here[ch], "text": ch, "at": f"@{lid}+0.2", "until": f"@{lid}+2.6"})
+                        break
+            else:
+                introduced.update(ch for ch in ln.get("do", {}))
             acted = {}
             # actions, chained from the line's start; drop what can't fit before the line is over
             for ch, acts in ln.get("do", {}).items():

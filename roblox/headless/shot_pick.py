@@ -51,7 +51,50 @@ def candidates(ep: str, n_pick: int = 8) -> dict:
     table = {}
     for i, c in enumerate(shots):
         b = shots[i + 1].start if i + 1 < len(shots) else t_end
-        if b - c.start < 0.25 or not c.subject or c.subject not in names:
+        if b - c.start < 0.25:
+            continue
+        if c.prop and not c.subject:
+            # an insert: 8 views around the prop (front arc first), at two distances
+            k = min(int(((c.start + b) / 2) * 30), len(cams_final) - 1)
+            idx_p = [j for j, pp in enumerate(dyn["parts"]) if pp.get("owner") == "prop:" + c.prop]
+            if not idx_p:
+                continue
+            P_ = fr["pose"][k, idx_p, :3].astype(float)
+            P_ = P_[P_[:, 1] > -500]
+            if not len(P_):
+                continue
+            cen = P_.mean(0) + np.array([0, 0.3, 0])
+            base = cams_final[k, :3].astype(float) - cen
+            base[1] = 0
+            r0 = float(np.linalg.norm(base)) or 4.0
+            base /= r0
+            opts = [(cams_final[k, :3].tolist(), cams_final[k, 3:6].tolist(), float(cams_final[k, 6]))]
+            for ang in (25, -25, 50, -50):
+                for dist in (r0 * 0.8, r0 * 1.25):
+                    a_ = math.radians(ang)
+                    dvec = np.array([base[0] * math.cos(a_) - base[2] * math.sin(a_), 0, base[0] * math.sin(a_) + base[2] * math.cos(a_)])
+                    cp = cen + dvec * dist + np.array([0, 0.6, 0])
+                    opts.append((cp.tolist(), cen.tolist(), float(cams_final[k, 6])))
+            opts = opts[:8]
+            tm = (c.start + b) / 2
+        elif not c.subject or c.subject not in names:
+            continue
+        else:
+            opts = None
+        if opts is not None:
+            sheet = Image.new("RGB", (270 * 4, 480 * 2), (30, 30, 30))
+            for m_, (p_, l_, fv) in enumerate(opts):
+                img = R.frame(np.asarray(p_), np.asarray(l_), fv, RD.dyn_draws(R, fr["pose"][k], fr["face"][k], names,
+                                                                                  scale_row=fr["scale"][k] if "scale" in fr.files else None))
+                im = Image.frombytes("RGB", (270, 480), img).transpose(Image.FLIP_TOP_BOTTOM)
+                dr = ImageDraw.Draw(im)
+                dr.rectangle([0, 0, 46, 48], fill=(0, 0, 0))
+                dr.text((8, 0), LETTERS[m_], font=font, fill=(255, 230, 60))
+                sheet.paste(im, (270 * (m_ % 4), 480 * (m_ // 4)))
+            num = len(table)
+            sheet.save(out / f"shot_{num:03d}.png")
+            table[str(num)] = {"key": key_of(c.name, c.start), "prop": c.prop, "start": round(c.start, 2), "end": round(b, 2),
+                               "options": opts}
             continue
         tm = (c.start + b) / 2
         q = [[c.subject, tm]] + ([[c.with_, tm]] if c.with_ and c.with_ in names else [])
