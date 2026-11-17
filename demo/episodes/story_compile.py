@@ -244,7 +244,8 @@ def compile_story(spec, slug: str) -> str:
                 s = m["spots"][0]
             dx, dz = (float(v) for v in off.split(",")) if off else (0.0, 0.0)
             x, z = round(s["x"] + dx, 2), round(s["z"] + dz, 2)
-            yaw = s["yaw"]
+            sx_, sz_ = m.get("camera_side", [-1, 0])
+            yaw = round(math.degrees(math.atan2(-sx_, -sz_)), 1)
             if anchor is None:
                 anchor = (x, z)
             elif math.hypot(x - anchor[0], z - anchor[1]) > SPREAD:
@@ -275,6 +276,9 @@ def compile_story(spec, slug: str) -> str:
     shown = {}     # prop name -> start ref of its open interval
     events = []
     cur_look = {c["name"]: c["look"] for c in cast}
+    cur_scale = {}
+    char_state = {}       # character -> {"scale", "look"} carried into its copies in later scenes
+    started = set()
     first_line = {}
     prev_set, k_cam = None, 0
     line_ids = []
@@ -322,6 +326,18 @@ def compile_story(spec, slug: str) -> str:
             place.append(e)
             props.append({"name": p["name"], "show": [], **({"attach": {"actor": here[p["hold"]], "hand": "Right",
                                                                           "offset": HAND}} if p.get("hold") in here else {})})
+        for ch_, a_ in here.items():
+            if a_ in started:
+                continue
+            started.add(a_)
+            stt = char_state.get(ch_, {})
+            first_id = sc["lines"][0]["id"]
+            if abs(stt.get("scale", 1.0) - 1) > 1e-3:
+                events.append({"kind": "scale", "actor": a_, "at": f"@{first_id}-0.3", "to": stt["scale"], "over": 0.05})
+                cur_scale[a_] = stt["scale"]
+            if stt.get("look") and stt["look"] != cur_look.get(a_):
+                events.append({"kind": "look", "actor": a_, "at": f"@{first_id}-0.3", "look": stt["look"]})
+                cur_look[a_] = stt["look"]
         for ln in sc["lines"]:
             lid = ln["id"]
             line_ids.append(lid)
@@ -342,8 +358,17 @@ def compile_story(spec, slug: str) -> str:
                     t0 = min(1.6, dur * 0.4)
                 prev_set = st
             step = (dur - t0) / len(cuts)
+            # size changes this line (who -> (offset, new scale)): their cuts become full shots next to a normal-size
+            # person, or the shrink / growth can't be seen (a single framed to fit is always "full size")
+            sz_ch = {}
+            for w_, what_ in (ln.get("change") or {}).items():
+                m_ = re.match(r"^\s*(grow|shrink|normal)\s*([\d.]*)\s*(?:@\s*([\d.]+))?", str(what_))
+                if m_ and w_ in here:
+                    v_ = 1.0 if m_.group(1) == "normal" else float(m_.group(2) or (1.7 if m_.group(1) == "grow" else 0.55))
+                    sz_ch[w_] = (float(m_.group(3) or min(0.8, dur * 0.3)), v_)
             for j, c in enumerate(cuts):
-                at = f"@{lid}" if t0 + j * step < 0.05 else f"@{lid}+{t0 + j * step:.1f}"
+                t_cut = t0 + j * step
+                at = f"@{lid}" if t_cut < 0.05 else f"@{lid}+{t_cut:.1f}"
                 who = c.split("+")
                 if who[0] in {p["name"] for p in props}:
                     appears = {k for k, v in (ln.get("change") or {}).items() if str(v).strip().startswith("appear")}
@@ -358,7 +383,18 @@ def compile_story(spec, slug: str) -> str:
                     continue
                 k_cam += 1
                 cue = {"name": f"{lid} {c}", "start": at, "subject": here[who[0]]}
-                if len(who) > 1 and who[1] in here:
+                a0 = here[who[0]]
+                s_now = cur_scale.get(a0, 1.0)
+                if who[0] in sz_ch and (t_cut + step > sz_ch[who[0]][0]):
+                    s_now = sz_ch[who[0]][1] if t_cut >= sz_ch[who[0]][0] else max(s_now, sz_ch[who[0]][1], key=lambda v: abs(v - 1))
+                changing = who[0] in sz_ch and t_cut <= sz_ch[who[0]][0] < t_cut + step
+                if abs(s_now - 1) > 0.12 or changing:
+                    mates = [o for o in here if o != who[0] and abs(cur_scale.get(here[o], 1.0) - 1) < 0.12]
+                    mate = who[1] if len(who) > 1 and who[1] in here else (mates[0] if mates else None)
+                    cue.update({"shot": "full" if s_now < 1 else "wide", "angle": [0, 20, -20][k_cam % 3]})
+                    if mate:
+                        cue["with"] = here[mate]
+                elif len(who) > 1 and who[1] in here:
                     cue.update({"with": here[who[1]], "shot": "full" if k_cam % 2 else "medium", "angle": 0})
                 else:
                     cue.update({"shot": ["close", "medium", "close"][k_cam % 3], "angle": [0, 20, -15, 10][k_cam % 4]})
@@ -443,10 +479,13 @@ def compile_story(spec, slug: str) -> str:
                 if verb in ("grow", "shrink", "normal"):
                     to = 1.0 if verb == "normal" else float(arg or (1.7 if verb == "grow" else 0.55))
                     events.append({"kind": "scale", "actor": a, "at": at, "to": max(0.25, min(3.0, to)), "over": 0.7})
+                    cur_scale[a] = max(0.25, min(3.0, to))
+                    char_state.setdefault(who, {})["scale"] = cur_scale[a]
                 elif verb == "look":
                     if arg in lks:
                         events.append({"kind": "look", "actor": a, "at": at, "look": arg, "poof": True})
                         cur_look[a] = arg
+                        char_state.setdefault(who, {})["look"] = arg
                     else:
                         warn.append(f"{lid}: change {who}: unknown look {arg!r}")
                 elif verb == "swap":
@@ -456,6 +495,8 @@ def compile_story(spec, slug: str) -> str:
                         events.append({"kind": "look", "actor": a, "at": at, "look": lb, "poof": True})
                         events.append({"kind": "look", "actor": b, "at": at, "look": la, "poof": True})
                         cur_look[a], cur_look[b] = lb, la
+                        char_state.setdefault(who, {})["look"] = lb
+                        char_state.setdefault(arg, {})["look"] = la
                     else:
                         warn.append(f"{lid}: swap {who} with {arg!r}: not in {st}")
                 elif verb in ("vanish", "appear", "poof"):

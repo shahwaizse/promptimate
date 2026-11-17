@@ -19,7 +19,9 @@ YOUR VISUAL TOOLS (per line):
     {"Mia": "grow 1.8"}  (scale; 1 = normal, up to 3)      {"Leo": "shrink 0.5"}     {"Leo": "normal"}
     {"Leo": "look c_chef"}  (turns into that look, with a puff)   {"Mia": "swap Leo"}  (they swap bodies/looks)
     {"Bo": "vanish"} / {"Bo": "appear"}  (a person or a PROP vanishes / appears in a puff)
-    add "@1.5" to time it 1.5 s into the line: {"Mia": "grow 2 @1.2"}. Changes stay until changed again.
+    add "@1.5" to time it 1.5 s into the line: {"Mia": "grow 2 @1.2"}. Changes stay until changed again, also in
+    later scenes. Make changes BIG enough to see at a glance (shrink 0.6 or less, grow 1.5 or more; "one inch" in the
+    words can still be half a body on screen), and keep a normal-size person in the scene to compare with.
 - Props: library props, or SIGNS you write: {"name": "Count1", "sign": "DAYS WITHOUT RAIN: 10,950", "style": "red",
   "at": "door"}. Signs are your counters, rules, prices, warnings, labels in the world: make several with changing
   numbers and show/hide them line by line ("show": [...], "hide": [...]). "hold": "Name" puts a small sign or prop
