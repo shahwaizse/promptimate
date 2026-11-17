@@ -58,3 +58,48 @@ def record(cues, name: str, fps: int = 30, end: float | None = None, out: Path |
     T["render"] = time.time() - t
     log(f"headless render: {r}")
     return {"mp4": str(out), "timing": {k: round(v, 1) for k, v in T.items()}, "render": r, "notes": notes}
+
+
+def record_offline(ep, cues, name: str, fps: int = 30, end: float | None = None, out: Path | None = None, log=print,
+                   ass: str | None = None, fonts: str | None = None, wav: str | None = None, workers: int = 3,
+                   perf_actors: dict | None = None) -> dict:
+    """The whole recording without Studio: Python director -> GPU-checked shot planning -> parallel render.
+    perf_actors: roblox_perform's state (default: the last one saved)."""
+    import director as DR
+    import checks as CK
+    import roblox_record as RR
+    T = {}
+    t = time.time()
+    if perf_actors is None:
+        perf_actors = json.loads((RR.STATE / "state.json").read_text())["actors"]
+    perf = RR.Perf()
+    t_end = end if end is not None else perf.end()
+    scene = CACHE / "scene"
+    ep_dir = CACHE / name
+    ep_dir.mkdir(parents=True, exist_ok=True)
+    static = json.loads((scene / "static.json").read_text())
+    (ep_dir / "static.json").write_bytes((scene / "static.json").read_bytes())
+    r = DR.build(ep, perf_actors, ep_dir, fps, t_end, static)
+    (ep_dir / "hide.json").write_text(json.dumps(r["hidden_static"]))
+    T["director"] = time.time() - t
+    t = time.time()
+    names = json.loads((ep_dir / "dynamic.json").read_text())["order"]
+    RR.BACKEND = CK.Checks(ep_dir, names, ep_dir / "frames.npz", fps)
+    try:
+        shots, notes = RR.plan_shots(sorted(cues, key=lambda c: c.start), perf, (1080, 1920), t_end, image_check=False)
+    finally:
+        RR.BACKEND = None
+    n = int(t_end * fps)
+    cams = np.zeros((n, 7), "f4")
+    for i in range(n):
+        _k, _c, pos, look, fov = RR.camera(shots, perf, i / fps)
+        cams[i] = [*pos, *look, fov]
+    np.save(ep_dir / "cams.npy", cams)
+    T["plan"] = time.time() - t
+    log(f"offline plan: {len(shots)} shots, {T['plan']:.1f}s")
+    t = time.time()
+    out = out or (ep_dir / f"{name}.mp4")
+    rr = RD.render_parallel(ep_dir, cams, out, fps, workers=workers, ass=ass, fonts=fonts, wav=wav)
+    T["render"] = time.time() - t
+    log(f"offline render: {rr}")
+    return {"mp4": str(out), "timing": {k: round(v, 1) for k, v in T.items()}, "render": rr, "notes": notes}

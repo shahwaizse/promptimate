@@ -433,12 +433,18 @@ class Scene:
 
 
 class Renderer:
-    def __init__(self, scene_dir: Path, w=1080, h=1920):
+    def __init__(self, scene_dir: Path, w=1080, h=1920, hide_paths=None):
         self.ctx = moderngl.create_standalone_context()
         ctx = self.ctx
         self.w, self.h = w, h
         index = json.loads((MESHES / "index.json").read_text())
         static = json.loads((scene_dir / "static.json").read_text())
+        hp = Path(scene_dir) / "hide.json"
+        hide_paths = hide_paths if hide_paths is not None else (json.loads(hp.read_text()) if hp.exists() else [])
+        if hide_paths:      # set pieces this episode hides (benches, signs): out of the static world for good
+            pre = tuple(hide_paths)
+            static = dict(static, parts=[p for p in static["parts"]
+                                          if not any(p.get("path", "") == h or p.get("path", "").startswith(h + ".") for h in pre)])
         dyn_p = scene_dir / "dynamic.json"
         dyn = json.loads(dyn_p.read_text()) if dyn_p.exists() else None
         Scene._tex_images = {}

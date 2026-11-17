@@ -79,7 +79,7 @@ local function walk(inst)
     if skip[c] or c == ep or c:IsA("Camera") or c:IsA("Terrain") then continue end
     if c:IsA("BasePart") and c.Transparency < 0.98 then
       local ok, r = pcall(info, c)
-      if ok then r.name = c.Name; table.insert(out, r) end
+      if ok then r.name = c.Name; r.path = c:GetFullName(); table.insert(out, r) end
     end
     walk(c)
   end

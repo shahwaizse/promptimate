@@ -38,6 +38,8 @@ import stitch  # noqa: E402
 STATE = ROOT / ".cache" / "roblox_perform"
 SRV = None
 JOBS: dict[str, dict] = {}
+# shot-planning checks: None = ask Studio; the headless pipeline plugs in its own GPU/numpy implementation
+BACKEND = None
 
 
 class CameraCue(BaseModel):
@@ -276,7 +278,7 @@ def turn_explicit(cues, t_end: float):
     for i, c in todo:
         b = cues[i + 1].start if i + 1 < len(cues) else t_end
         q.append([(c.start + b) / 2, *c.pos, *c.look, c.fov])
-    res = studio().luau_json(EXPLICIT_LUAU.replace("__Q__", long_str(json.dumps(q))))
+    res = BACKEND.explicit(q) if BACKEND else studio().luau_json(EXPLICIT_LUAU.replace("__Q__", long_str(json.dumps(q))))
     out, notes = list(cues), []
     for (i, c), r in zip(todo, res):
         if r:
@@ -295,7 +297,7 @@ def frame_props(cues, t_end: float):
     for i, c in todo:
         b = cues[i + 1].start if i + 1 < len(cues) else t_end
         q.append([c.prop, (c.start + b) / 2, {"close": 0.55, "medium": 0.35, "wide": 0.18}.get(c.shot, 0.4)])
-    boxes = studio().luau_json(PROP_LUAU.replace("__Q__", long_str(json.dumps(q))))
+    boxes = BACKEND.prop_boxes(q) if BACKEND else studio().luau_json(PROP_LUAU.replace("__Q__", long_str(json.dumps(q))))
     out = list(cues)
     for (i, c), bx in zip(todo, boxes):
         if not bx:
@@ -333,7 +335,7 @@ def frame_subjects(cues, t_end: float):
         q.append([c.subject, t])
         if c.with_:
             q.append([c.with_, t])
-    poses = studio().luau_json(POSE_LUAU.replace("__Q__", long_str(json.dumps(q))))
+    poses = BACKEND.poses(q) if BACKEND else studio().luau_json(POSE_LUAU.replace("__Q__", long_str(json.dumps(q))))
     frame_subjects.alts = {}
     k = 0
     out = list(cues)
@@ -359,7 +361,7 @@ def frame_subjects(cues, t_end: float):
         b = cues[i + 1].start if i + 1 < len(cues) else t_end
         # five instants across the shot: a head that turns away for half a second is still a back-of-head shot
         times = sorted({round(c.start + (b - c.start) * f, 2) for f in (0.08, 0.3, 0.5, 0.7, 0.92)})
-        runs = studio().luau_json(
+        runs = BACKEND.camcheck(times, cams) if BACKEND else studio().luau_json(
             "local H = game:GetService('HttpService'); local D = _G.PromptimateDirector\n"
             f"local cams = H:JSONDecode({long_str(json.dumps(cams))}); local out = {{}}\n"
             f"for _, t in {{{','.join(f'{t:.3f}' for t in times)}}} do table.insert(out, H:JSONDecode(D.camcheck(t, cams))) end\n"

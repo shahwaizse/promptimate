@@ -390,6 +390,7 @@ def _main():
     ap.add_argument("--rounds", type=int, default=0, help="repair rounds in roblox_perform")
     ap.add_argument("--voice", default=None, help="override the narrator (af_heart, tv_M2, ...)")
     ap.add_argument("--suffix", default="", help="append to the output file name")
+    ap.add_argument("--offline", action="store_true", help="record without Studio (Python director + GPU checks + headless render)")
     ap.add_argument("--headless", action="store_true", help="render offscreen (roblox/headless) instead of screen-recording Studio")
     ap.add_argument("--attempts", type=int, default=2, help="seeds tried per beat for facing/mark/seat")
     a = ap.parse_args()
@@ -472,21 +473,22 @@ def _main():
             import shutil
             shutil.copy(res[1].path if hasattr(res[1], "path") else res[1], out / "plan.png")
     if "record" in todo:
-        annotate(ep)
-        # always a fresh recording: rig attributes (arms, looks) aren't part of the frame-reuse signature, and the
-        # director caches clip players built from the old rigs
         import shutil
-        shutil.rmtree(RR.STATE / "record" / a.episode / "frames_final", ignore_errors=True)
-        import roblox_tools as _RT
-        log("package", _RT.install())       # pushes changed player/director code to Studio
-        sys.path.insert(0, str(ROOT / "roblox" / "short"))
-        import town as _town
-        from roblox_studio import studio as _st
-        _st().luau(getattr(ep, "LIGHT", None) or _town.LIGHT)     # the shared cinematic look (an episode may bring its own)
+        if not a.offline:      # Studio's cue sheet, package and light (the offline path reads the episode directly)
+            annotate(ep)
+            # always a fresh recording: rig attributes (arms, looks) aren't part of the frame-reuse signature, and the
+            # director caches clip players built from the old rigs
+            shutil.rmtree(RR.STATE / "record" / a.episode / "frames_final", ignore_errors=True)
+            import roblox_tools as _RT
+            log("package", _RT.install())       # pushes changed player/director code to Studio
+            sys.path.insert(0, str(ROOT / "roblox" / "short"))
+            import town as _town
+            from roblox_studio import studio as _st
+            _st().luau(getattr(ep, "LIGHT", None) or _town.LIGHT)     # the shared cinematic look (an episode may bring its own)
         t = time.time()
         cams = [RR.CameraCue(**c) for c in ep.CAMERAS]
         RR.cover.cut_times = sorted(ln[0] for ln in ep.LINES)     # coverage cuts on the sentence starts
-        if a.headless:
+        if a.headless or a.offline:
             sys.path.insert(0, str(ROOT / "roblox" / "headless"))
             import pipeline as HL
             # sound and captions first (they only need the length): the render burns the captions and muxes the mix
@@ -495,8 +497,12 @@ def _main():
             total = int(t_end * 30) / 30
             wav, ass, credits = audio_assets(ep, total, out)
             final = out / f"{a.episode}{a.suffix}.mp4"
-            r = HL.record(cams, a.episode, 30, t_end, final, log=log, ass=str(ass),
-                          fonts=str(BUILD / "_media" / "fonts"), wav=str(wav))
+            if a.offline:
+                r = HL.record_offline(ep, cams, a.episode, 30, t_end, final, log=log, ass=str(ass),
+                                      fonts=str(BUILD / "_media" / "fonts"), wav=str(wav))
+            else:
+                r = HL.record(cams, a.episode, 30, t_end, final, log=log, ass=str(ass),
+                              fonts=str(BUILD / "_media" / "fonts"), wav=str(wav))
             (out / "credits.txt").write_text("\n".join([getattr(ep, "TITLE", a.episode), "", *credits,
                                                         "Narration: Kokoro TTS (Apache-2.0)"]) + "\n", encoding="utf-8")
             T["record"] = time.time() - t
