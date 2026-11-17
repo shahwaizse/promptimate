@@ -56,6 +56,35 @@ def idle_unload_s() -> float:
         return IDLE_UNLOAD_S
 
 
+def no_throttle(pid: int | None = None) -> bool:
+    """Opt a process (default: this one) out of Windows power throttling (EcoQoS). A windowless background daemon
+    gets throttled, and the engine's per-step dispatch work is CPU-bound: a hidden motiond generated a clip in 13 s,
+    the same daemon run in the foreground in 1.9 s (2026-11-17)."""
+    if os.name != "nt":
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    class PPT(ctypes.Structure):      # PROCESS_POWER_THROTTLING_STATE
+        _fields_ = [("Version", wintypes.ULONG), ("ControlMask", wintypes.ULONG), ("StateMask", wintypes.ULONG)]
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    if pid is None:
+        h, close = k32.GetCurrentProcess(), False
+    else:
+        h, close = k32.OpenProcess(0x0200 | 0x1000, False, int(pid)), True    # SET_INFORMATION | QUERY_LIMITED
+        if not h:
+            return False
+    try:
+        st = PPT(1, 0x1 | 0x4, 0)     # EXECUTION_SPEED | IGNORE_TIMER_RESOLUTION: control on, state off = never throttle
+        ok = bool(k32.SetProcessInformation(h, 4, ctypes.byref(st), ctypes.sizeof(st)))   # ProcessPowerThrottling
+        k32.SetPriorityClass(h, 0x8000)    # ABOVE_NORMAL: the GPU waits on this process's dispatches
+        return ok
+    finally:
+        if close:
+            k32.CloseHandle(h)
+
+
 @contextlib.contextmanager
 def gpu_lock(path: Path = GPU_LOCK):
     """Machine-wide lock so several MCP server instances never run generations on the 8 GB GPU at once."""
@@ -221,6 +250,7 @@ class KimodoWorker:
             env=env, text=True, encoding="utf-8", bufsize=1,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+        no_throttle(self.proc.pid)
         self.started_at = time.time()
 
     def alive(self) -> bool:

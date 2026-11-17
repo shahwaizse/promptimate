@@ -198,6 +198,8 @@ class Server(socketserver.ThreadingTCPServer):
 
 
 def main() -> None:
+    from kimodo_worker import no_throttle
+    no_throttle()          # a hidden daemon is otherwise power-throttled by Windows (6.8x slower generations)
     try:
         srv = Server(("127.0.0.1", PORT), Handler)
     except OSError:
