@@ -243,8 +243,10 @@ class RemoteWorker:
         log_dir = ROOT / "logs"
         log_dir.mkdir(exist_ok=True)
         log = open(log_dir / "motiond.log", "ab")
-        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) \
-            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        # CREATE_NO_WINDOW, not DETACHED_PROCESS: the venv's python.exe is a launcher that starts the real interpreter
+        # as a child; detached, the launcher has no console, so that child got a fresh *visible* console window
+        # (Windows ignores CREATE_NO_WINDOW when combined with DETACHED_PROCESS). A hidden console is inherited instead.
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         subprocess.Popen([sys.executable, str(Path(__file__).resolve())], stdin=subprocess.DEVNULL, stdout=log,
                          stderr=log, creationflags=flags, cwd=str(ROOT), close_fds=True)
         deadline = time.time() + 20

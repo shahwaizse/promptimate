@@ -254,6 +254,8 @@ def quat_mat(q):
 def _asset(s: str | None) -> str | None:
     if not s:
         return None
+    if s.startswith("file:"):           # our own generated textures (own_assets.py)
+        return s[5:] if Path(s[5:]).exists() else None
     m = re.search(r"(\d{4,})", s)
     if not m:
         return None
@@ -338,7 +340,9 @@ class Scene:
         key, scale, vcol, tex, mode = kind, size, 0.0, None, 0
         native = False          # FileMesh: rendered at mesh size x Scale, not at the part's size
         sp = mesh.get("special")
-        if actor and p["name"] in R6_PARTS and (actor, p["name"]) in self.skins:
+        if mesh.get("key"):             # our own meshes (own_assets.py): referenced directly, colours baked per vertex
+            key, vcol = mesh["key"], 1.0 if mesh.get("vcol") else 0.0
+        elif actor and p["name"] in R6_PARTS and (actor, p["name"]) in self.skins:
             key, tex, mode = R6_PARTS[p["name"]], self.skins[(actor, p["name"])], 1
         elif sp and sp["type"] == "Head":
             key, scale = "head", np.array(sp["scale"]) * 0.96

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
 from pathlib import Path
 
@@ -65,6 +66,9 @@ def build(ep, perf_actors: dict, out: Path, fps: int, t_end: float, static: dict
     t0 = time.time()
     out.mkdir(parents=True, exist_ok=True)
     looks, props_lib = L.looks(), L.props()
+    own = L.LIB.parent / "own" / "looks.json"
+    if os.environ.get("PROMPTIMATE_OWN_ASSETS", "1") != "0" and own.exists():
+        looks = dict(looks, **json.loads(own.read_text()))       # our own characters win over catalog ones
     cast = {c["name"]: c for c in getattr(ep, "CAST", [])}
     names = sorted(n for n in cast if n in perf_actors)
     parts = []          # exported part dicts (renderer specs)
