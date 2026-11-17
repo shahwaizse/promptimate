@@ -23,6 +23,30 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import meshcache as MC  # noqa: E402
 
+AO_VS = """#version 330
+in vec2 p; out vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }"""
+AO_FS = """#version 330
+in vec2 uv; uniform sampler2D col; uniform sampler2D dep; uniform vec2 px; uniform float proj;
+uniform float near; uniform float far; uniform float strength; uniform float radius; out vec4 f;
+float lin(float d){ float z = d * 2.0 - 1.0; return 2.0 * near * far / (far + near - z * (far - near)); }
+void main(){
+  vec4 c = texture(col, uv);
+  float d = texture(dep, uv).r;
+  if (d >= 0.99999 || strength <= 0.0) { f = c; return; }
+  float z = lin(d);
+  float rpx = clamp(radius * proj / z, 2.0, 48.0);
+  float occ = 0.0;
+  for (int i = 0; i < 16; i++) {           // a fixed golden-angle spiral: smooth, no per-pixel noise (no grain)
+    float a = float(i) * 2.39996;
+    float r = rpx * sqrt((float(i) + 0.5) / 16.0);
+    vec2 o = vec2(cos(a), sin(a)) * r * px;
+    float zs = lin(texture(dep, uv + o).r);
+    float dz = z - zs;
+    if (dz > 0.06 + z * 0.02) occ += 1.0 - smoothstep(radius, radius * 3.0, dz);   // bias grows with distance (depth precision)
+  }
+  float ao = 1.0 - strength * occ / 16.0;
+  f = vec4(c.rgb * ao, c.a);
+}"""
 MESHES = MC.OUT
 TEXDIR = MC.OUT.parent / "tex"
 MATDIR = MC.OUT.parent / "mat"
@@ -30,7 +54,7 @@ MATDIR = MC.OUT.parent / "mat"
 # 2026-11-17 critic: our sets read flat and evenly lit next to the references (raking sun, real shade): a stronger,
 # warmer sun and less fill, kept mild enough that a face in shade still reads
 LIGHT = {"sun": (1.6, 1.5, 1.32), "sky": (0.32, 0.36, 0.45), "ground": (0.19, 0.17, 0.16), "exp": 1.0,
-         "bevel": 0.14, "rim": 0.35}
+         "bevel": 0.14, "rim": 0.35, "ao": 0.0, "ao_radius": 0.9}
 LIGHT_OVERRIDE = None
 MAT_NAMES = {p.stem for p in MATDIR.glob("*.png")} if MATDIR.exists() else set()
 MAT_TILE = {"Brick": 8.0, "WoodPlanks": 8.0, "Cobblestone": 8.0, "DiamondPlate": 4.0, "Fabric": 2.0, "Grass": 6.0}
@@ -491,6 +515,13 @@ class Renderer:
         self.depth = ctx.depth_renderbuffer((w, h), samples=4)
         self.fbo = ctx.framebuffer([self.color], self.depth)
         self.out = ctx.framebuffer([ctx.renderbuffer((w, h), 4)])
+        # ambient occlusion post pass: the MSAA frame is resolved into textures (colour + depth), shaded into out
+        self.post_col = ctx.texture((w, h), 4)
+        self.post_dep = ctx.depth_texture((w, h))
+        self.post = ctx.framebuffer([self.post_col], self.post_dep)
+        self.ao_prog = ctx.program(vertex_shader=AO_VS, fragment_shader=AO_FS)
+        quad = ctx.buffer(np.array([-1, -1, 1, -1, -1, 1, 1, 1], "f4").tobytes())
+        self.ao_vao = ctx.vertex_array(self.ao_prog, [(quad, "2f", "p")])
         self.shadow_tex = ctx.depth_texture((4096, 4096))
         self.shadow_tex.compare_func = "<="
         self.shadow_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
@@ -713,7 +744,24 @@ class Renderer:
                 ctx.polygon_offset = 0, 0
         ctx.depth_mask = True
         ctx.disable(moderngl.BLEND)
-        ctx.copy_framebuffer(self.out, self.fbo)
+        ao = float((LIGHT_OVERRIDE or LIGHT).get("ao", 0.0))
+        if ao > 0:
+            ctx.copy_framebuffer(self.post, self.fbo)
+            self.out.use()
+            ctx.disable(moderngl.DEPTH_TEST)
+            self.post_col.use(0)
+            self.post_dep.use(1)
+            A = self.ao_prog
+            A["col"].value, A["dep"].value = 0, 1
+            A["px"].value = (1.0 / self.w, 1.0 / self.h)
+            A["proj"].value = (self.h / 2) / math.tan(math.radians(fov) / 2)
+            A["near"].value, A["far"].value = 0.1, 1200.0
+            A["strength"].value = ao
+            A["radius"].value = float((LIGHT_OVERRIDE or LIGHT).get("ao_radius", 0.9))
+            self.ao_vao.render(moderngl.TRIANGLE_STRIP)
+            ctx.enable(moderngl.DEPTH_TEST)
+        else:
+            ctx.copy_framebuffer(self.out, self.fbo)
         return self.out.read(components=3)
 
 
