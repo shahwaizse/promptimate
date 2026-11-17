@@ -298,6 +298,19 @@ def pose_r6_vec(cl: dict, ts: np.ndarray, origin_pos, origin_yaw: float, arms: f
     return parts
 
 
+def hold_time(lt, d: float, hold: float):
+    """A short clip covering a longer hold: played forth and back an odd number of times, re-timed slightly, so the
+    hold starts on the clip's first frame and ends on its last (the neighbouring clips join without a pop)."""
+    n = max(1, int(round(hold / d)))
+    if n % 2 == 0:
+        n += 1 if hold / d >= n else -1
+    n = max(1, n)
+    u = np.asarray(lt, float) * (n * d / hold)
+    k = np.floor(u / d)
+    r = u - k * d
+    return np.where(k % 2 == 0, r, d - r).clip(0, d) if np.ndim(u) else (r if int(k) % 2 == 0 else d - r)
+
+
 def pose_actor_frames(actor: dict, times: np.ndarray) -> dict:
     """All frames of one actor: {part: (pos (n,3), quat (n,4))}, clips switched as the director does."""
     clips = actor["clips"]
@@ -308,6 +321,8 @@ def pose_actor_frames(actor: dict, times: np.ndarray) -> dict:
         m = k == ci
         c = clips[ci]
         lt = np.clip(times[m] - c["s"], 0, c["d"])
+        if c.get("hold") and c["hold"] > c["d"] + 0.05:
+            lt = hold_time(np.clip(times[m] - c["s"], 0, c["hold"]), c["d"], c["hold"])
         r = pose_r6_vec(clip(c["m"]), lt, (c["x"], c.get("y", 0.0), c["z"]), c["yaw"], actor.get("arms", 1.0))
         for nm, (p, q) in r.items():
             out[nm][0][m] = p

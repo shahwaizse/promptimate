@@ -59,7 +59,7 @@ class Daemon:
         # extra engines (MOTIOND_ENGINES - 1): each holds only ~1 GB VRAM and ~0.15 GB RAM once a job's prompts are
         # pre-encoded, and three run side by side at ~3x the throughput of one (engine A/B, 2026-11-17). They take
         # only requests whose prompts are all in the embedding cache, so the 4.4 GB text encoder loads in one place.
-        self.n_engines = max(1, int(os.environ.get("MOTIOND_ENGINES", "3")))
+        self.n_engines = max(1, int(os.environ.get("MOTIOND_ENGINES", "2")))
         self.extras: list[KimodoWorker] = []
         self.free: "queue.Queue[KimodoWorker]" = queue.Queue()
         self.stats = {"requests": 0, "cache_hits": 0, "engine_starts": 0, "started_at": time.time()}
@@ -162,7 +162,7 @@ class Daemon:
                 (tmp / "info.json").write_text(json.dumps(info))
                 shutil.rmtree(hit, ignore_errors=True)
                 tmp.rename(hit)
-            return {**info, "cache_hit": False}
+            return {**info, "cache_hit": False, "engine": 0 if worker is self.worker else 1 + self.extras.index(worker)}
 
     def prefetch(self, req: dict) -> dict:
         """Batch-encode a job's prompts (see kimodo_worker.prefetch_embeddings). The lock is taken per engine

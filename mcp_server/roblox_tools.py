@@ -47,6 +47,8 @@ PAIR_BAD = 0.3         # studs: two characters' parts overlapping this deep
 R15_SEAT_LIFT = 0.12     # m
 SRV = None               # server module (generate_motion, worker, ...), set by register()
 _GEN_LOCK = threading.Lock()
+_IDLE_RE = re.compile(r"(stands? still|sits? still|breathes|waits?|listens?|watch(es|ing)|idles?|rests?)", re.I)
+IDLE_CAP = float(os.environ.get("PROMPTIMATE_IDLE_CAP", "3.0"))   # seconds of generated idle; longer gaps ping-pong it
 _TLS = threading.local()
 
 
@@ -935,11 +937,20 @@ def _expand(actor: Actor) -> list[dict]:
         if t is not None and start > t + 0.25:
             gap = start - t
             prompt = "a person sits still and breathes calmly" if seated else "a person stands still and breathes"
-            fill = Beat(prompt=prompt, seconds=gap, sit=seated)
-            out.append({"beat": fill, "segments": _segments(fill), "start": t, "dur": gap, "filler": True})
+            # generate a short idle and ping-pong it over the gap: motion cost grows with clip length squared, and
+            # gap fillers were the long tail of a fresh episode's generation time
+            cap = gap if seated else min(gap, IDLE_CAP)     # (seated: the seat span is pinned over the whole beat)
+            fill = Beat(prompt=prompt, seconds=cap, sit=seated)
+            out.append({"beat": fill, "segments": _segments(fill), "start": t, "dur": gap, "filler": True,
+                        "hold": gap if cap < gap - 0.05 else None})
         elif t is not None and start < t - 0.05:
             start = t                                    # overlapping beats: play after the previous one
-        out.append({"beat": b, "segments": segs, "start": start, "dur": dur, "filler": False})
+        hold = None
+        if (len(segs) == 1 and dur > IDLE_CAP + 0.5 and _IDLE_RE.search(segs[0][0]) and not _LOCO.search(segs[0][0])
+                and b.to is None and not b.via and b.sit is None and not seated):
+            # a long idle written as a beat ("stands still, watching", "sits and listens"): same short-idle hold
+            segs, hold = [(segs[0][0], IDLE_CAP)], dur
+        out.append({"beat": b, "segments": segs, "start": start, "dur": dur, "filler": False, "hold": hold})
         t = start + dur
         seated = b.sit
     for e, nxt in zip(out, out[1:] + [None]):
@@ -1211,6 +1222,7 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
                 dur = (len(root) - 1) / motion.FPS
                 mod = f"{a.name}_{len(clips) + 1:02d}_{hashlib.sha1((name + roblox.EXPORT_VERSION).encode()).hexdigest()[:6]}"
                 clip = {"m": mod, "src": name, "s": round(e["start"], 4), "d": round(dur, 4), "x": round(float(p[0]), 4),
+                        **({"hold": round(float(e["hold"]), 4)} if e.get("hold") else {}),
                         "z": round(float(p[1]), 4), "yaw": round(float(yaw), 5), "label": extra["world"]["label"]}
                 if seated is not None:
                     clip["seated_start"] = True
@@ -1241,7 +1253,7 @@ def perform(actors: list[Actor], check: bool = True, preview: bool = True) -> li
                             "ground": m["ground"]}
 
         # characters' chains are independent: generate them side by side (motiond runs several engines)
-        n = max(1, min(len(actors), int(os.environ.get("MOTIOND_ENGINES", "3"))))
+        n = max(1, min(len(actors), int(os.environ.get("MOTIOND_ENGINES", "2"))))
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(n) as ex:
             for name, r in ex.map(one, actors):
@@ -1375,7 +1387,7 @@ def _push_offline(scene: Scene, results: dict) -> int:
     perf["version"] = 1
     for name, r in results.items():
         perf["actors"][name] = {"path": r["path"], "spm": round(r["spm"], 4),
-                                "clips": [{k: v for k, v in c.items() if k in ("m", "src", "s", "d", "x", "y", "z", "yaw", "label", "seated_start")}
+                                "clips": [{k: v for k, v in c.items() if k in ("m", "src", "s", "d", "x", "y", "z", "yaw", "label", "seated_start", "hold")}
                                           for c in r["clips"]],
                                 "end": [round(v, 4) for v in r["end"]], "track": r["track"], "seats": r["seats"]}
     WORLD.perf_actors = {n: {"clips": a["clips"]} for n, a in perf["actors"].items() if n in WORLD.cast}
@@ -1433,7 +1445,7 @@ def _push(scene: Scene, results: dict) -> int:
     perf["version"] = 1
     for name, r in results.items():
         perf["actors"][name] = {"path": r["path"], "spm": round(r["spm"], 4),
-                                "clips": [{k: v for k, v in c.items() if k in ("m", "src", "s", "d", "x", "y", "z", "yaw", "label", "seated_start")}
+                                "clips": [{k: v for k, v in c.items() if k in ("m", "src", "s", "d", "x", "y", "z", "yaw", "label", "seated_start", "hold")}
                                           for c in r["clips"]],
                                 "end": [round(v, 4) for v in r["end"]], "track": r["track"], "seats": r["seats"]}
     used = {c["m"] for a in perf["actors"].values() for c in a["clips"]}
