@@ -203,7 +203,26 @@ def pin_studio(on: bool = True) -> bool:
         _u.ShowWindow(w[0], 8)          # SW_SHOWNA: to the front in its current (maximized) state, focus stays put
         time.sleep(0.3)
         layout_studio(w[0])
+        wake_studio(w[0])
     return True
+
+
+def wake_studio(hwnd=None) -> None:
+    """Studio renders at 15 fps while it isn't the active app and 60 fps (vsync) when it is. Telling its windows
+    they're active (WM_ACTIVATEAPP / WM_NCACTIVATE / WM_ACTIVATE, sent, not a real focus change) lifts the throttle
+    without taking the keyboard from the user: 4x faster live capture, shot checks and frame grabs."""
+    if hwnd is None:
+        w = studio_window(include_minimized=True)
+        if not w:
+            return
+        hwnd = w[0]
+    hs = [hwnd]
+    cb = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)(lambda h, _l: hs.append(h) or True)
+    _u.EnumChildWindows(hwnd, cb, 0)
+    for h in hs:
+        _u.SendMessageW(h, 0x1C, 1, 0)      # WM_ACTIVATEAPP(TRUE)
+        _u.SendMessageW(h, 0x86, 1, 0)      # WM_NCACTIVATE(TRUE)
+        _u.SendMessageW(h, 0x06, 1, 0)      # WM_ACTIVATE(WA_ACTIVE)
 
 
 def viewport_clear(rect) -> bool:

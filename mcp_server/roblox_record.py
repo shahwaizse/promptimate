@@ -956,6 +956,28 @@ def _render_job_locked(job: dict, cues, perf, size, fps, t0, t1, draft):
         job["error"] = f"{type(e).__name__}: {e}"[:500]
 
 
+def plan_shots(shots, perf, size, t_end, image_check: bool | None = None):
+    """Written cues -> the final shot list: coverage cuts, prop inserts, face-aware wides, subject framing and (unless
+    disabled) the rendered image QA. Shared by the Studio recorder and the headless renderer."""
+    if os.environ.get("PROMPTIMATE_RBX_COVER", "1") != "0":
+        shots = cover(shots, t_end)
+    shots = frame_props(shots, t_end)
+    shots, turn_notes = turn_explicit(shots, t_end)
+    shots = frame_subjects(shots, t_end)
+    qa_notes = list(turn_notes)
+    if image_check is None:
+        image_check = os.environ.get("PROMPTIMATE_RBX_IMAGE_QA", "1") != "0"
+    if image_check:
+        try:
+            shots, qn = image_qa(shots, perf, size, t_end)
+            qa_notes += qn
+            if any(c.subject and not c.pos and not c.track for c in shots):
+                shots = frame_subjects(shots, t_end)     # shots image QA turned into subject shots
+        except Exception as e:
+            qa_notes += [f"image QA skipped: {e}"[:200]]
+    return shots, qa_notes
+
+
 def record(shots: list[CameraCue], start: float = 0.0, end: float | None = None, fps: int = 24,
            size: tuple[int, int] = (1080, 1920), quality: str = "final", name: str = "short",
            check_only: bool = False, sheet: bool = True, audio: str | None = None, job: str | None = None) -> list:
@@ -977,20 +999,7 @@ def record(shots: list[CameraCue], start: float = 0.0, end: float | None = None,
         raise ValueError("no performance yet: call roblox_perform first")
     t_end = end if end is not None else perf.end()
     _ensure_running()
-    if os.environ.get("PROMPTIMATE_RBX_COVER", "1") != "0":
-        shots = cover(shots, t_end)
-    shots = frame_props(shots, t_end)
-    shots, turn_notes = turn_explicit(shots, t_end)
-    shots = frame_subjects(shots, t_end)
-    qa_notes = list(turn_notes)
-    if os.environ.get("PROMPTIMATE_RBX_IMAGE_QA", "1") != "0":
-        try:
-            shots, qn = image_qa(shots, perf, size, t_end)
-            qa_notes += qn
-            if any(c.subject and not c.pos and not c.track for c in shots):
-                shots = frame_subjects(shots, t_end)     # shots image QA turned into subject shots
-        except Exception as e:
-            qa_notes += [f"image QA skipped: {e}"[:200]]
+    shots, qa_notes = plan_shots(shots, perf, size, t_end)
     warns, _ = check_cameras(shots, perf, size, t_end)
     out = {"shots": len(shots), "seconds": round(t_end - start, 2)}
     if qa_notes:

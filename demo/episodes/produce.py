@@ -369,6 +369,20 @@ def main():
         return _main()
 
 
+def audio_assets(ep, total: float, out: Path):
+    """The mixed soundtrack and the caption file for a video of `total` seconds."""
+    wav, placed, credits = mix(ep, total, out)
+    cap = getattr(ep, "CAPTIONS", {})
+    captions.size = cap.get("size", 84)   # sentence case Montserrat reads larger than the old all-caps Arial Black
+    captions.keywords = getattr(ep, "KEYWORDS", ())
+    captions.pos = cap.get("pos", "low")      # below the faces (~65% down); at the top they sat on hats
+    ass = captions(placed, out / "captions.ass", titles=getattr(ep, "TITLES", []), highlight=cap.get("highlight", True),
+                   max_words=cap.get("max_words", 3),
+                   labels=[(float(sp[0]), float(sp[1]), str(sp[2]) if len(sp) > 2 else str(f.get("text") or ""))
+                           for f in getattr(ep, "FX", []) if f.get("kind") == "label" for sp in f["show"]])
+    return wav, ass, credits
+
+
 def _main():
     ap = argparse.ArgumentParser()
     ap.add_argument("episode")
@@ -376,6 +390,7 @@ def _main():
     ap.add_argument("--rounds", type=int, default=0, help="repair rounds in roblox_perform")
     ap.add_argument("--voice", default=None, help="override the narrator (af_heart, tv_M2, ...)")
     ap.add_argument("--suffix", default="", help="append to the output file name")
+    ap.add_argument("--headless", action="store_true", help="render offscreen (roblox/headless) instead of screen-recording Studio")
     ap.add_argument("--attempts", type=int, default=2, help="seeds tried per beat for facing/mark/seat")
     a = ap.parse_args()
     ep = importlib.import_module(f"eps.{a.episode}")
@@ -471,42 +486,51 @@ def _main():
         t = time.time()
         cams = [RR.CameraCue(**c) for c in ep.CAMERAS]
         RR.cover.cut_times = sorted(ln[0] for ln in ep.LINES)     # coverage cuts on the sentence starts
-        r = RR.record(cams, name=a.episode, quality="final", end=getattr(ep, "LENGTH", None), fps=30)
-        info = json.loads(r[0])
-        for w in info.get("camera_warnings", [])[:8]:
-            log("   cam!", w)
-        for w in info.get("image_qa", []):
-            log("   qa:", w)
-        last = None
-        while True:
-            time.sleep(3)
-            st = json.loads(RR.record([], job=info["job"])[0])
-            if st.get("state") != last:      # where record time goes: lock wait, live pass, filling skipped frames
-                last = st.get("state")
-                log("   record:", last, {k: st[k] for k in ("done", "total", "live", "live_error") if k in st})
-            if st.get("state") in ("done", "failed", "cancelled"):
-                log("   record done:", {k: st[k] for k in ("render_s", "mode", "live", "live_frames", "live_error", "fast_error") if k in st})
-                break
-        if st["state"] != "done":
-            raise SystemExit(f"record {st}")
-        (out / "silent.mp4").write_bytes(Path(st["mp4"]).read_bytes())
-        # the PNG frames are 3-11 GB per episode and nothing reads them after the encode (a full disk killed a record)
-        shutil.rmtree(RR.STATE / "record" / a.episode / "frames_final", ignore_errors=True)
-        T["record"] = time.time() - t
-        log(f"record {T['record']:.0f}s")
+        if a.headless:
+            sys.path.insert(0, str(ROOT / "roblox" / "headless"))
+            import pipeline as HL
+            # sound and captions first (they only need the length): the render burns the captions and muxes the mix
+            # in its own encode, so the finished video exists the moment the last frame is drawn
+            t_end = getattr(ep, "LENGTH", None) or RR.Perf().end()
+            total = int(t_end * 30) / 30
+            wav, ass, credits = audio_assets(ep, total, out)
+            final = out / f"{a.episode}{a.suffix}.mp4"
+            r = HL.record(cams, a.episode, 30, t_end, final, log=log, ass=str(ass),
+                          fonts=str(BUILD / "_media" / "fonts"), wav=str(wav))
+            (out / "credits.txt").write_text("\n".join([getattr(ep, "TITLE", a.episode), "", *credits,
+                                                        "Narration: Kokoro TTS (Apache-2.0)"]) + "\n", encoding="utf-8")
+            T["record"] = time.time() - t
+            log(f"record+audio (headless) {T['record']:.0f}s {r['timing']} -> {final}")
+            todo = [s_ for s_ in todo if s_ != "audio"]
+        else:
+            r = RR.record(cams, name=a.episode, quality="final", end=getattr(ep, "LENGTH", None), fps=30)
+            info = json.loads(r[0])
+            for w in info.get("camera_warnings", [])[:8]:
+                log("   cam!", w)
+            for w in info.get("image_qa", []):
+                log("   qa:", w)
+            last = None
+            while True:
+                time.sleep(3)
+                st = json.loads(RR.record([], job=info["job"])[0])
+                if st.get("state") != last:      # where record time goes: lock wait, live pass, filling skipped frames
+                    last = st.get("state")
+                    log("   record:", last, {k: st[k] for k in ("done", "total", "live", "live_error") if k in st})
+                if st.get("state") in ("done", "failed", "cancelled"):
+                    log("   record done:", {k: st[k] for k in ("render_s", "mode", "live", "live_frames", "live_error", "fast_error") if k in st})
+                    break
+            if st["state"] != "done":
+                raise SystemExit(f"record {st}")
+            (out / "silent.mp4").write_bytes(Path(st["mp4"]).read_bytes())
+            # the PNG frames are 3-11 GB per episode and nothing reads them after the encode (a full disk killed a record)
+            shutil.rmtree(RR.STATE / "record" / a.episode / "frames_final", ignore_errors=True)
+            T["record"] = time.time() - t
+            log(f"record {T['record']:.0f}s")
     if "audio" in todo:
         t = time.time()
         silent = out / "silent.mp4"
         total = duration(silent)
-        wav, placed, credits = mix(ep, total, out)
-        cap = getattr(ep, "CAPTIONS", {})
-        captions.size = cap.get("size", 84)   # sentence case Montserrat reads larger than the old all-caps Arial Black
-        captions.keywords = getattr(ep, "KEYWORDS", ())
-        captions.pos = cap.get("pos", "low")      # below the faces (~65% down); at the top they sat on hats
-        ass = captions(placed, out / "captions.ass", titles=getattr(ep, "TITLES", []), highlight=cap.get("highlight", True),
-                       max_words=cap.get("max_words", 3),
-                       labels=[(float(sp[0]), float(sp[1]), str(sp[2]) if len(sp) > 2 else str(f.get("text") or ""))
-                               for f in getattr(ep, "FX", []) if f.get("kind") == "label" for sp in f["show"]])
+        wav, ass, credits = audio_assets(ep, total, out)
         final = out / f"{a.episode}{a.suffix}.mp4"
         fonts = str(BUILD / "_media" / "fonts").replace("\\", "/").replace(":", "\\:")   # Montserrat (OFL, not in git)
         assp = str(ass).replace("\\", "/").replace(":", "\\:")
