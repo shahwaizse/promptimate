@@ -311,7 +311,8 @@ class Checks:
                     # the shot's own frame inside the widened render: its central 1/WIDEN-ish window, a 6x9 grid
                     th, thw = math.tan(math.radians(c.get("fov", 40)) / 2), math.tan(math.radians(min(c.get("fov", 40) * WIDEN, 150)) / 2)
                     k_ = th / thw
-                    hits, n_ = 0, 0
+                    hits, n_, body = 0, 0, 0
+                    subj_idx = {self.names.index(s_) for s_ in (c.get("subjects") or []) if s_ in self.names}
                     for iy in range(9):
                         for ix in range(6):
                             u = ((ix + 0.5) / 6 * 2 - 1) * k_
@@ -320,7 +321,12 @@ class Checks:
                             y = int(min(H - 1, (v * 0.5 + 0.5) * H))
                             n_ += 1
                             hits += bool(dep[j][y, x] < dist * 0.55)
-                    fg = hits / n_
+                            # a body that isn't one of this shot's subjects, between the camera and them: the critic's
+                            # "blurry plaid block in the foreground" / "an arm fills the frame"
+                            i_ = ids[j][y, x]
+                            if 100 <= i_ < 200 and (i_ - 100) // 2 not in subj_idx and dep[j][y, x] < dist * 0.9:
+                                body += 1
+                    fg = max(hits / n_, min(1.0, 1.6 * max(0.0, body / n_ - 0.15)))   # a hug partner is fine; a body wall isn't
                 res.append({"near": nears[j], "subjects": subs, "fg": round(fg, 3)})
             runs.append(res)
         return runs
@@ -367,7 +373,11 @@ class Checks:
                     clear += not self._hit(ids[kk], dep[kk], vps[kk], cp, cen + off, {2})
                 if self._near(cp, 0.4, t):
                     clear = 0
-                opn.append(clear)
+                # an insert of a held prop must not be a frame full of the holder's arm and torso
+                win = ids[kk][H // 2 - H // 4:H // 2 + H // 4, W // 2 - W // 4:W // 2 + W // 4]
+                body = float(np.mean((win >= 100) & (win < 200)))
+                clear -= 2 if body > 0.6 else 1 if body > 0.35 else 0
+                opn.append(max(clear, 0))
             out.append([*cen, *size, lv[0], lv[2], opn])
         return out
 

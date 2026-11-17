@@ -23,6 +23,14 @@ import hlrender as RD  # noqa: E402
 CACHE = Path(os.environ.get("PROMPTIMATE_HEADLESS_CACHE", r"D:\tmp\headless"))
 
 
+def static_for(ep) -> Path:
+    """The world an episode plays in: our own procedural sets (STATIC = "own") or the exported Studio place."""
+    own = CACHE / "own" / "scene_static.json"
+    if getattr(ep, "STATIC", None) == "own" and own.exists():
+        return own
+    return CACHE / "scene" / "static.json"
+
+
 def record(cues, name: str, fps: int = 30, end: float | None = None, out: Path | None = None, log=print,
            fresh_static: bool = False, ass: str | None = None, fonts: str | None = None, wav: str | None = None,
            workers: int = 3) -> dict:
@@ -74,11 +82,11 @@ def record_offline(ep, cues, name: str, fps: int = 30, end: float | None = None,
         perf_actors = json.loads((RR.STATE / "state.json").read_text())["actors"]
     perf = RR.Perf()
     t_end = end if end is not None else perf.end()
-    scene = CACHE / "scene"
+    sp = static_for(ep)
     ep_dir = CACHE / name
     ep_dir.mkdir(parents=True, exist_ok=True)
-    static = json.loads((scene / "static.json").read_text())
-    (ep_dir / "static.json").write_bytes((scene / "static.json").read_bytes())
+    static = json.loads(sp.read_text())
+    (ep_dir / "static.json").write_bytes(sp.read_bytes())
     r = DR.build(ep, perf_actors, ep_dir, fps, t_end, static)
     (ep_dir / "hide.json").write_text(json.dumps(r["hidden_static"]))
     T["director"] = time.time() - t

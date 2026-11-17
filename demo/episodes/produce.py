@@ -466,7 +466,7 @@ def _main():
             import stage as WLD
             import director as DRC
             import pipeline as HL0
-            st_json = json.loads((HL0.CACHE / "scene" / "static.json").read_text())
+            st_json = json.loads(HL0.static_for(ep).read_text())
             RT.WORLD = WLD.Staging(WLD.World(st_json, DRC.props_at_home(ep, st_json)), ep.CAST)
             log(f"staging world {time.time() - t:.1f}s")
             try:

@@ -23,6 +23,15 @@ import pose as PO
 HIDE_Y = -2000.0
 
 
+def own_props() -> dict:
+    """Library props, with our own procedural ones (own_sets.py) replacing any with the same key."""
+    lib = L.props()
+    own = L.LIB.parent / "own" / "props.json"
+    if os.environ.get("PROMPTIMATE_OWN_ASSETS", "1") != "0" and own.exists():
+        lib = dict(lib, **json.loads(own.read_text()))
+    return lib
+
+
 def _cf(c):
     return np.asarray(c[:3], float), np.asarray(c[3:12], float).reshape(3, 3)
 
@@ -65,7 +74,7 @@ def ground_y(static_parts, x, z, top=60.0):
 def build(ep, perf_actors: dict, out: Path, fps: int, t_end: float, static: dict | None = None) -> dict:
     t0 = time.time()
     out.mkdir(parents=True, exist_ok=True)
-    looks, props_lib = L.looks(), L.props()
+    looks, props_lib = L.looks(), own_props()
     own = L.LIB.parent / "own" / "looks.json"
     if os.environ.get("PROMPTIMATE_OWN_ASSETS", "1") != "0" and own.exists():
         looks = dict(looks, **json.loads(own.read_text()))       # our own characters win over catalog ones
@@ -187,7 +196,7 @@ def build(ep, perf_actors: dict, out: Path, fps: int, t_end: float, static: dict
 
 def props_at_home(ep, static: dict | None = None) -> list[dict]:
     """The episode's props (PLACE) as world-space parts at their home pivots: staging sees them like set pieces."""
-    lib = L.props()
+    lib = own_props()
     out = []
     for i, it in enumerate(getattr(ep, "PLACE", [])):
         m = lib.get(it["prop"])
