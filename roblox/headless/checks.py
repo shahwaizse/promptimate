@@ -100,7 +100,10 @@ class Checks:
                 continue
             vbo, n, centre, msize = self.R.sc._mesh(key)
             P = np.frombuffer(vbo.read(), "f4").reshape(-1, 12)[:, :3].astype("f8")
-            keep = ~g["wall"]
+            sz_ = np.linalg.norm(g["mats"][:, :, :3], axis=1)          # world extents of each instance (unit mesh)
+            srt = np.sort(sz_, axis=1)
+            pole = (srt[:, 1] <= 1.2) & (srt[:, 2] >= 4.0)
+            keep = ~g["wall"] | pole     # lamp posts and poles block a shot (the renderer only cuts them on the axis)
             for m in g["mats"][keep]:
                 tris.append(P @ m[:, :3].T + m[:, 3])
             for m, pos in zip(g["mats"][keep], g["pos"][keep]):

@@ -30,6 +30,10 @@ def _window(fov, W, H, widen):
     return slice(max(0, y0), min(H, y1)), slice(max(0, x0), min(W, x1))
 
 
+def _vp_of(pos, look, fov, CK):
+    return CK._view_proj([(pos, look, fov)])[0]
+
+
 def audit(shots, perf, t_end: float, ck) -> dict:
     import checks as CK
     import roblox_record as RR
@@ -70,6 +74,21 @@ def audit(shots, perf, t_end: float, ck) -> dict:
                 front = max(front, BLOCKED + lens)
             samples += 1
             why = "empty" if cover < lim else "blocked" if front > BLOCKED else None
+            if not why and subs and not c.prop:
+                hi = ck.actor_index(subs[0], "Head")
+                if hi is not None:
+                    hp, hr = ck.part_world(hi, t)
+                    vp = _vp_of(pos, look, fov, CK)
+                    q = vp @ np.array([*hp, 1.0])
+                    if q[3] > 1e-6:
+                        u, v = q[0] / q[3], q[1] / q[3]
+                        k_ = math.tan(math.radians(fov) / 2) / math.tan(math.radians(min(fov * CK.WIDEN, 150)) / 2)
+                        if abs(u) > k_ * 0.92 or v > k_ * 0.95 or v < -k_ * 0.6:
+                            why = "headless"
+                    to = np.asarray(pos, float) - hp
+                    face = float((hr @ np.array([0, 0, -1.0])) @ (to / max(np.linalg.norm(to), 1e-6)))
+                    if not why and face < -0.2 and len(subs) == 1:
+                        why = "back"
             if why:
                 bad.append({"t": round(t, 2), "shot": c.name or f"{c.start:.1f}", "why": why, "cover": round(cover, 3),
                             "front": round(front, 2), "kind": "prop" if c.prop else "subject" if subs else "wide"})
@@ -77,6 +96,7 @@ def audit(shots, perf, t_end: float, ck) -> dict:
         per_shot.append((i, worst))
     return {"bad_share": round(len(bad) / max(samples, 1), 3), "samples": samples,
             "empty": sum(b["why"] == "empty" for b in bad), "blocked": sum(b["why"] == "blocked" for b in bad),
+            "headless": sum(b["why"] == "headless" for b in bad), "back": sum(b["why"] == "back" for b in bad),
             "by_kind": {k: sum(b["kind"] == k for b in bad) for k in ("prop", "subject", "wide")},
             "bad": bad, "per_shot": per_shot}
 
@@ -128,7 +148,8 @@ def repair(shots, perf, t_end: float, ck, log=print):
             hi = ck.actor_index(n, "Head")
             return hi is not None and ck.pose[ck._frame(tm), hi, 1] > -500
         near = [out[j].subject for j in list(range(i - 1, -1, -1)) + list(range(i + 1, len(out))) if out[j].subject]
-        subj = next((n for n in near if n in ck.names and visible(n)), None)
+        # a subject shot whose every framing failed: someone else (the same person is blocked from everywhere)
+        subj = next((n for n in near if n in ck.names and visible(n) and n != c.subject), None) or             next((n for n in near if n in ck.names and visible(n)), None)
         if subj is None:          # whoever is visible closest to where the shot was looking
             _k, _c, pos0, look0, _f = RR.camera(out, perf, tm)
             vis = [n for n in ck.names if visible(n) and n not in ck.alias]

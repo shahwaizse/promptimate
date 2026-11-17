@@ -28,7 +28,8 @@ MATDIR = MC.OUT.parent / "mat"
 # the look: sun colour/strength, sky and ground ambient (hemispheric), exposure. LIGHT_OVERRIDE is for A/B tests
 # 2026-11-17 critic: our sets read flat and evenly lit next to the references (raking sun, real shade): a stronger,
 # warmer sun and less fill, kept mild enough that a face in shade still reads
-LIGHT = {"sun": (1.6, 1.5, 1.32), "sky": (0.32, 0.36, 0.45), "ground": (0.19, 0.17, 0.16), "exp": 1.0}
+LIGHT = {"sun": (1.6, 1.5, 1.32), "sky": (0.32, 0.36, 0.45), "ground": (0.19, 0.17, 0.16), "exp": 1.0,
+         "bevel": 0.14, "rim": 0.35}
 LIGHT_OVERRIDE = None
 MAT_NAMES = {p.stem for p in MATDIR.glob("*.png")} if MATDIR.exists() else set()
 MAT_TILE = {"Brick": 8.0, "WoodPlanks": 8.0, "Cobblestone": 8.0, "DiamondPlate": 4.0, "Fabric": 2.0, "Grass": 6.0}
@@ -144,9 +145,10 @@ VS = """#version 330
 in vec3 in_pos; in vec3 in_nrm; in vec2 in_uv; in vec4 in_vcol;
 in vec4 i_m0; in vec4 i_m1; in vec4 i_m2; in vec4 i_col; in vec4 i_uvp;
 uniform mat4 vp; uniform mat4 light_vp; uniform float use_vcol;
-out vec3 v_nrm; out vec4 v_col; out vec4 v_lpos; out vec3 v_wpos; out vec2 v_uv; out vec3 v_opos;
+out vec3 v_nrm; out vec4 v_col; out vec4 v_lpos; out vec3 v_wpos; out vec2 v_uv; out vec3 v_opos; out vec3 v_scl;
 void main(){
   mat4 m = transpose(mat4(i_m0, i_m1, i_m2, vec4(0,0,0,1)));
+  v_scl = vec3(length(m[0].xyz), length(m[1].xyz), length(m[2].xyz));
   vec4 w = m * vec4(in_pos, 1.0);
   v_wpos = w.xyz;
   v_opos = in_pos;
@@ -157,7 +159,8 @@ void main(){
   gl_Position = vp * w;
 }"""
 FS = """#version 330
-in vec3 v_nrm; in vec4 v_col; in vec4 v_lpos; in vec3 v_wpos; in vec2 v_uv; in vec3 v_opos;
+in vec3 v_nrm; in vec4 v_col; in vec4 v_lpos; in vec3 v_wpos; in vec2 v_uv; in vec3 v_opos; in vec3 v_scl;
+uniform float bevel; uniform float rim;
 uniform sampler2DShadow shadow; uniform sampler2D tex; uniform int mode; uniform sampler2D mat; uniform float mat_on; uniform float mat_tile;
 uniform vec3 sun; uniform vec3 sun_col; uniform vec3 sky; uniform vec3 ground; uniform vec3 cam; uniform float exposure;
 out vec4 f;
@@ -178,6 +181,12 @@ void main(){
     if (base.a < 0.01) discard;
   }
   base.rgb = pow(max(base.rgb, 0.0), vec3(2.2));      // colours and textures are sRGB: light in linear space
+  if (bevel > 0.0) {                    // soft darkened edges on block parts: they read rounded, not cut from card
+    vec3 dd = (0.5 - abs(v_opos)) * v_scl;
+    float lo = min(dd.x, min(dd.y, dd.z)), hi = max(dd.x, max(dd.y, dd.z));
+    float mid = dd.x + dd.y + dd.z - lo - hi;
+    base.rgb *= mix(0.62, 1.0, smoothstep(0.0, bevel, mid));
+  }
   vec3 n = normalize(v_nrm);
   if (!gl_FrontFacing) n = -n;
   if (mat_on > 0.5 && mode != 3) {      // our procedural material, triplanar in world studs
@@ -198,6 +207,7 @@ void main(){
   vec3 v = normalize(cam - v_wpos);
   float spec = pow(max(dot(reflect(-sun, n), v), 0.0), 24.0) * 0.05;
   vec3 c = base.rgb * (amb + sun_col * d * sh) + spec * sh;
+  c += rim * pow(1.0 - max(dot(n, v), 0.0), 3.0) * sky * 2.0 * base.rgb;   // a soft sky rim: subjects lift off the set
   c *= exposure;
   c = c / (1.0 + c * 0.05);
   float lum = dot(c, vec3(0.299, 0.587, 0.114));
@@ -642,6 +652,8 @@ class Renderer:
         P["ground"].value = tuple(lo["ground"])
         P["cam"].value = tuple(cam_pos)
         P["exposure"].value = float((LIGHT_OVERRIDE or LIGHT).get("exp", 1.0))
+        P["rim"].value = float(lo.get("rim", 0.0))
+        bevel = float(lo.get("bevel", 0.0))
         self.shadow_tex.use(0)
         P["shadow"].value = 0
         P["tex"].value = 1
@@ -657,6 +669,7 @@ class Renderer:
                 key, tex, mode, vcol, _, matname = k
                 P["use_vcol"].value = vcol
                 P["mode"].value = mode
+                P["bevel"].value = bevel if (key == "box" or key.startswith("r6:") or key in TEMPLATE) and mode != 3 else 0.0
                 self.tex(tex).use(1)
                 if matname:
                     self.mat(matname).use(2)

@@ -349,7 +349,13 @@ def compile_story(spec, slug: str) -> str:
             lines.append({"id": lid, "text": ln["say"], **({"gap": ln["gap"]} if ln.get("gap") else {})})
             # cameras: an establishing wide shot on a set change, then the line's cuts spread over its length
             cuts = ln.get("cam") or [next(iter(ln.get("do", {})), next(iter(here)))]
-            cuts = cuts if isinstance(cuts, list) else [cuts]
+            cuts = list(cuts) if isinstance(cuts, list) else [cuts]
+            # the person the line names is on screen when it starts (judges: "keep the same character on screen while
+            # the narration names them")
+            named = [ch for ch in here if re.search(r"" + re.escape(ch) + r"", ln["say"], re.I)]
+            if named and not any(c_.split("+")[0] in named or (len(c_.split("+")) > 1 and c_.split("+")[1] in named)
+                                 for c_ in cuts[:1]):
+                cuts = [named[0]] + cuts[:2]
             t0 = 0.0
             if st != prev_set:
                 # a wide of the person the line is about, placed and checked by the shot planner (fixed establishing
@@ -395,7 +401,7 @@ def compile_story(spec, slug: str) -> str:
                 if abs(s_now - 1) > 0.12 or changing:
                     mates = [o for o in here if o != who[0] and abs(cur_scale.get(here[o], 1.0) - 1) < 0.12]
                     mate = who[1] if len(who) > 1 and who[1] in here else (mates[0] if mates else None)
-                    cue.update({"shot": "full" if s_now < 1 else "wide", "angle": [0, 20, -20][k_cam % 3]})
+                    cue.update({"shot": "full" if s_now < 1 else "wide", "angle": [0, 20, -20][k_cam % 3], "cover": False})
                     if mate:
                         cue["with"] = here[mate]
                 elif len(who) > 1 and who[1] in here:

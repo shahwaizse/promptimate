@@ -26,6 +26,8 @@ YOUR VISUAL TOOLS (per line):
   "at": "door"}. Signs are your counters, rules, prices, warnings, labels in the world: make several with changing
   numbers and show/hide them line by line ("show": [...], "hide": [...]). "hold": "Name" puts a small sign or prop
   in someone's hand. "small": True for a coin-sized prop.
+- Signs and labels never replace showing. If the narration says many people changed (the whole bank shrank,
+  everyone swapped), put 3-4 people in that scene and change every one of them on screen.
 - "cam": 1-3 cuts spread over the line: "Name" (single), "Name+Other" (two-shot), or a prop/sign name (insert shot:
   use these to show counters and objects). Cut often: most lines get 2-3 cuts.
 - "feel": the face each acting person makes. "fx": {"Name": kind} particles on a person (sparkle, hearts, confetti,
