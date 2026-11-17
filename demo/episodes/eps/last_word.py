@@ -1,8 +1,8 @@
 """In this town, the last word you say before bed is what you wake up as. (narration-paced; at the end Timmy's mind
 is played by a second grandpa rig)"""
 TITLE = "In This Town, Your Last Word Before Bed Is What You Wake Up As"
-VOICE, SPEED = "tv_M2", 1.6
-CAPTIONS = {"size": 66, "highlight": False, "max_words": 3}
+VOICE, SPEED = "tv_M2", 1.0
+CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
 KEYWORDS = ["word", "cheetah", "Grandpa", "Timmy", "turtle", "eightieth", "sixty", "Wednesday", "two"]
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)

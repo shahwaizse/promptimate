@@ -1,7 +1,7 @@
 """In this town, whoever sits on the golden throne rules everyone - until they stand up. (narration-paced)"""
 TITLE = "In This Town, Whoever Sits On The Throne Rules"
-VOICE, SPEED = "tv_M2", 1.6
-CAPTIONS = {"size": 66, "highlight": False, "max_words": 3}
+VOICE, SPEED = "tv_M2", 1.0
+CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
 KEYWORDS = ["throne", "king", "stand", "Preston", "Timmy", "Leo", "ice", "cream"]
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)

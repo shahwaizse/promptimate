@@ -203,8 +203,8 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,Arial Black,{int(getattr(captions, "size", 92))},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,{max(5, int(getattr(captions, "size", 92) * 0.11))},2,{8 if getattr(captions, "pos", "low") == "top" else 2},80,80,{int(H * (0.17 if getattr(captions, "pos", "low") == "top" else 0.35))},1
-Style: Title,Arial Black,110,&H00FFFFFF,&H00FFFFFF,&H00000000,&HB4000000,-1,0,0,0,100,100,2,0,3,18,0,8,60,60,{int(H * 0.14)},1
+Style: Cap,Montserrat ExtraBold,{int(getattr(captions, "size", 84))},&H00FFFFFF,&H00FFFFFF,&H00101010,&H78000000,0,0,0,0,100,100,0,0,1,{max(5, int(getattr(captions, "size", 84) * 0.09))},3,{8 if getattr(captions, "pos", "low") == "top" else 2},90,90,{int(H * (0.17 if getattr(captions, "pos", "low") == "top" else 0.30))},1
+Style: Title,Montserrat Black,104,&H00FFFFFF,&H00FFFFFF,&H00101010,&H78000000,0,0,0,0,100,100,1,0,1,8,4,8,60,60,{int(H * 0.08)},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -215,8 +215,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     def word(w):      # key words (episode KEYWORDS, numbers, money) pop in yellow
         bare = re.sub(r"[^A-Za-z0-9$]", "", w).upper()
         if bare and (bare in keys or re.search(r"[0-9$]", bare)):
-            return "{\\c&H00E6FF&}" + w.upper() + "{\\c&HFFFFFF&}"
-        return w.upper()
+            return "{\\c&H00E6FF&}" + w + "{\\c&HFFFFFF&}"
+        return w
 
     def under_title(t0, t1):
         return any(a < t1 - 0.05 and t0 + 0.05 < b for a, b, _ in titles)
@@ -234,11 +234,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             acc += w
         ends = starts[1:] + [t0 + dur]
         chunks, cur = [], []
+        weak = {"a", "an", "the", "of", "to", "in", "on", "at", "my", "his", "her", "your", "our", "their", "and",
+                "but", "or", "for", "with", "from", "into", "is", "was", "were", "be", "that", "this", "as", "by", "so"}
         for i, w in enumerate(words):
             cur.append(i)
-            if len(cur) == max_words or w.endswith((",", ".", "!", "?", "…")) or i == len(words) - 1:
+            if w.endswith((",", ".", "!", "?", "…")) or i == len(words) - 1:
                 chunks.append(cur)
                 cur = []
+            elif len(cur) >= max_words:
+                # never end a card on a dangling article/preposition ("A STAR THE"): carry it to the next card
+                if len(cur) > 1 and re.sub(r"[^a-z]", "", w.lower()) in weak:
+                    chunks.append(cur[:-1])
+                    cur = [i]
+                else:
+                    chunks.append(cur)
+                    cur = []
         for ci, ch in enumerate(chunks):
             chunk_end = starts[chunks[ci + 1][0]] if ci + 1 < len(chunks) else min(t0 + dur + 0.15, nxt - 0.02)
             # (captions keep running under title cards: titles sit at the top, captions below the faces)
@@ -247,12 +257,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                           + " ".join(word(words[j]) for j in ch))
                 continue
             for i in ch:          # one event per word: the chunk shown, the spoken word highlighted
-                txt = " ".join(("{\\c&H00E6FF&}" + words[j].upper() + "{\\c&HFFFFFF&}") if (j == i and highlight) else words[j].upper()
+                txt = " ".join(("{\\c&H00E6FF&}" + words[j] + "{\\c&HFFFFFF&}") if (j == i and highlight) else word(words[j])
                                for j in ch)
                 pop = "{\\fscx108\\fscy108\\t(0,90,\\fscx100\\fscy100)}" if i == ch[0] else ""
                 ev.append(f"Dialogue: 0,{_ass_time(starts[i])},{_ass_time(ends[i] if i != ch[-1] else chunk_end)},Cap,,0,0,0,,{pop}{txt}")
     for t0, t1, text in titles:
-        ev.append(f"Dialogue: 1,{_ass_time(t0)},{_ass_time(t1)},Title,,0,0,0,,{{\\fad(120,120)}}{text.upper()}")
+        ev.append(f"Dialogue: 1,{_ass_time(t0)},{_ass_time(t1)},Title,,0,0,0,,{{\\fad(120,120)}}{text}")
     out.write_text(head + "\n".join(ev) + "\n", encoding="utf-8")
     return out
 
@@ -385,6 +395,12 @@ def _main():
         bad = {k: v for k, v in r.items() if v != "ok"}
         if bad:
             raise SystemExit(f"cast failed: {bad}")
+        if getattr(ep, "PLACE", None):      # sourced props for this story (sets.py prop library)
+            import sets as SETS
+            pr = SETS.place(ep.PLACE)
+            if pr.get("missing"):
+                raise SystemExit(f"props missing from the library: {pr['missing']}")
+            log("props", len(pr["placed"]))
         T["cast"] = time.time() - t
         log("cast", r, f"{T['cast']:.0f}s")
     if "perform" in todo:
@@ -442,10 +458,14 @@ def _main():
         shutil.rmtree(RR.STATE / "record" / a.episode / "frames_final", ignore_errors=True)
         import roblox_tools as _RT
         log("package", _RT.install())       # pushes changed player/director code to Studio
+        sys.path.insert(0, str(ROOT / "roblox" / "short"))
+        import town as _town
+        from roblox_studio import studio as _st
+        _st().luau(getattr(ep, "LIGHT", None) or _town.LIGHT)     # the shared cinematic look (an episode may bring its own)
         t = time.time()
         cams = [RR.CameraCue(**c) for c in ep.CAMERAS]
         RR.cover.cut_times = sorted(ln[0] for ln in ep.LINES)     # coverage cuts on the sentence starts
-        r = RR.record(cams, name=a.episode, quality="final", end=getattr(ep, "LENGTH", None))
+        r = RR.record(cams, name=a.episode, quality="final", end=getattr(ep, "LENGTH", None), fps=30)
         info = json.loads(r[0])
         for w in info.get("camera_warnings", [])[:8]:
             log("   cam!", w)
@@ -467,16 +487,16 @@ def _main():
         total = duration(silent)
         wav, placed, credits = mix(ep, total, out)
         cap = getattr(ep, "CAPTIONS", {})
-        captions.size = max(cap.get("size", 92), 96)   # blind judges, twice: captions read too small
+        captions.size = cap.get("size", 84)   # sentence case Montserrat reads larger than the old all-caps Arial Black
         captions.keywords = getattr(ep, "KEYWORDS", ())
         captions.pos = cap.get("pos", "low")      # below the faces (~65% down); at the top they sat on hats
         ass = captions(placed, out / "captions.ass", titles=getattr(ep, "TITLES", []), highlight=cap.get("highlight", True),
                        max_words=cap.get("max_words", 3))
         final = out / f"{a.episode}{a.suffix}.mp4"
-        fonts = "C\\:/Windows/Fonts"
+        fonts = str(BUILD / "_media" / "fonts").replace("\\", "/").replace(":", "\\:")   # Montserrat (OFL, not in git)
         assp = str(ass).replace("\\", "/").replace(":", "\\:")
         run([FF, "-y", "-loglevel", "error", "-i", str(silent), "-i", str(wav), "-filter_complex",
-             f"[0:v]ass='{assp}':fontsdir='{fonts}'[v]", "-map", "[v]", "-map", "1:a", *RR._venc(), "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(final)])
+             f"[0:v]vignette=angle=PI/5,noise=alls=4:allf=t,ass='{assp}':fontsdir='{fonts}'[v]", "-map", "[v]", "-map", "1:a", *RR._venc(), "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(final)])
         (out / "credits.txt").write_text("\n".join([getattr(ep, "TITLE", a.episode), "", *credits,
                                                     "Narration: Kokoro TTS (Apache-2.0)"]) + "\n", encoding="utf-8")
         T["audio"] = time.time() - t

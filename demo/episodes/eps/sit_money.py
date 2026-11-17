@@ -1,9 +1,9 @@
 """In this world, sitting down costs money. (craftee-style story episode: several sets, faces, props, title cards)"""
 TITLE = "In This World, Sitting Down Costs Money"
 LENGTH = 83.0
-VOICE, SPEED = "tv_M2", 1.35
+VOICE, SPEED = "tv_M2", 1.0
 KEYWORDS = ["PRESTON", "PRESTON.", "FREE", "FREE.", "MONEY", "TIMMY", "MOM"]
-CAPTIONS = {"size": 66, "highlight": False, "max_words": 3}
+CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)
 CAST = [

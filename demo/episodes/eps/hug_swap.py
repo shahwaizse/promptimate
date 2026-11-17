@@ -1,7 +1,7 @@
 """In this world, if you hug someone, you swap bodies. (narration-paced; a swapped mind is played by the other's rig)"""
 TITLE = "In This World, If You Hug Someone, You Swap Bodies"
-VOICE, SPEED = "tv_M2", 1.6
-CAPTIONS = {"size": 66, "highlight": False, "max_words": 3}
+VOICE, SPEED = "tv_M2", 1.0
+CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
 KEYWORDS = ["hug", "swap", "Pop", "Timmy", "Preston", "mom", "mansion", "bakery"]
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)

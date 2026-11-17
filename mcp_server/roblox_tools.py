@@ -1508,6 +1508,14 @@ def _body_checks(results: dict) -> tuple[list[str], dict]:
                         bad.setdefault((n, i), []).append("pair")
             warn.append(f"{na} and {nb}: bodies overlap at {a:.1f}-{b:.1f}s (up to "
                         f"{max(x for t, x in zip(ts, v) if a <= t <= b):.1f} studs)")
+    for name, r in results.items():     # limbs inside walls/counters/props
+        hit = [(d["t"], (d.get("prop") or {}).get(name)) if isinstance(d.get("prop"), dict) else (d["t"], None) for d in data]
+        for a, b in _runs([w is not None for _t, w in hit], ts, 0.3):
+            what = next(w for t, w in hit if a <= t <= b and w)
+            i = beat_at(name, (a + b) / 2)
+            if i is not None:
+                bad.setdefault((name, i), []).append("prop")
+            warn.append(f"{name} passes through {what} at {a:.1f}-{b:.1f}s")
     return warn, bad
 
 

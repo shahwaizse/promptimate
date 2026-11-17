@@ -63,6 +63,12 @@ def calibrate(st, vp: tuple[int, int]) -> tuple[int, int, int, int]:
         raise RuntimeError("viewport not visible on screen: bring the Studio window to the front")
     x0, x1, y0, y1 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
     rect = (max(l, 0) + x0, max(t, 0) + y0, max(l, 0) + x1, max(t, 0) + y1)
+    # the window may run past the right edge of the last monitor (its side panels pushed off-screen to give the
+    # viewport the whole visible width): extend the rect by the hidden part; only the central crop is ever grabbed
+    vr = _u.GetSystemMetrics(76) + _u.GetSystemMetrics(78)
+    if rect[2] >= vr - 1 and vp[0] - (x1 - x0) > 6:
+        x1 = x0 + vp[0]
+        rect = (rect[0], rect[1], rect[0] + vp[0], rect[3])
     if abs((x1 - x0) - vp[0]) > 6 or abs((y1 - y0) - vp[1]) > 6:
         raise RuntimeError(f"viewport on screen {x1 - x0}x{y1 - y0} != Studio viewport {vp}: is it covered?")
     return rect
@@ -120,6 +126,15 @@ local f = (l - p).Unit
 local right = f:Cross(Vector3.yAxis)
 if right.Magnitude < 1e-3 then right = Vector3.xAxis end
 cam.CFrame = CFrame.lookAt(p, l, right.Unit)   -- rolled 90 degrees: the scene's up runs along the viewport's width
+-- Studio's edit camera drops the roll once a command returns (seen after a Studio restart): a frame hook keeps
+-- re-applying this camera for a moment, until the screen grab that follows has happened
+_G.PromptimateHold = {{ cf = cam.CFrame, untilT = os.clock() + 1.5 }}
+if not _G.PromptimateHoldConn then
+  _G.PromptimateHoldConn = game:GetService("RunService").RenderStepped:Connect(function()
+    local h = _G.PromptimateHold
+    if h and os.clock() < h.untilT then workspace.CurrentCamera.CFrame = h.cf end
+  end)
+end
 {seek}local D = _G.PromptimateDirector
 if D and D.cutaway then D.cutaway(p, l) end
 local RS = game:GetService("RunService"); RS.RenderStepped:Wait(); RS.RenderStepped:Wait()
@@ -160,6 +175,21 @@ end
 return 1'''
 
 
+def layout_studio(hwnd) -> None:
+    """Recording layout on the right-most monitor: the window is taller than the screen (title bar and status bar
+    off-screen) and runs past its right edge (side panels off-screen), so the 3D viewport gets ~1716x805 px - the
+    rolled portrait crop is 805 px wide (vs ~680 with the default window). PROMPTIMATE_STUDIO_LAYOUT=0 leaves it."""
+    import os
+    if os.environ.get("PROMPTIMATE_STUDIO_LAYOUT", "1") == "0":
+        return
+    right = _u.GetSystemMetrics(76) + _u.GetSystemMetrics(78)
+    r = W.RECT(); _u.GetWindowRect(hwnd, ctypes.byref(r))
+    want = (right - 1920, -160, right + 280, 1130)
+    if (r.left, r.top, r.right, r.bottom) != want:
+        _u.SetWindowPos(hwnd, 0, want[0], want[1], want[2] - want[0], want[3] - want[1], 0x0010 | 0x0004)
+        time.sleep(1.5)
+
+
 def pin_studio(on: bool = True) -> bool:
     """Raise Studio's window above the others on its monitor (without taking keyboard focus) so nothing covers the
     viewport while recording. Returns whether the window was found."""
@@ -172,6 +202,7 @@ def pin_studio(on: bool = True) -> bool:
             time.sleep(0.8)
         _u.ShowWindow(w[0], 8)          # SW_SHOWNA: to the front in its current (maximized) state, focus stays put
         time.sleep(0.3)
+        layout_studio(w[0])
     return True
 
 
@@ -181,6 +212,8 @@ def viewport_clear(rect) -> bool:
     if not w:
         return False
     l, t, r, b = rect
+    vr = _u.GetSystemMetrics(76) + _u.GetSystemMetrics(78)
+    r = min(r, vr - 1)          # (a viewport running off the right edge: check the visible part)
     for x, y in (((l + r) // 2, (t + b) // 2), (l + 8, t + 8), (r - 8, t + 8), (l + 8, b - 8), (r - 8, b - 8)):
         h = _u.WindowFromPoint(W.POINT(int(x), int(y)))
         if _u.GetAncestor(h, 2) != w[0]:

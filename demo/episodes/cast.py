@@ -100,6 +100,11 @@ local function build(c)
   for _, h in c.hairIds or {} do table.insert(hair, tostring(h)) end
   desc.HairAccessory = table.concat(hair, ",")
   if c.hatIds then desc.HatAccessory = table.concat(c.hatIds, ",") end
+  -- classic 2D clothing (catalog Shirt/Pants templates): plaid, suits, uniforms instead of flat colour slabs
+  if c.shirtId then desc.Shirt = c.shirtId end
+  if c.pantsId then desc.Pants = c.pantsId end
+  if c.faceIds then desc.FaceAccessory = table.concat(c.faceIds, ",") end
+  if c.accIds then desc.NeckAccessory = table.concat(c.accIds, ",") end
   if c.classic then   -- classic blocky body: colours on the description (head/arms skin, shirt, trousers)
     local function col(v) return Color3.fromRGB(v[1], v[2], v[3]) end
     local sk = col(c.classic.skin)
@@ -177,6 +182,8 @@ def ensure(cast: list[dict]) -> dict:
         spec.append({"name": c["name"], "lookKey": c["look"] + "#" + __import__("hashlib").sha1(json.dumps(lk, sort_keys=True).encode()).hexdigest()[:6], "bundle": lk.get("bundle"), "paint": lk.get("paint"),
                      "badge": lk.get("badge", False), "hair": lk.get("hair", True), "skin": lk.get("skin"),
                      "classic": lk.get("classic"), "hairIds": lk.get("hairIds"), "hatIds": lk.get("hatIds"),
+                     "shirtId": lk.get("shirtId"), "pantsId": lk.get("pantsId"), "faceIds": lk.get("faceIds"),
+                     "accIds": lk.get("accIds"), "armWidth": lk.get("armWidth"),
                      "rig": "R6",   # R15 retired: too blocky for story videos (user call, 2026-11-16)
                      "x": c["at"][0], "z": c["at"][1], "yaw": c.get("yaw", 0)})
     return studio().luau_json(ENSURE.replace("__SPEC__", json.dumps(json.dumps(spec))), timeout=900)

@@ -61,13 +61,13 @@ class CameraCue(BaseModel):
     with_: str | None = Field(None, alias="with", description="With subject: a second character for a two-shot")
     cover: bool = Field(True, description="With subject: a long shot (> ~2.4 s) is cut into ~1.5 s coverage shots "
                                           "(close / medium / other angle; two-shots alternate with singles)")
-    push: float = Field(0.08, description="Slow push-in over the shot: field of view narrows by this fraction by its "
+    push: float = Field(0.12, description="Slow push-in over the shot: field of view narrows by this fraction by its "
                                           "end (0 = locked-off shot)")
 
 
 # ------------------------------------------------------------------------------------------- subject framing
 SHOTS = {  # distance (in head heights above the floor ~ character height), camera height and aim (0 = hips, 1 = head), fov
-    "close": (1.5, 1.0, 0.97, 34), "medium": (2.0, 0.92, 0.82, 38), "full": (2.8, 0.8, 0.5, 44),
+    "close": (1.35, 1.0, 0.9, 40), "medium": (2.1, 0.92, 0.80, 40), "full": (2.8, 0.8, 0.5, 44),
     "wide": (4.0, 1.2, 0.4, 50), "low": (1.4, -0.1, 0.85, 42),
 }
 WIDER = {"close": "medium", "medium": "full", "low": "medium"}
@@ -150,7 +150,7 @@ def cover(cues, t_end: float, target: float | None = None):
             full = []
             for k2, a0 in enumerate(picked):
                 a1 = picked[k2 + 1] if k2 + 1 < len(picked) else end
-                m2 = max(1, round((a1 - a0) / (target * 1.25)))
+                m2 = max(1, round((a1 - a0) / (target * 1.6)))   # short lines hold one picture: varied rhythm
                 full += [a0 + (a1 - a0) * q / m2 for q in range(m2)]
             starts = full
             n = len(starts)
@@ -169,8 +169,8 @@ def cover(cues, t_end: float, target: float | None = None):
                     m = j % 3
                     if m == 1:
                         u.update(shot=TIGHTER.get(c.shot, c.shot), angle=c.angle - 30)
-                    elif m == 2:
-                        u.update(angle=c.angle + 35)
+                    elif m == 2:     # a full-body shot in each cycle (references: ~50% of frames show the body)
+                        u.update(shot="full" if c.shot in ("close", "medium", "low") else c.shot, angle=c.angle + 30)
                 if c.name:
                     u["name"] = f"{c.name} /{j + 1}"
             out.append(c.model_copy(update=u))
@@ -238,7 +238,7 @@ def frame_subjects(cues, t_end: float):
                 for v in subs.values():
                     f = v.get("face", 1.0)
                     hook = 2.0 if c.start < 2.0 else 1.0      # the opening shot must show a face: it decides the swipe
-                    score += hook * (8 if f < 0 else 4 if f < 0.35 else 1.5 if f < 0.6 else 0) / len(runs)
+                    score += hook * (14 if f < 0 else 6 if f < 0.35 else 1.5 if f < 0.6 else 0) / len(runs)   # critic: 12% back-of-head frames
                     score += float(v.get("selfhit") or 0) * 10 / len(runs)                # face covered (arms, props)
             pos = cams[j]["pos"]
             look = cams[j]["look"]
@@ -431,6 +431,14 @@ def _capture(cid, pos, look) -> "Image":
 
 
 def _viewport() -> tuple[int, int]:
+    try:     # the recording window layout first: it decides the viewport size
+        sys.path.insert(0, str(ROOT / "roblox" / "short"))
+        import fastgrab as _fg
+        w = _fg.studio_window()
+        if w:
+            _fg.layout_studio(w[0])
+    except Exception:
+        pass
     return tuple(json.loads(studio().luau(
         "local v = workspace.CurrentCamera.ViewportSize; return string.format('[%d,%d]', v.X, v.Y)")))
 
@@ -493,6 +501,11 @@ def image_qa(cues, perf, size, t_end):
             u, w, z = _project(np.asarray(pos, float), np.asarray(look, float), fov, size, v["head"])
             if z <= 0 or not (0.03 < u < 0.97 and 0.03 < w < 0.92):
                 sc += 1
+            else:   # the top of the hat/hair must be in frame too (cropped crowns read as a mistake)
+                _u2, w2, z2 = _project(np.asarray(pos, float), np.asarray(look, float), fov, size,
+                                       [v["head"][0], v["head"][1] + 1.3, v["head"][2]])
+                if z2 > 0 and w2 < 0.01:
+                    sc += 0.6
             if v.get("blocked", 0) >= 2:
                 sc += 1
         return sc, bl
@@ -779,7 +792,8 @@ def record(shots: list[CameraCue], start: float = 0.0, end: float | None = None,
         if not j:
             return [json.dumps({"error": f"unknown job {job}"})]
         if j["state"] == "done":
-            return [json.dumps({"state": "done", "mp4": j["mp4"], "frames": j["frames_dir"], "render_s": j["render_s"]}),
+            return [json.dumps({"state": "done", "mp4": j["mp4"], "frames": j["frames_dir"], "render_s": j["render_s"],
+                                **{k: j[k] for k in ("mode", "fast_error", "live", "live_frames", "live_error", "fill_s") if j.get(k) is not None}}),
                     Image(path=j["sheet"])]
         return [json.dumps({k: j.get(k) for k in ("state", "done", "total", "eta_s", "error", "live", "live_frames", "live_error") if j.get(k) is not None})]
     if not shots:

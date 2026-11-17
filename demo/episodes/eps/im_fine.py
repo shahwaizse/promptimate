@@ -1,7 +1,7 @@
 """In this town, every time you say I'm fine, a rain cloud follows you until you tell the truth. (narration-paced)"""
 TITLE = "In This Town, Saying I'm Fine Makes It Rain On You"
-VOICE, SPEED = "tv_M2", 1.6
-CAPTIONS = {"size": 66, "highlight": False, "max_words": 3}
+VOICE, SPEED = "tv_M2", 1.0
+CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
 KEYWORDS = ["fine", "cloud", "rain", "thunder", "Timmy", "Mom", "Preston", "bakery", "snowing"]
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)

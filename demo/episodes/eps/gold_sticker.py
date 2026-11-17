@@ -1,7 +1,7 @@
 """In this town, every compliment you give becomes a gold sticker on the other person's forehead. (narration-paced)"""
 TITLE = "In This Town, Compliments Become Gold Stars On Your Forehead"
-VOICE, SPEED = "tv_M2", 1.6
-CAPTIONS = {"size": 66, "highlight": False, "max_words": 3}
+VOICE, SPEED = "tv_M2", 1.0
+CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
 KEYWORDS = ["compliment", "star", "stars", "ding", "Leo", "Timmy", "Preston", "zero", "pizza", "sweep"]
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)

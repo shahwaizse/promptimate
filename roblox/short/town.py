@@ -197,16 +197,26 @@ return "bench top=" .. top
 '''
 
 LIGHT = r'''
+-- "cinematic" look (look-dev A/B vs the old flat preset): max render quality, full environment specular (the plastic
+-- sheen the reference shorts have), crisp sun shadows, bloom, a warm grade and a depth of field that
+-- D.cutaway() refocuses on the camera's aim point every frame.
+pcall(function() settings().Rendering.EditQualityLevel = Enum.QualityLevel.Level21 end)
+pcall(function() settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04 end)
 local L = game:GetService("Lighting")
-L.ClockTime = 15.4; L.GeographicLatitude = 30; L.Brightness = 2.6; L.ExposureCompensation = 0.1
-L.Ambient = Color3.fromRGB(90, 90, 100); L.OutdoorAmbient = Color3.fromRGB(140, 140, 150)
-L.EnvironmentDiffuseScale = 0.6; L.EnvironmentSpecularScale = 0.4; L.GlobalShadows = true; L.ShadowSoftness = 0.25
-for _, n in {"PromptimateAtmos", "PromptimateCC", "PromptimateBloom"} do local o = L:FindFirstChild(n); if o then o:Destroy() end end
-local a = Instance.new("Atmosphere"); a.Name = "PromptimateAtmos"; a.Density = 0.28; a.Offset = 0.15; a.Haze = 1.2; a.Glare = 0.2
-a.Color = Color3.fromRGB(200, 215, 230); a.Decay = Color3.fromRGB(110, 120, 140); a.Parent = L
-local cc = Instance.new("ColorCorrectionEffect"); cc.Name = "PromptimateCC"; cc.Saturation = 0.12; cc.Contrast = 0.06
-cc.TintColor = Color3.fromRGB(255, 248, 238); cc.Parent = L
-local bl = Instance.new("BloomEffect"); bl.Name = "PromptimateBloom"; bl.Intensity = 0.25; bl.Size = 20; bl.Threshold = 1.6; bl.Parent = L
+L.ClockTime = 16.2; L.GeographicLatitude = 35; L.Brightness = 3.2; L.ExposureCompensation = 0.15
+L.Ambient = Color3.fromRGB(70, 70, 80); L.OutdoorAmbient = Color3.fromRGB(120, 120, 135)
+L.EnvironmentDiffuseScale = 1; L.EnvironmentSpecularScale = 1; L.GlobalShadows = true; L.ShadowSoftness = 0.12
+for _, o in L:GetChildren() do
+  if o:IsA("Atmosphere") or o:IsA("PostEffect") then o:Destroy() end
+end
+local a = Instance.new("Atmosphere"); a.Name = "PromptimateAtmos"; a.Density = 0.3; a.Offset = 0.2; a.Haze = 0.6; a.Glare = 0.4
+a.Color = Color3.fromRGB(205, 220, 240); a.Decay = Color3.fromRGB(150, 135, 120); a.Parent = L
+local cc = Instance.new("ColorCorrectionEffect"); cc.Name = "PromptimateCC"; cc.Saturation = 0.18; cc.Contrast = 0.14
+cc.Brightness = 0.02; cc.TintColor = Color3.fromRGB(255, 244, 230); cc.Parent = L
+local bl = Instance.new("BloomEffect"); bl.Name = "PromptimateBloom"; bl.Intensity = 0.7; bl.Size = 30; bl.Threshold = 1.05; bl.Parent = L
+local sr = Instance.new("SunRaysEffect"); sr.Name = "PromptimateRays"; sr.Intensity = 0.04; sr.Spread = 0.6; sr.Parent = L
+local dof = Instance.new("DepthOfFieldEffect"); dof.Name = "PromptimateDOF"; dof.FarIntensity = 0.5; dof.NearIntensity = 0.15
+dof.FocusDistance = 10; dof.InFocusRadius = 6; dof.Parent = L
 return "lighting"
 '''
 

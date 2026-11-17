@@ -1,7 +1,7 @@
 """In this world, you're born with exactly 1,000 words. Use them up and you're silent forever. (narration-paced)"""
 TITLE = "In This World, You Only Get 1,000 Words"
-VOICE, SPEED = "tv_M2", 1.6
-CAPTIONS = {"size": 66, "highlight": False, "max_words": 3}
+VOICE, SPEED = "tv_M2", 1.0
+CAPTIONS = {"size": 80, "highlight": False, "max_words": 3}
 KEYWORDS = ["words", "thousand", "silent", "Timmy", "Mom", "Preston", "Leo", "birthday"]
 
 # ---- cast: classic blocky characters; one copy of a character per set (characters don't travel between lots)

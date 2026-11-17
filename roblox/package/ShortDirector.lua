@@ -281,7 +281,9 @@ local function buildFx(kind: string)
 	local e = Instance.new("ParticleEmitter")
 	e.Rate = spec.rate; e.Speed = NumberRange.new(spec.speed); e.Lifetime = NumberRange.new(spec.life)
 	e.Size = NumberSequence.new(spec.size); e.EmissionDirection = spec.dir; e.SpreadAngle = Vector2.new(8, 8)
-	e.LightEmission = (kind == "rain") and 0 or 0.2; e.Enabled = false
+	e.LightEmission = (kind == "rain") and 0 or 1; e.Enabled = false
+	pcall(function() e.Brightness = (kind == "sparkle" or kind == "hearts") and 4 or 1.5 end)   -- over the bloom threshold: glints glow
+	if kind == "sparkle" then e.Texture = "rbxasset://textures/particles/sparkles_main.dds"; e.Rotation = NumberRange.new(0, 360) end
 	if spec.color then
 		e.Color = ColorSequence.new(spec.color)
 	else
@@ -309,7 +311,7 @@ local function poseFx(t: number)
 		if f.kind == "label" then
 			local g = m.Source:FindFirstChild("Label")
 			if on and head then
-				m.Source.CFrame = CFrame.new(head.Position + Vector3.new(0, 1.45, 0))   -- just above the hair: higher leaves close-ups
+				m.Source.CFrame = CFrame.new(head.Position + Vector3.new(0, 2.3, 0))   -- above hat/hair: off the top of close-ups (reviewers: labels sat on faces)
 				g.Enabled = true
 				g.Text.Text = tostring(text or "")
 			else
@@ -478,6 +480,12 @@ end
 local cutHidden = {}
 -- Hide the cullable walls between the camera and its aim point (and any the camera sits in); restore the rest.
 function D.cutaway(pos: Vector3, look: Vector3)
+	local dof = game:GetService("Lighting"):FindFirstChild("PromptimateDOF")
+	if dof then   -- focus on the aim point (the subject); the background softens like a real lens
+		local d = (look - pos).Magnitude
+		dof.FocusDistance = d
+		dof.InFocusRadius = math.max(4, d * 0.35)
+	end
 	local want = {}
 	local list = cullables()
 	if #list > 0 then
@@ -822,7 +830,39 @@ function D.bodycheck(times)
 				pair[names[i] .. "|" .. names[j]] = best
 			end
 		end end
-		table.insert(out, { t = t, self = selfd, selfWhere = selfw, pair = pair })
+		-- limbs inside set pieces/props (walls, counters, benches, sourced models): spatial query with each limb's
+		-- posed box shrunk to its core, ignoring floors (parts whose top is under the feet) and seats being sat on
+		local prop = {}
+		local setsF = workspace:FindFirstChild("Sets")
+		if setsF then
+			local qp = OverlapParams.new(); qp.FilterType = Enum.RaycastFilterType.Include
+			qp.FilterDescendantsInstances = { setsF, workspace:FindFirstChild("Town") }
+			for _, n in names do
+				local P = poses[n]
+				if P then
+					local rig = D.actors[n].rig
+					local foot = math.huge
+					for _, pn in bodyOf(rig) do
+						local q = rig:FindFirstChild(pn)
+						if q and P[pn] then foot = math.min(foot, P[pn].Position.Y - q.Size.Y / 2) end
+					end
+					local hits, what = 0, nil
+					for _, pn in bodyOf(rig) do
+						local q = rig:FindFirstChild(pn)
+						if q and P[pn] then
+							for _, h in workspace:GetPartBoundsInBox(P[pn], q.Size * 0.6, qp) do
+								local top = h.Position.Y + h.Size.Y / 2
+								if h.Transparency < 0.9 and h.CanQuery and top > foot + 0.45 and h.Size.Magnitude > 0.6 then
+									hits += 1; what = what or (h.Parent.Name .. "." .. h.Name .. "<" .. pn)
+								end
+							end
+						end
+					end
+					if hits > 0 then prop[n] = what end
+				end
+			end
+		end
+		table.insert(out, { t = t, self = selfd, selfWhere = selfw, pair = pair, prop = prop })
 	end
 	return HttpService:JSONEncode(out)
 end
