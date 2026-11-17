@@ -444,6 +444,15 @@ def compile_story(spec, slug: str) -> str:
                             px, pz = pos[a]
                             d = math.hypot(tx - px, tz - pz) or 1.0
                             pos[a] = (tx - (tx - px) / d * 2.5, tz - (tz - pz) / d * 2.5)
+                        elif tgt and any(e_["name"] == tgt for e_ in place):
+                            e_ = next(e_ for e_ in place if e_["name"] == tgt)      # walk up to a prop
+                            px, pz = pos[a]
+                            gx_, gz_ = e_["at"]
+                            d_ = math.hypot(gx_ - px, gz_ - pz) or 1.0
+                            gx_, gz_ = round(gx_ - (gx_ - px) / d_ * 2.2, 2), round(gz_ - (gz_ - pz) / d_ * 2.2, 2)
+                            b["to"] = [gx_, gz_]
+                            b["face"] = list(e_["at"])
+                            pos[a] = (gx_, gz_)
                         elif tgt and tgt.partition(":")[0] in spots:
                             nm_, _, off_ = tgt.partition(":")
                             s = spots[nm_]

@@ -412,6 +412,12 @@ def _main():
     out.mkdir(parents=True, exist_ok=True)
     pace(ep, out)
     audio_job = None
+    # every environment key this run sets exists before the audio thread starts: a key added to os.environ while
+    # another thread copies it raised "dictionary changed size during iteration" (intermittent production crash)
+    os.environ.setdefault("PROMPTIMATE_RBX_TAKES", "1")
+    os.environ.setdefault("PROMPTIMATE_SKIP_PREVIEW", "1")
+    os.environ["PROMPTIMATE_REPAIR_ROUNDS"] = str(a.rounds)
+    os.environ["PROMPTIMATE_RBX_ATTEMPTS"] = str(a.attempts)
     if (a.offline or a.headless) and a.start in ("cast", "perform", "record") and getattr(ep, "LENGTH", None):
         # the soundtrack and captions only need the paced lines: mix them while the motion is generated
         import concurrent.futures as _cf
