@@ -27,6 +27,9 @@ def main():
     import roblox_tools as RT
     import story_compile as story
     jobs = [(p, s, att) for k, (p, s) in story.ACTIONS.items() if k not in story.MOVES for att in range(a.attempts)]
+    # perform's idle fillers between beats: every snapped length up to the idle cap
+    jobs += [("a person stands still and breathes", L / 2, att) for L in range(2, int(RT.IDLE_CAP * 2) + 1)
+             for att in range(a.attempts)]
     SRV.worker.prefetch([p for p, _s, _a in jobs])
     t0 = time.time()
 

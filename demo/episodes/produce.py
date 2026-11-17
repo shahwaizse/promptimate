@@ -394,6 +394,15 @@ def _main():
     ap.add_argument("--headless", action="store_true", help="render offscreen (roblox/headless) instead of screen-recording Studio")
     ap.add_argument("--attempts", type=int, default=2, help="seeds tried per beat for facing/mark/seat")
     a = ap.parse_args()
+    st_path = Path(a.episode)
+    if a.episode.endswith(".py") or (HERE / "stories" / f"{a.episode}.py").exists() and not (HERE / "eps" / f"{a.episode}.py").exists():
+        # a compact story (stories/<slug>.py): compiled here, in-process, into eps/<slug>.py
+        import story_compile as SC
+        st_path = st_path if st_path.suffix == ".py" else HERE / "stories" / f"{a.episode}.py"
+        t = time.time()
+        (HERE / "eps" / f"{st_path.stem}.py").write_text(SC.compile_story(SC.load(st_path), st_path.stem), encoding="utf-8")
+        a.episode = st_path.stem
+        log(f"compiled story {st_path.name} {time.time() - t:.1f}s")
     ep = importlib.import_module(f"eps.{a.episode}")
     if a.voice:
         ep.VOICE = a.voice
@@ -402,6 +411,11 @@ def _main():
     out = BUILD / a.episode
     out.mkdir(parents=True, exist_ok=True)
     pace(ep, out)
+    audio_job = None
+    if (a.offline or a.headless) and a.start in ("cast", "perform", "record") and getattr(ep, "LENGTH", None):
+        # the soundtrack and captions only need the paced lines: mix them while the motion is generated
+        import concurrent.futures as _cf
+        audio_job = _cf.ThreadPoolExecutor(1).submit(audio_assets, ep, int(float(ep.LENGTH) * 30) / 30, out)
     T = {}
     t_all = time.time()
     steps = ["cast", "perform", "record", "audio"]
@@ -511,7 +525,10 @@ def _main():
             # in its own encode, so the finished video exists the moment the last frame is drawn
             t_end = getattr(ep, "LENGTH", None) or RR.Perf().end()
             total = int(t_end * 30) / 30
-            wav, ass, credits = audio_assets(ep, total, out)
+            if audio_job is not None and abs(total - int(float(ep.LENGTH) * 30) / 30) < 1e-6:
+                wav, ass, credits = audio_job.result()
+            else:
+                wav, ass, credits = audio_assets(ep, total, out)
             final = out / f"{a.episode}{a.suffix}.mp4"
             if a.offline:
                 r = HL.record_offline(ep, cams, a.episode, 30, t_end, final, log=log, ass=str(ass),

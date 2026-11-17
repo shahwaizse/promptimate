@@ -1506,6 +1506,8 @@ def _runs(flags: list[bool], times: list[float], min_len: float) -> list[tuple[f
 def _stage_checks(name: str, r: dict, plan: Planner) -> list[str]:
     """In-place checks of one character's performance on its real rig, everyone else posed at the same time."""
     beats = r["beats"]
+    if not r.get("clips"):
+        return []
     t0, t1 = r["clips"][0]["s"], r["clips"][-1]["s"] + r["clips"][-1]["d"]
     times = [round(t, 3) for t in np.arange(t0, t1, 0.25)]
     ends = [round(b["t1"] - 0.04, 3) for b in beats]

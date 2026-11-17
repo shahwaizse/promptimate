@@ -147,6 +147,30 @@ def _yaw_dir(yaw: float) -> tuple[float, float]:
     return (-math.sin(r), -math.cos(r))
 
 
+_WORLD = None
+
+
+def _free_spot(x: float, z: float, floor: float, others, r: float = 1.3, apart: float = 3.5):
+    """The nearest standing place to (x, z), checked against the set geometry (stage.World: furniture, fountains,
+    benches) and at least `apart` studs from people already placed. Spiral search out to 10 studs."""
+    global _WORLD
+    if _WORLD is None:
+        sys.path.insert(0, str(HERE.parents[1] / "roblox" / "headless"))
+        import stage
+        _WORLD = stage.World(json.loads((OWN / "scene_static.json").read_text()), [])
+    cands = [(x, z)]
+    for rad in (1.0, 2.0, 3.0, 4.0, 5.5, 7.0, 8.5, 10.0):
+        n = int(6 * rad)
+        cands += [(x + rad * math.cos(2 * math.pi * k / n), z + rad * math.sin(2 * math.pi * k / n)) for k in range(n)]
+    ok_apart = [all(math.hypot(cx - ox, cz - oz) >= apart for ox, oz in others) for cx, cz in cands]
+    pre = [c for c, ok in zip(cands, ok_apart) if ok]
+    free = _WORLD.stand_free({"pts": pre, "floor": floor, "r": r, "h": 4.6})
+    for c, f in zip(pre, free):
+        if f:
+            return round(c[0], 2), round(c[1], 2)
+    return x, z
+
+
 def _est(text: str, gap: float = 0.0) -> float:
     return len(text.split()) / WORDS_PER_S + gap
 
@@ -231,6 +255,11 @@ def compile_story(spec, slug: str) -> str:
                 fx, fz = anchor[0] - x, anchor[1] - z
                 yaw = round(math.degrees(math.atan2(-fx, -fz)), 1)
                 warn.append(f"{ch}: {where} is far from the others in {sc['set']}; placed beside them")
+            others = [pos[o] for o in pos if o in [copy(c2, sc["set"]) for c2 in sc.get("place", {})]]
+            fx_, fz_ = _free_spot(x, z, m.get("floor_y", 0.0), others)
+            if (fx_, fz_) != (x, z):
+                warn.append(f"{ch}: {where} is blocked or crowded in {sc['set']}; moved {math.hypot(fx_ - x, fz_ - z):.1f} studs")
+                x, z = fx_, fz_
             look = spec.CAST.get(ch, "c_man")
             if look not in lks:
                 warn.append(f"{ch}: unknown look {look!r}")
@@ -242,6 +271,7 @@ def compile_story(spec, slug: str) -> str:
 
     lines, cams, faces, place, props, fxs, sfx, titles = [], [], {}, [], [], [], [], []
     shown = {}     # prop name -> start ref of its open interval
+    first_line = {}
     prev_set, k_cam = None, 0
     line_ids = []
     for sc in spec.SCENES:
@@ -250,6 +280,8 @@ def compile_story(spec, slug: str) -> str:
         spots = {s["name"]: s for s in m["spots"]}
         fy = m.get("floor_y", 0.0)
         here = {ch: copy(ch, st) for ch in sc.get("place", {})}
+        for n in here.values():
+            first_line.setdefault(n, sc["lines"][0]["id"])
         for p in sc.get("props", []):
             if p["prop"] not in props_ok:
                 warn.append(f"prop {p['prop']!r} unknown, skipped")
@@ -363,7 +395,9 @@ def compile_story(spec, slug: str) -> str:
                     faces.setdefault(here[ch], []).append((f"@{lid}", f))
             if ln.get("label"):
                 who = here.get(next(iter(ln.get("do", {})), ""), next(iter(here.values())))
-                fxs.append({"actor": who, "kind": "label", "show": [[f"@{lid}+0.4", f"@{lid}.end+0.3", ln["label"]]]})
+                # a title owns the top of the frame for its first 1.8 s: the label waits for it
+                t_lab = "+2.2" if ln.get("title") else "+0.4"
+                fxs.append({"actor": who, "kind": "label", "show": [[f"@{lid}{t_lab}", f"@{lid}.end+0.3", ln["label"]]]})
             for ch, kind in (ln.get("fx") or {}).items():
                 if ch in here and kind in FX_KINDS:
                     fxs.append({"actor": here[ch], "kind": kind, "show": [[f"@{lid}+0.3", f"@{lid}.end+0.4"]]})
@@ -373,7 +407,7 @@ def compile_story(spec, slug: str) -> str:
                 else:
                     warn.append(f"{lid}: sfx {s!r} not in the library, skipped")
             if ln.get("title"):
-                titles.append((f"@{lid}+0.4", f"@{lid}.end+0.3", ln["title"]))
+                titles.append((f"@{lid}+0.4", f"@{lid}+2.0" if ln.get("label") else f"@{lid}.end+0.3", ln["title"]))
             for n in ln.get("show", []):
                 shown.setdefault(n, f"@{lid}")
             for n in ln.get("hide", []):
@@ -381,6 +415,9 @@ def compile_story(spec, slug: str) -> str:
                     for p in props:
                         if p["name"] == n:
                             p["show"].append([shown.pop(n), f"@{lid}"])
+    for n, act in actors.items():
+        if not act["beats"]:       # placed but never acting: stands there through its scene
+            act["beats"].append({"at": f"@{first_line[n]}", "prompt": ACTIONS["happy"][0], "seconds": ACTIONS["happy"][1]})
     end = f"@{line_ids[-1]}.end+2.0"
     for n, t in shown.items():
         for p in props:
