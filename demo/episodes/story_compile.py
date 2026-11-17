@@ -103,7 +103,8 @@ ACTIONS = {
 }
 MOVES = {"walk", "walk_sad", "walk_happy", "march", "run", "sneak"}
 FEELINGS = ["neutral", "happy", "grin", "sad", "crying", "shocked", "scared", "angry", "smug", "tired", "wink", "love"]
-FX_KINDS = ["sparkle", "rain", "confetti", "hearts"]
+FX_KINDS = ["sparkle", "rain", "confetti", "hearts", "dizzy", "zzz", "anger", "sweat", "poof"]
+SIGN_STYLES = ["wood", "red", "blue", "green", "black", "white", "gold"]
 MUSIC_MOODS = ["whimsical", "happy", "funny", "dance", "mysterious", "piano", "creepy"]
 WORDS_PER_S = 2.55          # tv_M2 at 1.0x, measured on compliment_coins (for spreading cuts and fitting actions)
 HAND = [0, -0.6, -0.3, 0, 0, 0]
@@ -129,6 +130,7 @@ def catalog() -> str:
     out += [f"  {k}{' (needs >target)' if k in MOVES else ''}: {p[len('a person '):]} ({s:g}s)" for k, (p, s) in ACTIONS.items()]
     out.append("FEELINGS (face): " + ", ".join(FEELINGS))
     out.append("FX: " + ", ".join(FX_KINDS) + "   (labels: short ALL-CAPS text over the shot)")
+    out.append("SIGN STYLES: " + ", ".join(SIGN_STYLES))
     out.append("SFX: " + ", ".join(sfx_names()))
     out.append("MUSIC: " + ", ".join(MUSIC_MOODS))
     out.append("LOOKS: " + ", ".join(looks()))
@@ -271,6 +273,8 @@ def compile_story(spec, slug: str) -> str:
 
     lines, cams, faces, place, props, fxs, sfx, titles = [], [], {}, [], [], [], [], []
     shown = {}     # prop name -> start ref of its open interval
+    events = []
+    cur_look = {c["name"]: c["look"] for c in cast}
     first_line = {}
     prev_set, k_cam = None, 0
     line_ids = []
@@ -285,8 +289,10 @@ def compile_story(spec, slug: str) -> str:
         for p in sc.get("props", []):
             if any(q["name"] == p["name"] for q in props):
                 continue          # the same prop declared again when a set is revisited: it's already there
-            if p["prop"] not in props_ok:
-                warn.append(f"prop {p['prop']!r} unknown, skipped")
+            if p.get("sign"):
+                p = dict(p, prop="sign")
+            elif p.get("prop") not in props_ok:
+                warn.append(f"prop {p.get('prop')!r} unknown, skipped")
                 continue
             if p.get("hold") in here:
                 a = here[p["hold"]]
@@ -302,6 +308,13 @@ def compile_story(spec, slug: str) -> str:
                 dx, dz = (float(v) for v in off.split(",")) if off else (0.0, 0.0)
                 at = [round(s["x"] + dx, 2), round(s["z"] + dz, 2)]
             e = {"prop": p["prop"], "at": at, "y": fy, "yaw": p.get("yaw", 0), "name": p["name"]}
+            if p["prop"] == "sign":
+                sx, sz = m.get("camera_side", [-1, 0])
+                e.update(text=str(p["sign"]), style=p.get("style", "wood") if p.get("style") in SIGN_STYLES else "wood",
+                         width=float(p.get("width", 4.0)), stand=not p.get("hold"),
+                         yaw=p.get("yaw", round(math.degrees(math.atan2(-sx, -sz)), 1)))
+                if p.get("hold"):
+                    e["width"] = float(p.get("width", 1.6))
             if p.get("small"):
                 e["height"] = 0.35
             elif p.get("height"):
@@ -319,12 +332,14 @@ def compile_story(spec, slug: str) -> str:
             cuts = cuts if isinstance(cuts, list) else [cuts]
             t0 = 0.0
             if st != prev_set:
-                ps = [pos[a] for a in here.values()]
-                cx, cz = sum(p[0] for p in ps) / len(ps), sum(p[1] for p in ps) / len(ps)
-                sx, sz = m.get("camera_side", [-1, 0])
-                cams.append({"name": f"{st.lower()} wide", "start": f"@{lid}", "pos": [round(cx + sx * 15, 1), fy + 8,
-                             round(cz + sz * 15, 1)], "look": [round(cx, 1), fy + 3, round(cz, 1)], "fov": 55, "subjects": []})
-                t0 = min(1.6, dur * 0.4)
+                # a wide of the person the line is about, placed and checked by the shot planner (fixed establishing
+                # positions landed inside walls and behind trees)
+                who0 = next((c.split("+")[0] for c in cuts if c.split("+")[0] in here), next(iter(ln.get("do", {})), next(iter(here))))
+                if who0 in here:
+                    others = [here[o] for o in here if o != who0][:1]
+                    cams.append({"name": f"{st.lower()} wide", "start": f"@{lid}", "subject": here[who0], "shot": "wide",
+                                 "angle": 0, **({"with": others[0]} if others else {})})
+                    t0 = min(1.6, dur * 0.4)
                 prev_set = st
             step = (dur - t0) / len(cuts)
             for j, c in enumerate(cuts):
@@ -392,6 +407,48 @@ def compile_story(spec, slug: str) -> str:
                     actors[a]["beats"].append(b)
                     used += secs
                     first = False
+            for n in ln.get("show", []):          # shown at the line's start (before this line's changes act on it)
+                shown.setdefault(n, f"@{lid}")
+            for who, what in (ln.get("change") or {}).items():
+                mm = re.match(r"^\s*(grow|shrink|normal|look|swap|vanish|appear|poof)\s*([^@]*?)\s*(?:@\s*([\d.]+))?\s*$", str(what))
+                if not mm:
+                    warn.append(f"{lid}: change {who}: {what!r} not understood")
+                    continue
+                verb, arg, off = mm.group(1), mm.group(2).strip(), float(mm.group(3) or min(0.8, dur * 0.3))
+                at = f"@{lid}+{off:.1f}"
+                prop_names = {q["name"] for q in props}
+                if who in prop_names:
+                    if verb == "appear":
+                        shown.setdefault(who, at)
+                    elif verb == "vanish" and who in shown:
+                        t_show = shown.pop(who)
+                        next(q for q in props if q["name"] == who)["show"].append([t_show, at])
+                    events.append({"kind": "poof", "prop": who, "at": at})
+                    continue
+                if who not in here:
+                    warn.append(f"{lid}: change {who}: not in {st}")
+                    continue
+                a = here[who]
+                if verb in ("grow", "shrink", "normal"):
+                    to = 1.0 if verb == "normal" else float(arg or (1.7 if verb == "grow" else 0.55))
+                    events.append({"kind": "scale", "actor": a, "at": at, "to": max(0.25, min(3.0, to)), "over": 0.7})
+                elif verb == "look":
+                    if arg in lks:
+                        events.append({"kind": "look", "actor": a, "at": at, "look": arg, "poof": True})
+                        cur_look[a] = arg
+                    else:
+                        warn.append(f"{lid}: change {who}: unknown look {arg!r}")
+                elif verb == "swap":
+                    b = here.get(arg)
+                    if b:
+                        la, lb = cur_look[a], cur_look[b]
+                        events.append({"kind": "look", "actor": a, "at": at, "look": lb, "poof": True})
+                        events.append({"kind": "look", "actor": b, "at": at, "look": la, "poof": True})
+                        cur_look[a], cur_look[b] = lb, la
+                    else:
+                        warn.append(f"{lid}: swap {who} with {arg!r}: not in {st}")
+                elif verb in ("vanish", "appear", "poof"):
+                    events.append({"kind": verb, "actor": a, "at": at, "poof": True})
             for ch, f in ln.get("feel", {}).items():
                 if ch in here and f in FEELINGS:
                     faces.setdefault(here[ch], []).append((f"@{lid}", f))
@@ -443,7 +500,7 @@ def compile_story(spec, slug: str) -> str:
            'CAPTIONS = {"size": 120, "highlight": False, "max_words": 2}',
            f"KEYWORDS = {list(getattr(spec, 'KEYWORDS', []))!r}",
            f"CAST = {cast!r}", f"ACTORS = {list(actors.values())!r}", f"LINES = {lines!r}", f"TITLES = {titles!r}",
-           f"PLACE = {place!r}", f"CAMERAS = {cams!r}", f"FACES = {faces!r}", f"PROPS = {props_out!r}", f"FX = {fxs!r}",
+           f"PLACE = {place!r}", f"CAMERAS = {cams!r}", f"FACES = {faces!r}", f"PROPS = {props_out!r}", f"FX = {fxs!r}", f"EVENTS = {events!r}",
            f'MUSIC = {{"query": {music!r}, "pick": 0, "from": 0, "gain": 0.45}}', f"SFX = {sfx!r}"]
     for w in warn:
         print("story:", w)

@@ -174,7 +174,7 @@ def pace(ep, out_dir: Path) -> None:
         if isinstance(x, tuple):
             return tuple(res(v) for v in x)
         return x
-    for name in ("ACTORS", "CAMERAS", "TITLES", "FACES", "PROPS", "FX", "SFX", "LENGTH", "MUSIC"):
+    for name in ("ACTORS", "CAMERAS", "TITLES", "FACES", "PROPS", "FX", "SFX", "LENGTH", "MUSIC", "EVENTS"):
         if hasattr(ep, name):
             setattr(ep, name, res(getattr(ep, name)))
     ep.LINES = lines

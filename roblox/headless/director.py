@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 
 import export as X
+import fx as FXM
 import library as L
 import pose as PO
 
@@ -71,6 +72,36 @@ def ground_y(static_parts, x, z, top=60.0):
     return best
 
 
+def _lib_item(it, props_lib):
+    """The library entry for a PLACE item: a library prop, or a text sign built on the fly ("prop": "sign")."""
+    if it["prop"] == "sign":
+        parts, h = FXM.sign_parts(it.get("text", ""), it.get("style", "wood"), it.get("width", 4.0), it.get("stand", True))
+        return {"size": [it.get("width", 4.0), h, 0.4], "parts": parts}
+    return props_lib.get(it["prop"])
+
+
+def _ease(u):
+    u = np.clip(u, 0, 1)
+    return u * u * (3 - 2 * u)
+
+
+def _timeline(times, events, start=1.0):
+    """A value over time from [(at, to, over)] events, eased from the current value."""
+    v = np.full(len(times), float(start))
+    cur = float(start)
+    for at, to, over in sorted(events):
+        u = _ease((times - at) / max(over, 1e-3))
+        v = np.where(times >= at, cur + (to - cur) * u, v)
+        cur = to
+    return v
+
+
+def _pivot(body, n):
+    tp = body[n]["Torso"][0]
+    fy = np.minimum(body[n]["Left Leg"][0][:, 1], body[n]["Right Leg"][0][:, 1]) - 1.0
+    return np.stack([tp[:, 0], fy, tp[:, 2]], 1)
+
+
 def build(ep, perf_actors: dict, out: Path, fps: int, t_end: float, static: dict | None = None) -> dict:
     t0 = time.time()
     out.mkdir(parents=True, exist_ok=True)
@@ -84,29 +115,42 @@ def build(ep, perf_actors: dict, out: Path, fps: int, t_end: float, static: dict
     actors = {}
     # ---- characters: 6 R6 body parts + accessories (offset from their host body part)
     acc_rel = []        # per part: (actor, host body part, rel pos, rel rot) or None
+    events = list(getattr(ep, "EVENTS", []))
+    alias_of, look_spans = {}, {}        # alias -> real actor; owner -> [(t0, t1)] visible
+    todo = [(n, cast[n]["look"], n) for n in names]
     for n in names:
-        want = cast[n]["look"]
+        lev = sorted((float(e["at"]), e["look"]) for e in events if e.get("kind") == "look" and e.get("actor") == n)
+        if not lev:
+            continue
+        bounds = [0.0] + [t for t, _ in lev] + [1e9]
+        look_spans[n] = [(bounds[0], bounds[1])]
+        for i, (t, lk_) in enumerate(lev):
+            al = f"{n}~{i + 1}"
+            alias_of[al] = n
+            todo.append((al, lk_, n))
+            look_spans[al] = [(bounds[i + 1], bounds[i + 2])]
+    for n, want, body_of in todo:
         lk = looks.get(want) or next((v for k, v in looks.items() if k.split("#")[0] == want), None)
         if lk is None:
-            raise KeyError(f"look '{cast[n]['look']}' of {n} is not in the library (library.py looks)")
+            raise KeyError(f"look '{want}' of {n} is not in the library (library.py looks)")
         first = len(parts) + 1
         for bp in ("Torso", "Head", "Left Arm", "Right Arm", "Left Leg", "Right Leg"):
             d = dict(lk["body"][bp])
             d["name"], d["owner"] = bp, n
             parts.append(d)
-            acc_rel.append((n, bp, None, None))
+            acc_rel.append((body_of, bp, None, None))
         for a in lk["acc"]:
             d = dict(a)
             d["owner"] = n
             parts.append(d)
-            acc_rel.append((n, a["host"], np.asarray(a["rel"][:3]), np.asarray(a["rel"][3:12]).reshape(3, 3)))
+            acc_rel.append((body_of, a["host"], np.asarray(a["rel"][:3]), np.asarray(a["rel"][3:12]).reshape(3, 3)))
         actors[n] = {"shirt": lk["shirt"], "pants": lk["pants"], "tee": lk["tee"], "first": first, "last": len(parts),
                      "arms": lk.get("arms", 0.55)}
     # ---- episode props: library models placed at their home pivots (scaled to the asked height)
     prop_parts = {}     # prop name -> [(part index, rel pos, rel rot)]
     home = {}
     for i, it in enumerate(getattr(ep, "PLACE", [])):
-        lib = props_lib.get(it["prop"])
+        lib = _lib_item(it, props_lib)
         if lib is None:
             raise KeyError(f"prop '{it['prop']}' is not in the library")
         nm = it.get("name") or f"{it['prop']}{i + 1}"
@@ -189,8 +233,82 @@ def build(ep, perf_actors: dict, out: Path, fps: int, t_end: float, static: dict
         for i, rp, rr in plist:
             pose[:, i, :3] = pv + PO.qrot(pq, rp)
             pose[:, i, 3:] = PO.qmul(pq, PO.m2q(rr))
-    (out / "dynamic.json").write_text(json.dumps({"parts": parts, "actors": actors, "order": names}))
-    np.savez(out / "frames.npz", pose=pose, face=fbytes, fps=fps, t0=0.0)
+    scale = np.ones((nf, len(parts)), np.float32)
+    owner_idx = {}
+    for i, d in enumerate(parts):
+        owner_idx.setdefault(d.get("owner"), []).append(i)
+    group = {n: [n] + [a_ for a_, r_ in alias_of.items() if r_ == n] for n in names}
+    # visibility: look switches, vanish / appear
+    vis = {o: np.ones(nf, bool) for o in owner_idx}
+    for o, spans in look_spans.items():
+        m = np.zeros(nf, bool)
+        for a_, b_ in spans:
+            m |= (times >= a_ - 1e-6) & (times < b_ - 1e-6)
+        vis[o] = m
+    for e in events:
+        if e.get("kind") in ("vanish", "appear") and e.get("actor") in names:
+            t = float(e["at"])
+            for o in group[e["actor"]]:
+                vis[o] = vis[o] & ((times < t) if e["kind"] == "vanish" else (times >= t))
+    for o, m in vis.items():
+        if o in owner_idx and not m.all():
+            pose[np.ix_(~m, np.array(owner_idx[o]), [1])] += HIDE_Y
+    # grow / shrink about the feet
+    sc_of = {}
+    for n in names:
+        evs = [(float(e["at"]), float(e["to"]), float(e.get("over", 0.6))) for e in events
+               if e.get("kind") == "scale" and e.get("actor") == n]
+        if not evs:
+            continue
+        sv = _timeline(times, evs)
+        sc_of[n] = sv
+        piv = _pivot(body, n)
+        for o in group[n]:
+            ii = np.array(owner_idx.get(o, []))
+            if not len(ii):
+                continue
+            P = pose[:, ii, :3].astype(np.float64)
+            live = P[..., 1] > HIDE_Y / 2
+            newp = piv[:, None] + (P - piv[:, None]) * sv[:, None, None]
+            pose[:, ii, :3] = np.where(live[..., None], newp, P)
+            scale[:, ii] = sv[:, None]
+
+    def anchor(n, part="Head"):
+        hp = body[n][part][0].astype(np.float64)
+        if n in sc_of:
+            piv = _pivot(body, n)
+            hp = piv + (hp - piv) * sc_of[n][:, None]
+        return hp
+    # particles: FX spans on characters, poofs at events
+    jobs = []
+    for f in getattr(ep, "FX", []):
+        if f.get("kind") in FXM.KINDS and f.get("actor") in names:
+            for sp in f["show"]:
+                jobs.append((f["kind"], anchor(f["actor"], "Torso" if f["kind"] == "poof" else "Head"), float(sp[0]), float(sp[1])))
+    for e in events:
+        if not (e.get("poof") or e.get("kind") == "poof"):
+            continue
+        t = float(e["at"])
+        if e.get("actor") in names:
+            jobs.append(("poof", anchor(e["actor"], "Torso"), t, t + 0.9))
+        elif e.get("prop") in home:
+            jobs.append(("poof", home[e["prop"]][0] + np.array([0, 0.5, 0]), t, t + 0.9))
+        elif e.get("pos") is not None:
+            jobs.append(("poof", np.asarray(e["pos"], float), t, t + 0.9))
+    for k, (kind, A, t0_, t1_) in enumerate(jobs):
+        ps, P, Q, S = FXM.particles(kind, A, t0_, t1_, times, seed=k)
+        for d in ps:
+            d["owner"] = "fx"
+        parts.extend(ps)
+        pose = np.concatenate([pose, np.concatenate([P, Q], -1).astype(np.float32)], 1)
+        scale = np.concatenate([scale, S.astype(np.float32)], 1)
+    order = names + list(alias_of)
+    if alias_of:
+        fbytes = np.concatenate([fbytes] + [fbytes[:, [names.index(r_)]] for r_ in alias_of.values()], 1)
+    for al, r_ in alias_of.items():
+        actors[al]["alias_of"] = r_
+    (out / "dynamic.json").write_text(json.dumps({"parts": parts, "actors": actors, "order": order}))
+    np.savez(out / "frames.npz", pose=pose, face=fbytes, fps=fps, t0=0.0, scale=scale)
     return {"parts": len(parts), "frames": nf, "seconds": round(time.time() - t0, 1), "hidden_static": hidden_static}
 
 
@@ -199,7 +317,7 @@ def props_at_home(ep, static: dict | None = None) -> list[dict]:
     lib = own_props()
     out = []
     for i, it in enumerate(getattr(ep, "PLACE", [])):
-        m = lib.get(it["prop"])
+        m = _lib_item(it, lib)
         if m is None:
             continue
         nm = it.get("name") or f"{it['prop']}{i + 1}"

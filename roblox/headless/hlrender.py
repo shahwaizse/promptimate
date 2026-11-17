@@ -428,15 +428,16 @@ class Scene:
             return True
         return sz[order[1]] <= 0.9 and sz[order[2]] >= 5 and abs(rot[1, order[2]]) > 0.9
 
-    def model(self, spec, pos, rot):
-        """3x4 world matrix for a spec at pos/rot (3x3)."""
+    def model(self, spec, pos, rot, k: float = 1.0):
+        """3x4 world matrix for a spec at pos/rot (3x3), uniformly scaled by k about the part's pivot."""
         _vbo, _n, centre, msize = self._mesh(spec["key"])
         if spec["local"] is not None:
             R, off = spec["local"]
-            pos, rot = pos + rot @ off, rot @ R
+            pos, rot = pos + rot @ (off * k), rot @ R
         s = spec["scale"] if spec["native"] else spec["scale"] / msize
         if spec["native"]:
             s = spec["scale"] * np.ones(3)
+        s = s * k
         m = np.zeros((3, 4))
         m[:, :3] = rot * s[None, :]
         m[:, 3] = pos - rot @ (centre * s)
@@ -671,7 +672,7 @@ class Renderer:
         return self.out.read(components=3)
 
 
-def dyn_draws(R: Renderer, pose: np.ndarray, faces_row=None, actor_order=(), hidden_y: float = -500):
+def dyn_draws(R: Renderer, pose: np.ndarray, faces_row=None, actor_order=(), hidden_y: float = -500, scale_row=None):
     """Instance data for the moving parts at one frame: pose (n,7) position + quaternion per exported part."""
     S = R.sc
     rots = quat_mat(pose[:, 3:7].astype("f8"))
@@ -685,7 +686,7 @@ def dyn_draws(R: Renderer, pose: np.ndarray, faces_row=None, actor_order=(), hid
         p = pose[pi]
         if p[1] < hidden_y:
             continue
-        m = S.model(sp, p[:3].astype("f8"), rots[pi])
+        m = S.model(sp, p[:3].astype("f8"), rots[pi], 1.0 if scale_row is None else float(scale_row[pi]))
         tex, mode = sp["tex"], sp["mode"]
         if mode == 2:
             tex = f"face:{face_of.get(actor, 'neutral')}"
@@ -701,6 +702,7 @@ def render_video(scene_dir: Path, cams: np.ndarray, out_mp4: Path, fps: int = 30
     R = Renderer(scene_dir)
     fr = np.load(scene_dir / "frames.npz")
     poses, faces = fr["pose"], fr["face"]
+    scales = fr["scale"] if "scale" in fr.files else None
     order = json.loads((scene_dir / "dynamic.json").read_text()).get("order", [])
     t_load = time.time() - t
     ff = r"D:\tools\ffmpeg\bin\ffmpeg.exe"
@@ -713,7 +715,8 @@ def render_video(scene_dir: Path, cams: np.ndarray, out_mp4: Path, fps: int = 30
     t1 = time.time()
     for i in range(len(cams)):
         k = min(start + i, len(poses) - 1)
-        img = R.frame(cams[i, :3], cams[i, 3:6], cams[i, 6], dyn_draws(R, poses[k], faces[k], order))
+        img = R.frame(cams[i, :3], cams[i, 3:6], cams[i, 6],
+                      dyn_draws(R, poses[k], faces[k], order, scale_row=None if scales is None else scales[k]))
         enc.stdin.write(img)
     enc.stdin.close()
     enc.wait()

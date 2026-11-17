@@ -74,9 +74,24 @@ class Checks:
         self.prog = ctx.program(vertex_shader=VS, fragment_shader=FS)
         self.names = names
         fr = np.load(frames_npz)
-        self.pose, self.fps = fr["pose"], float(fps)
+        self.pose, self.fps = fr["pose"].copy(), float(fps)
+        self.scale = fr["scale"] if "scale" in fr.files else None
         dyn = json.loads((scene_dir / "dynamic.json").read_text())
         self.dyn = dyn
+        # a character with look switches has alias bodies (director.py): the checks see one body, the visible one
+        self.alias = {n: a["alias_of"] for n, a in dyn["actors"].items() if a.get("alias_of")}
+        for al, real in self.alias.items():
+            ra, aa = dyn["actors"][real], dyn["actors"][al]
+            by_name = {dyn["parts"][j]["name"]: j for j in range(aa["first"] - 1, aa["last"])}
+            for i in range(ra["first"] - 1, ra["last"]):
+                j = by_name.get(dyn["parts"][i]["name"])
+                if j is None:
+                    continue
+                use = (self.pose[:, i, 1] < -500) & (self.pose[:, j, 1] > -500)
+                self.pose[use, i] = self.pose[use, j]
+                if self.scale is not None:
+                    self.scale = self.scale.copy() if not self.scale.flags.writeable else self.scale
+                    self.scale[use, i] = self.scale[use, j]
         # static world triangles (walls the camera may see through are left out, as Studio's cutaway did)
         tris, self.static_boxes = [], []
         for g in self.R.static_groups:
@@ -115,6 +130,8 @@ class Checks:
                 actor_of[i] = n
         self.actor_parts = {n: [] for n in dyn["actors"]}
         for i, p in enumerate(dyn["parts"]):
+            if p.get("owner") == "fx" or actor_of.get(i) in self.alias:
+                continue        # particles never block a shot; alias bodies are checked through the real one
             specs = [s for s, pi in zip(self.R.sc.dyn, self.R.sc.dyn_part) if pi == i and s["mode"] != 3]
             n = actor_of.get(i)
             pid = 2 if n is None else 100 + 2 * names.index(n) + (0 if p["name"] in PO.SIZES and p["name"] != "Head" else 1)
@@ -185,6 +202,8 @@ class Checks:
             if pos[1] < -500:
                 continue
             R = PO.q2m(pos[3:].astype("f8"))
+            if self.scale is not None:
+                R = R * float(self.scale[k, i])
             arrs.append(np.hstack([P @ R.T + pos[:3], np.full((len(P), 1), pid)]))
         data = np.concatenate(arrs).astype("f4") if arrs else np.zeros((3, 4), "f4")
         if len(self.dyn_cache) > 8:
@@ -519,7 +538,7 @@ class Checks:
             self._qa_faces = np.load(self._frames)["face"]
         k = self._frame(t)
         img = self._qa.frame(np.asarray(pos, float), np.asarray(look, float), float(fov),
-                             RD.dyn_draws(self._qa, self.pose[k], self._qa_faces[k], self._qa_order))
+                             RD.dyn_draws(self._qa, self.pose[k], self._qa_faces[k], self._qa_order, scale_row=None if self.scale is None else self.scale[k]))
         return Image.frombytes("RGB", (270, 480), img).transpose(Image.FLIP_TOP_BOTTOM)
 
     def camcheck_full(self, t, cam):
