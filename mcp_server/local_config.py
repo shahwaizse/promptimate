@@ -15,8 +15,23 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 
+def _main_checkout() -> Path | None:
+    """In a git worktree, the main checkout (where the gitignored local.env lives)."""
+    g = REPO / ".git"
+    if g.is_file():                                   # worktree: ".git" is a file "gitdir: <main>/.git/worktrees/<n>"
+        try:
+            d = Path(g.read_text().split("gitdir:", 1)[1].strip())
+            return d.parents[2] if d.parent.name == "worktrees" else None
+        except (OSError, IndexError):
+            return None
+    return None
+
+
 def _load_local_env() -> None:
     p = REPO / "local.env"
+    if not p.exists():
+        main = _main_checkout()
+        p = main / "local.env" if main else p
     if not p.exists():
         return
     for line in p.read_text(encoding="utf-8").splitlines():
