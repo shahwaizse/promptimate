@@ -26,8 +26,10 @@ Studio-rendered path scored 6.3. See "Where it stands" below.
    - the music and SFX listed in `media_manifest.json` (CC0/CC BY from Openverse; needs internet).
 6. `.venv\Scripts\python scripts\shorts.py voice` installs the narrator in its own venv: [tiny-voca](https://github.com/n4ze3m/tiny-voca)
    (Apache-2.0, CPU torch), pinned to the version the narration was tuned on.
-7. Optional: `.venv\Scripts\python scripts\shorts.py library` pre-generates the shared motion library (every in-place
-   action, idle to idle). Without it, the first episodes generate their beats on the fly and are slower.
+7. The shared motion library (every in-place action, idle to idle) ships pre-generated in `assets/motion_library/`.
+   It's about 10 MB, and the motion daemon reads it on any machine running the release engine (v0.3.1). Only
+   `scripts\shorts.py library` regenerates it, after changing the action list; see that script for how to refresh the
+   pack.
 8. `scripts\shorts.py doctor` should now print `all set`. `scripts\shorts.py test` runs the fast checks.
 
 Nothing on the offline path needs Roblox Studio, a Roblox account or any login. Every asset in the headless cache is

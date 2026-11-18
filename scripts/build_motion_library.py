@@ -3,6 +3,10 @@ requests it (library mode: from and back to the shared idle, snapped length, att
 in-place beats are generation-cache hits.
 
     .venv\\Scripts\\python scripts\\build_motion_library.py [--attempts 2]
+
+Shared pack: assets/motion_library/ (tracked, ~10 MB) holds the library keyed by the engine's content hash, so every
+machine on the same engine release gets cache hits without generating. To refresh it after changing ACTIONS, run
+motiond with MOTIOND_PACK_EXPORT=1 (shut the running daemon down first) and run this script.
 """
 from __future__ import annotations
 

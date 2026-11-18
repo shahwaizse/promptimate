@@ -97,9 +97,9 @@ def checks() -> list[tuple[str, bool, str]]:
     tv = LC.TINY_VOCA
     add(f"tiny-voca narrator ({tv})", (tv / "venv").exists() and (tv / "tiny-voca" / "weights" / "tiny-voca.pt").exists(),
         "install tiny-voca: see demo/episodes/README.md (Narrator)")
-    lib = REPO / ".cache" / "gen"
-    add("motion library warm (.cache/gen)", lib.exists() and any(lib.iterdir()),
-        "optional: scripts\\shorts.py library  (first episode is slower without it)")
+    pack = REPO / "assets" / "motion_library"
+    add("motion library pack (assets/motion_library)", pack.exists() and any(pack.iterdir()),
+        "git pull (it is tracked), or scripts\\shorts.py library to generate it locally")
     return out
 
 

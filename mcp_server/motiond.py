@@ -41,6 +41,10 @@ from kimodo_worker import embedding_cache_file, KIMODO_BUILD, KimodoWorker, Segm
 ROOT = Path(__file__).resolve().parents[1]
 PORT = int(os.environ.get("MOTIOND_PORT", "47613"))
 CACHE = ROOT / ".cache" / "gen"
+# A tracked, machine-independent pack of the shared motion library (scripts/build_motion_library.py --export): keyed
+# by the engine's content hash instead of its path and timestamp, so every machine on the same engine release hits it.
+PACK = ROOT / "assets" / "motion_library"
+PACK_EXPORT = os.environ.get("MOTIOND_PACK_EXPORT") == "1"     # copy every served request into PACK
 CACHE_FILES = ("root_positions.f32", "local_rotations_xyzw.f32", "foot_contacts.f32")
 VERSION = 1
 
@@ -49,6 +53,18 @@ def _engine_fingerprint(engine_dir: Path) -> str:
     exe = engine_dir / "kmd-generate.exe"
     st = exe.stat()
     return f"{exe.resolve()}:{st.st_size}:{int(st.st_mtime)}"
+
+
+_SHA: dict = {}
+
+
+def _engine_hash(engine_dir: Path) -> str:
+    exe = (engine_dir / "kmd-generate.exe").resolve()
+    st = exe.stat()
+    k = (str(exe), st.st_size, int(st.st_mtime))
+    if k not in _SHA:
+        _SHA[k] = hashlib.sha256(exe.read_bytes()).hexdigest()[:16]
+    return _SHA[k]
 
 
 class Daemon:
@@ -100,6 +116,26 @@ class Daemon:
             h.update(Path(cons).read_bytes())
         return h.hexdigest()[:24]
 
+    def _pack_key(self, req: dict, worker: KimodoWorker) -> str | None:
+        """The portable key: the engine's content hash instead of its path, constraints by content."""
+        payload = {k: req.get(k) for k in ("segments", "steps", "seed", "transition", "text_cfg", "constraint_cfg")}
+        if req.get("holds"):
+            payload["holds"] = req["holds"]
+        payload.update(engine=_engine_hash(worker.engine_dir), quant=worker.text_quant, env=worker.extra_env, v=VERSION)
+        h = hashlib.sha256(json.dumps(payload, sort_keys=True).encode())
+        if req.get("constraints"):
+            h.update(Path(req["constraints"]).read_bytes())
+        return h.hexdigest()[:24]
+
+    def _export(self, src: Path, pkey: str | None) -> None:
+        if not (PACK_EXPORT and pkey):
+            return
+        dst = PACK / pkey
+        dst.mkdir(parents=True, exist_ok=True)
+        for f in CACHE_FILES + ("info.json",):
+            if (src / f).exists():
+                shutil.copyfile(src / f, dst / f)
+
     def _config_key(self, config: dict) -> str:
         engine = Path(config.get("engine_dir") or KIMODO_BUILD)
         return json.dumps({"engine": str(engine.resolve()), "quant": config.get("text_quant"),
@@ -138,7 +174,11 @@ class Daemon:
             use_cache = req.get("cache", True)
             key = self._cache_key(req, worker) if use_cache else None
             hit = CACHE / key if key else None
+            pkey = self._pack_key(req, worker) if use_cache else None
+            if hit is not None and not (hit / "info.json").exists() and pkey and (PACK / pkey / "info.json").exists():
+                hit = PACK / pkey                    # the shared library pack (another machine generated it)
             if hit is not None and (hit / "info.json").exists():
+                self._export(hit, pkey)
                 out_dir.mkdir(parents=True, exist_ok=True)
                 for f in CACHE_FILES:
                     if (hit / f).exists():
@@ -162,6 +202,7 @@ class Daemon:
                 (tmp / "info.json").write_text(json.dumps(info))
                 shutil.rmtree(hit, ignore_errors=True)
                 tmp.rename(hit)
+                self._export(hit, pkey)
             return {**info, "cache_hit": False, "engine": 0 if worker is self.worker else 1 + self.extras.index(worker)}
 
     def prefetch(self, req: dict) -> dict:
