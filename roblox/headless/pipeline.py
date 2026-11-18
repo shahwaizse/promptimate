@@ -20,7 +20,8 @@ sys.path.insert(0, str(HERE.parents[1] / "mcp_server"))
 import export as X  # noqa: E402
 import hlrender as RD  # noqa: E402
 
-CACHE = Path(os.environ.get("PROMPTIMATE_HEADLESS_CACHE", r"D:\tmp\headless"))
+import local_config as LC  # noqa: E402
+CACHE = LC.HEADLESS_CACHE
 
 
 def static_for(ep) -> Path:

@@ -19,7 +19,8 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[1] / "mcp_server"))
-CACHE = Path(os.environ.get("PROMPTIMATE_HEADLESS_CACHE", r"D:\tmp\headless"))
+import local_config as LC  # noqa: E402
+CACHE = LC.HEADLESS_CACHE
 FIXES = ("ok", "other_angle", "wider", "closer", "higher", "other_subject")
 
 

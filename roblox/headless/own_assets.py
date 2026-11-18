@@ -355,6 +355,7 @@ def build_mesh(key: str, pieces, colors: dict) -> dict:
     P, N, C = np.concatenate(P), np.concatenate(N), np.concatenate(C)
     lo, hi = P.min(0), P.max(0)
     faces = np.arange(len(P), dtype=np.uint32).reshape(-1, 3)
+    MC.OUT.mkdir(parents=True, exist_ok=True)
     np.savez(MC.OUT / f"{key}.npz", pos=P.astype("f4"), nrm=N.astype("f4"), uv=np.zeros((len(P), 2), "f4"), faces=faces,
              lo=lo, hi=hi, rgba=C)
     return {"key": key, "centre": ((lo + hi) / 2).tolist(), "size": (hi - lo).tolist()}
@@ -493,7 +494,8 @@ def build(names=None) -> dict:
     (OWN / "looks.json").write_text(json.dumps(looks))
     # meshes go into the cache index so the renderer finds them
     idx_p = MC.OUT / "index.json"
-    idx = json.loads(idx_p.read_text())
+    MC.OUT.mkdir(parents=True, exist_ok=True)
+    idx = json.loads(idx_p.read_text()) if idx_p.exists() else {}
     for p in MC.OUT.glob("own_*.npz"):
         z = np.load(p)
         idx[p.stem] = {"size": (z["hi"] - z["lo"]).tolist(), "centre": ((z["hi"] + z["lo"]) / 2).tolist(),

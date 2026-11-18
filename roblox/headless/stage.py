@@ -188,15 +188,20 @@ class World:
         return qi[m], pi[m], dep[m]
 
     def stand_free(self, q):
-        out = []
-        for x, z in q["pts"]:
-            floor = q["floor"]
-            c = np.array([x, floor + 0.35 + q["h"] / 2, z])
-            ids = self._near_parts(c, max(q["r"], q["h"] / 2) * 1.8)
-            ids = ids[(self.tr[ids] < 0.95) & self.cc[ids] & (self.top[ids] > floor + 0.35)]
-            dep = self.obb_depth(c, np.eye(3), np.array([q["r"], q["h"] / 2, q["r"]]), ids)
-            out.append(not bool(np.any(dep > 0)))
-        return out
+        """For each (x, z): can a standing body (an r x h x r box on the floor) be there without touching solid set
+        parts? All points in one batched SAT pass (the per-point loop cost ~9 s per story compile)."""
+        pts = np.asarray(q["pts"], float).reshape(-1, 2)
+        if not len(pts):
+            return []
+        floor = q["floor"]
+        C = np.stack([pts[:, 0], np.full(len(pts), floor + 0.35 + q["h"] / 2), pts[:, 1]], 1)
+        Rs = np.broadcast_to(np.eye(3), (len(pts), 3, 3))
+        Hs = np.broadcast_to(np.array([q["r"], q["h"] / 2, q["r"]], float), (len(pts), 3))
+        qi, pi, _ = self.overlaps(C, Rs, Hs)
+        solid = (self.tr[pi] < 0.95) & self.cc[pi] & (self.top[pi] > floor + 0.35)
+        blocked = np.zeros(len(pts), bool)
+        blocked[qi[solid]] = True
+        return [not b for b in blocked]
 
 
 # ------------------------------------------------------------------------------------- perform's backend

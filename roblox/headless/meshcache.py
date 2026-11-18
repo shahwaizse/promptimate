@@ -6,7 +6,7 @@ into rbx-storage, named by content hash with no asset id. A MeshPart reports its
 (MeshPart.MeshSize), so meshes are indexed by their bounding-box size and matched to parts that way.
 
 Formats: v1 (text), v2, v3, v4/v5 (binary, LOD 0 only) and v6/v7 (chunked; COREMESH v1 raw or v2 Draco).
-    python roblox/headless/meshcache.py            # build the index (D:/tmp/headless/meshes/*.npz + index.json)
+    python roblox/headless/meshcache.py            # build the index (<headless cache>/meshes/*.npz + index.json)
 """
 from __future__ import annotations
 
@@ -22,7 +22,9 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 CACHE = Path(os.environ.get("LOCALAPPDATA", "")) / "Roblox" / "rbx-storage"
-OUT = Path(os.environ.get("PROMPTIMATE_HEADLESS_CACHE", r"D:\tmp\headless")) / "meshes"
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "mcp_server"))
+import local_config as LC  # noqa: E402
+OUT = LC.HEADLESS_CACHE / "meshes"
 
 
 def _body(b: bytes) -> bytes:

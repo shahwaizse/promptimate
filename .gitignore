@@ -108,3 +108,9 @@ unity/FidelityStudio/Assets/Promptimate.meta
 unity/FidelityStudio/ProjectSettings/
 unity/FidelityStudio/Packages/packages-lock.json
 demo/episodes/build/
+
+# Big test place (98 MB): local only
+roblox/places/*.rbxlx
+
+# Machine-specific settings (copy local.env.example)
+local.env

@@ -25,10 +25,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(ROOT / "mcp_server"))
 sys.path.insert(0, str(HERE))
-os.environ.setdefault("TEMP", r"D:\tmp")
-os.environ.setdefault("npm_config_cache", r"D:\npm-cache")
-FF = r"D:\tools\ffmpeg\bin\ffmpeg.exe"
-FP = r"D:\tools\ffmpeg\bin\ffprobe.exe"
+import local_config as LC  # noqa: E402  (loads local.env: tool paths, cache folders)
+FF = LC.ffmpeg()
+FP = LC.ffprobe()
 BUILD = HERE / "build"
 UA = {"User-Agent": "promptimate-episodes"}
 SR = 48000
@@ -58,8 +57,9 @@ def openverse(query: str, kind: str, out_dir: Path, pick: int = 0, min_s: float 
     meta_p = out_dir / f"{key}.json"
     if meta_p.exists():
         m = json.loads(meta_p.read_text())
-        if Path(m["path"]).exists():
-            return m
+        here = out_dir / Path(m["path"]).name          # the cache may have moved (another clone or machine)
+        if here.exists():
+            return dict(m, path=str(here))
     params = {"q": query, "license": "cc0,by", "page_size": 20}
     if kind == "music":
         params["category"] = "music"
@@ -81,7 +81,7 @@ def openverse(query: str, kind: str, out_dir: Path, pick: int = 0, min_s: float 
     return m
 
 
-TINY_VOCA = Path(r"D:\tmp\tts_try")      # tiny-voca (Apache-2.0) venv + weights; voices "tv_M2" / "tv_F2"
+TINY_VOCA = LC.TINY_VOCA      # tiny-voca (Apache-2.0) venv + weights; voices "tv_M2" / "tv_F2"
 
 # Narration style, measured against the craftee_films reference shorts (D:\tmp\audio_hc\report.md): they speak
 # ~4.2-4.6 words/s almost wall to wall (sentence pauses ~0-0.15 s); tiny-voca at 1.0 with its own ~0.25 s
@@ -555,8 +555,6 @@ def _main():
         import server  # noqa: F401  (motion engine + generate_motion)
         import roblox_tools as RT
         RT.REPAIR_ROUNDS = a.rounds      # read at import time (server was imported above): set it directly
-        sys.path.insert(0, str(ROOT / "roblox" / "short"))
-        import fastgrab as FG
         t = time.time()
         if a.offline:       # staging on our own geometry (roblox/headless/stage.py), no Studio
             sys.path.insert(0, str(ROOT / "roblox" / "headless"))
@@ -571,6 +569,8 @@ def _main():
             finally:
                 RT.WORLD = None
         else:
+            sys.path.insert(0, str(ROOT / "roblox" / "short"))
+            import fastgrab as FG         # Windows window control: Studio path only
             FG.minimize_studio()          # a rendering Studio steals the GPU from motion generation (~6x slower)
             try:
                 res = RT.perform([RT.Actor(**x) for x in ep.ACTORS])

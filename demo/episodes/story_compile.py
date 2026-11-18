@@ -35,7 +35,9 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-OWN = Path(r"D:\tmp\headless\own")
+sys.path.insert(0, str(HERE.parents[1] / "mcp_server"))
+import local_config as LC  # noqa: E402
+OWN = LC.OWN
 MAPS = OWN / "sets" / "maps"
 
 # action -> (prompt, seconds). Prompts are shared across episodes: the motion library is keyed on (prompt, seconds).
@@ -115,8 +117,11 @@ SPREAD = 12.0             # studs: people placed further than this from a scene'
 
 
 def sfx_names() -> list[str]:
+    """The sound effects a story may name: the tracked manifest (media_manifest.json) plus anything cached."""
     m = HERE / "build" / "_media"
-    return sorted(p.stem[len("sound_effect_"):-2].replace("_", " ") for p in m.glob("sound_effect_*_0.json"))
+    names = set(json.loads((HERE / "media_manifest.json").read_text())["sound_effect"])
+    names |= {p.stem[len("sound_effect_"):-2].replace("_", " ") for p in m.glob("sound_effect_*_0.json")}
+    return sorted(names)
 
 
 def looks() -> list[str]:

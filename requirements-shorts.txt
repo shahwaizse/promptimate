@@ -1,0 +1,8 @@
+# Extra Python packages for the headless shorts pipeline (on top of mcp_server/requirements.txt).
+#   .venv\Scripts\python -m pip install -r mcp_server\requirements.txt -r requirements-shorts.txt
+moderngl>=5.10        # offscreen GPU renderer and camera checks (OpenGL 3.3)
+scipy>=1.11           # KD-trees for proximity checks
+DracoPy>=1.4          # Draco-compressed Roblox meshes (mesh cache)
+lz4>=4.0              # binary Roblox model files (rbxm)
+zstandard>=0.22       # binary Roblox model files (rbxm)
+# The tiny-voca narrator runs in its own venv (torch, soundfile): see demo/episodes/README.md

@@ -102,12 +102,19 @@ def export_looks(merge: bool = True) -> dict:
     return d
 
 
+def _lib(name: str) -> dict:
+    """The Studio-exported catalog (props/looks). Optional: our own procedural assets (own/) cover every story key, so
+    a machine without Studio runs with an empty catalog."""
+    p = LIB / name
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
 def props() -> dict:
-    return json.loads((LIB / "props.json").read_text())
+    return _lib("props.json")
 
 
 def looks() -> dict:
-    return json.loads((LIB / "looks.json").read_text())
+    return _lib("looks.json")
 
 
 if __name__ == "__main__":

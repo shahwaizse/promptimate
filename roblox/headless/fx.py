@@ -11,15 +11,19 @@ and text signs (a board with a real-font texture).
 from __future__ import annotations
 
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
 
 import pose as PO
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "mcp_server"))
+import local_config as LC  # noqa: E402
+
 HIDE_Y = -2000.0
 FONTS = Path(__file__).resolve().parents[2] / "demo" / "episodes" / "build" / "_media" / "fonts"
-TEX_OUT = Path(r"D:\tmp\headless\own\tex\signs")
+TEX_OUT = LC.OWN / "tex" / "signs"
 
 
 def _rgb(h):

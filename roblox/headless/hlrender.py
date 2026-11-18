@@ -21,6 +21,8 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "mcp_server"))
+import local_config as LC  # noqa: E402
 import meshcache as MC  # noqa: E402
 
 AO_VS = """#version 330
@@ -798,12 +800,11 @@ def render_video(scene_dir: Path, cams: np.ndarray, out_mp4: Path, fps: int = 30
     scales = fr["scale"] if "scale" in fr.files else None
     order = json.loads((scene_dir / "dynamic.json").read_text()).get("order", [])
     t_load = time.time() - t
-    ff = r"D:\tools\ffmpeg\bin\ffmpeg.exe"
+    ff = LC.ffmpeg()
     filt = "vflip" + ("," + vf if vf else "")
     cmd = [ff, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{R.w}x{R.h}", "-framerate",
            str(fps), "-i", "-", *extra_inputs, "-vf", filt,
-           *(ffmpeg_args or ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "20", "-qp_p", "22",
-                             "-pix_fmt", "yuv420p"]), str(out_mp4)]
+           *(ffmpeg_args or LC.h264_args(21)), str(out_mp4)]
     enc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     t1 = time.time()
     for i in range(len(cams)):
@@ -817,7 +818,7 @@ def render_video(scene_dir: Path, cams: np.ndarray, out_mp4: Path, fps: int = 30
             "fps": round(len(cams) / (time.time() - t1), 1), "missing_meshes": R.sc.missing}
 
 
-FF = "D:/tools/ffmpeg/bin/ffmpeg.exe"
+FF = LC.ffmpeg()
 
 
 def _ass_vf(ass: str | None, fonts: str | None, t0: float) -> str | None:

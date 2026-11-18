@@ -13,7 +13,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-FF = r"D:\tools\ffmpeg\bin\ffmpeg.exe"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp_server"))
+import local_config as LC  # noqa: E402  (also loads local.env: npm_config_cache etc.)
+FF = LC.ffmpeg()
 PROMPT = r"""You are judging {n} vertical "In this town..." story shorts (narrated Roblox-style animated stories for kids and
 teens on TikTok / YouTube Shorts / Reels). Labels X1..X{n} are blind.
 
@@ -45,7 +47,7 @@ def main():
     key = {f"X{i + 1}": n for i, n in enumerate(names)}
     (out / "key.json").write_text(json.dumps(key, indent=1))
     J = out / "judge"
-    env = dict(os.environ, PATH=r"D:\tools\ffmpeg\bin;" + os.environ.get("PATH", ""), npm_config_cache=r"D:\npm-cache")
+    env = dict(os.environ, PATH=str(Path(FF).parent) + os.pathsep + os.environ.get("PATH", ""))
     for lab, n in key.items():
         src = vids[n]
         subprocess.run([FF, "-y", "-loglevel", "error", "-i", src, "-vf", "fps=1,scale=240:426,tile=6x4", str(J / f"{lab}_sheet_%02d.jpg")], check=True)

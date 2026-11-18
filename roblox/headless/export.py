@@ -211,5 +211,7 @@ def export_dynamic(out: Path, fps: int, t0: float, t1: float, step: int = 1) -> 
 
 
 if __name__ == "__main__":
-    out = Path(sys.argv[1] if len(sys.argv) > 1 else r"D:\tmp\headless\scene")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "mcp_server"))
+    import local_config as LC
+    out = Path(sys.argv[1]) if len(sys.argv) > 1 else LC.HEADLESS_CACHE / "scene"
     export_static(out)

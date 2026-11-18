@@ -1,0 +1,643 @@
+{
+ "music": {
+  "creepy": {
+   "pick": 0,
+   "title": "Creepy Doll",
+   "creator": "Alexander Blu",
+   "license": "by 3.0",
+   "url": "https://www.jamendo.com/track/1476517"
+  },
+  "dance": {
+   "pick": 0,
+   "title": "Dance with me",
+   "creator": "Manhat10",
+   "license": "by 3.0",
+   "url": "https://www.jamendo.com/track/1215805"
+  },
+  "funny": {
+   "pick": 2,
+   "title": "Funny light",
+   "creator": "Benjamin Grassineau",
+   "license": "by 3.0",
+   "url": "https://www.jamendo.com/track/130671"
+  },
+  "happy": {
+   "pick": 2,
+   "title": "HAPPY",
+   "creator": "DANI LUCAS",
+   "license": "by 3.0",
+   "url": "https://www.jamendo.com/track/862834"
+  },
+  "mysterious": {
+   "pick": 0,
+   "title": "The Mystery Of Haunted Avenue",
+   "creator": "Daniel Bautista",
+   "license": "by 3.0",
+   "url": "https://www.jamendo.com/track/2126284"
+  },
+  "piano": {
+   "pick": 0,
+   "title": "piano hiphop",
+   "creator": "BrunoXe",
+   "license": "by 3.0",
+   "url": "https://www.jamendo.com/track/211720"
+  },
+  "whimsical": {
+   "pick": 0,
+   "title": "close to your target (instrumental)",
+   "creator": "Spiral Island",
+   "license": "by 3.0",
+   "url": "https://www.jamendo.com/track/1525483"
+  }
+ },
+ "sound_effect": {
+  "airplane": {
+   "pick": 0,
+   "title": "Airplane cabin attention tone.mp3",
+   "creator": "FreqMan",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/FreqMan/sounds/19892"
+  },
+  "angel choir": {
+   "pick": 0,
+   "title": "Choir of Voices - Single Chord",
+   "creator": "bone666138",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/bone666138/sounds/274121"
+  },
+  "applause": {
+   "pick": 0,
+   "title": "Applause 2.WAV",
+   "creator": "Sandermotions",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/Sandermotions/sounds/277021"
+  },
+  "aww": {
+   "pick": 0,
+   "title": "aww-cute-reaction",
+   "creator": "vahdena",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/vahdena/sounds/518860"
+  },
+  "bicycle bell": {
+   "pick": 0,
+   "title": "Bicycle bell 2.wav",
+   "creator": "KeyKrusher",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/KeyKrusher/sounds/173000"
+  },
+  "bird chirp": {
+   "pick": 0,
+   "title": "Single Bird Chirp",
+   "creator": "alegemaate",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/alegemaate/sounds/233255"
+  },
+  "birthday": {
+   "pick": 0,
+   "title": "Happy-Birthday-too-you-Littile girls_01.mp3",
+   "creator": "edranil",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/edranil/sounds/338178"
+  },
+  "boat horn": {
+   "pick": 0,
+   "title": "Boat Horn",
+   "creator": "PearceWilsonKing",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/PearceWilsonKing/sounds/346108"
+  },
+  "boing": {
+   "pick": 0,
+   "title": "Comedic Boing, A.wav",
+   "creator": "InspectorJ",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/InspectorJ/sounds/345689"
+  },
+  "boom": {
+   "pick": 0,
+   "title": "Movie Trailer Boom",
+   "creator": "hykenfreak",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/hykenfreak/sounds/207755"
+  },
+  "broom": {
+   "pick": 0,
+   "title": "broom sweep.wav",
+   "creator": "semccab",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/semccab/sounds/154376"
+  },
+  "bubbles": {
+   "pick": 0,
+   "title": "Bubbling, Large, A.wav",
+   "creator": "InspectorJ",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/InspectorJ/sounds/398808"
+  },
+  "buzzer": {
+   "pick": 0,
+   "title": "Buzz Buzzer Buzzing Sound Effect",
+   "creator": "deleted_user_7146007",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/deleted_user_7146007/sounds/383352"
+  },
+  "cash register": {
+   "pick": 0,
+   "title": "Cash register",
+   "creator": "MaoDin204",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/MaoDin204/sounds/721774"
+  },
+  "cat meow": {
+   "pick": 0,
+   "title": "Cat Meow",
+   "creator": "yfjesse",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/yfjesse/sounds/131201"
+  },
+  "ceramic smash": {
+   "pick": 0,
+   "title": "tiles smashing.mp3",
+   "creator": "ToaTom",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/ToaTom/sounds/148036"
+  },
+  "cheer": {
+   "pick": 0,
+   "title": "Cheer 2.wav",
+   "creator": "jayfrosting",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/jayfrosting/sounds/333404"
+  },
+  "choir": {
+   "pick": 0,
+   "title": "Choir of Voices - Single Chord",
+   "creator": "bone666138",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/bone666138/sounds/274121"
+  },
+  "click": {
+   "pick": 0,
+   "title": "Mouse click sounds",
+   "creator": "Masgame",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/Masgame/sounds/347544"
+  },
+  "clock chime": {
+   "pick": 0,
+   "title": "Analog Alarm Clock",
+   "creator": "bone666138",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/bone666138/sounds/198841"
+  },
+  "clock ticking": {
+   "pick": 0,
+   "title": "Clock ticking",
+   "creator": "olver",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/olver/sounds/130388"
+  },
+  "clown horn": {
+   "pick": 0,
+   "title": "Clown Horn 1_1",
+   "creator": "Joao_Janz",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/Joao_Janz/sounds/482657"
+  },
+  "coin": {
+   "pick": 0,
+   "title": "Coin GET!",
+   "creator": "plasterbrain",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/plasterbrain/sounds/242857"
+  },
+  "coin drop": {
+   "pick": 0,
+   "title": "Coin dropping long.wav",
+   "creator": "Jace",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/Jace/sounds/17501"
+  },
+  "coins": {
+   "pick": 0,
+   "title": "Coin GET!",
+   "creator": "plasterbrain",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/plasterbrain/sounds/242857"
+  },
+  "construction": {
+   "pick": 0,
+   "title": "Jump on big rusty plate construction site",
+   "creator": "jorickhoofd",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/jorickhoofd/sounds/176670"
+  },
+  "crash": {
+   "pick": 0,
+   "title": "crash - china cymbal 1.wav",
+   "creator": "Logicogonist",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/Logicogonist/sounds/264532"
+  },
+  "cricket": {
+   "pick": 0,
+   "title": "Cricket",
+   "creator": "Ev-Dawg",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/Ev-Dawg/sounds/337435"
+  },
+  "crickets": {
+   "pick": 0,
+   "title": "Cricket",
+   "creator": "Ev-Dawg",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/Ev-Dawg/sounds/337435"
+  },
+  "crowd cheer": {
+   "pick": 0,
+   "title": "small crowd cheering and clapping.wav",
+   "creator": "Tomlija",
+   "license": "by 3.0",
+   "url": "https://freesound.org/people/Tomlija/sounds/99634"
+  },
+  "ding": {
+   "pick": 0,
+   "title": "Ding",
+   "creator": "Aiwha",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/Aiwha/sounds/196106"
+  },
+  "dinosaur roar": {
+   "pick": 0,
+   "title": "Large Dinosaur Roar",
+   "creator": "BESTROFLMAN",
+   "license": "by 3.0",
+   "url": "https://freesound.org/people/BESTROFLMAN/sounds/212433"
+  },
+  "dog bark": {
+   "pick": 0,
+   "title": "Small Dog Bark 01",
+   "creator": "noctaro",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/noctaro/sounds/242414"
+  },
+  "door bell": {
+   "pick": 0,
+   "title": "Door Bell",
+   "creator": "NachtmahrTV",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/NachtmahrTV/sounds/571674"
+  },
+  "door slam": {
+   "pick": 0,
+   "title": "Door slam 2.wav",
+   "creator": "bennstir",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/bennstir/sounds/80929"
+  },
+  "drum": {
+   "pick": 0,
+   "title": "hip hop drum beat.wav",
+   "creator": "Simon_Lacelle",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/Simon_Lacelle/sounds/40849"
+  },
+  "drumroll": {
+   "pick": 0,
+   "title": "drumroll.wav",
+   "creator": "adriann",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/adriann/sounds/191718"
+  },
+  "echo": {
+   "pick": 0,
+   "title": "Picked Coin Echo 2",
+   "creator": "NenadSimic",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/NenadSimic/sounds/171756"
+  },
+  "fanfare": {
+   "pick": 0,
+   "title": "Tada Fanfare A",
+   "creator": "plasterbrain",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/plasterbrain/sounds/397355"
+  },
+  "fire": {
+   "pick": 0,
+   "title": "Fire-breathing dragon.flac",
+   "creator": "CGEffex",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/CGEffex/sounds/94102"
+  },
+  "fire alarm": {
+   "pick": 0,
+   "title": "fire alarm bell",
+   "creator": "msx2plus",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/msx2plus/sounds/678345"
+  },
+  "galloping": {
+   "pick": 0,
+   "title": "Horse Gallop - Loopable.mp3",
+   "creator": "HebronTheatre",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/HebronTheatre/sounds/197212"
+  },
+  "gasp": {
+   "pick": 0,
+   "title": "Male Gasp 1.wav",
+   "creator": "jawbutch",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/jawbutch/sounds/344407"
+  },
+  "gavel": {
+   "pick": 0,
+   "title": "gavel-triplemad.flac",
+   "creator": "zerolagtime",
+   "license": "by 3.0",
+   "url": "https://freesound.org/people/zerolagtime/sounds/70071"
+  },
+  "ghost": {
+   "pick": 0,
+   "title": "Creepy Ghost Scream",
+   "creator": "epicdude959",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/epicdude959/sounds/352508"
+  },
+  "glass break": {
+   "pick": 0,
+   "title": "Glass breaking",
+   "creator": "Ruben_Uitenweerde",
+   "license": "by 3.0",
+   "url": "https://freesound.org/people/Ruben_Uitenweerde/sounds/486166"
+  },
+  "groan": {
+   "pick": 0,
+   "title": "Burp Monster Zombie groan moan",
+   "creator": "EricsSoundschmiede",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/EricsSoundschmiede/sounds/463721"
+  },
+  "heartbeat": {
+   "pick": 0,
+   "title": "Heartbeat.",
+   "creator": "urupin",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/urupin/sounds/92036"
+  },
+  "horror sting": {
+   "pick": 0,
+   "title": "Horror Sting (Deep in the Void) 1",
+   "creator": "SilverIllusionist",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/SilverIllusionist/sounds/655387"
+  },
+  "horse neigh": {
+   "pick": 0,
+   "title": "Horse Neigh 2.wav",
+   "creator": "GoodListener",
+   "license": "by 3.0",
+   "url": "https://freesound.org/people/GoodListener/sounds/322450"
+  },
+  "huh": {
+   "pick": 0,
+   "title": "Huh? - Vocal",
+   "creator": "davdud101",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/davdud101/sounds/150505"
+  },
+  "laugh": {
+   "pick": 0,
+   "title": "Boy or Young Child Laughing",
+   "creator": "OBXJohn",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/OBXJohn/sounds/365632"
+  },
+  "magic": {
+   "pick": 0,
+   "title": "Magic Missiles.wav",
+   "creator": "spookymodem",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/spookymodem/sounds/249817"
+  },
+  "magic chime": {
+   "pick": 0,
+   "title": "GLEAM-GLOW-SFX-CHIME.wav",
+   "creator": "newagesoup",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/newagesoup/sounds/351408"
+  },
+  "marching band": {
+   "pick": 0,
+   "title": "Marching band in parade",
+   "creator": "SoundsAreGr8",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/SoundsAreGr8/sounds/340938"
+  },
+  "meow": {
+   "pick": 0,
+   "title": "Cat Meow",
+   "creator": "yfjesse",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/yfjesse/sounds/131201"
+  },
+  "paper rustle": {
+   "pick": 0,
+   "title": "Papers Rustling",
+   "creator": "f4ngy",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/f4ngy/sounds/240789"
+  },
+  "pigeon": {
+   "pick": 0,
+   "title": "Pigeons taking off.wav",
+   "creator": "Glaneur de sons",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/Glaneur%20de%20sons/sounds/104954"
+  },
+  "pop": {
+   "pick": 0,
+   "title": "Pop, High, A (H1).wav",
+   "creator": "InspectorJ",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/InspectorJ/sounds/411642"
+  },
+  "radio static": {
+   "pick": 0,
+   "title": "FM Radio Static",
+   "creator": "caculo",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/caculo/sounds/347039"
+  },
+  "receipt printer": {
+   "pick": 0,
+   "title": "Receipt Printer 01.wav",
+   "creator": "thepodcastdoctor",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/thepodcastdoctor/sounds/476011"
+  },
+  "record scratch": {
+   "pick": 0,
+   "title": "Record Scratch #4",
+   "creator": "musicvision31",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/musicvision31/sounds/431777"
+  },
+  "running footsteps": {
+   "pick": 0,
+   "title": "Funny Running Footsteps Slip into Glass Bottles and Crash.wav",
+   "creator": "WannyManny",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/WannyManny/sounds/609936"
+  },
+  "sad trombone": {
+   "pick": 0,
+   "title": "wah wah sad trombone.wav",
+   "creator": "kirbydx",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/kirbydx/sounds/175409"
+  },
+  "school bell": {
+   "pick": 0,
+   "title": "School Bell",
+   "creator": "civvy",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/civvy/sounds/620392"
+  },
+  "scream": {
+   "pick": 0,
+   "title": "psycho scream 1.wav",
+   "creator": "FreqMan",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/FreqMan/sounds/42847"
+  },
+  "shimmer": {
+   "pick": 0,
+   "title": "Magic Aura Shimmer",
+   "creator": "EminYILDIRIM",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/EminYILDIRIM/sounds/547365"
+  },
+  "shop bell": {
+   "pick": 0,
+   "title": "Shop Bell",
+   "creator": "NachtmahrTV",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/NachtmahrTV/sounds/556710"
+  },
+  "sizzle": {
+   "pick": 0,
+   "title": "Sizzle(loop).wav",
+   "creator": "EverHeat",
+   "license": "by 3.0",
+   "url": "https://freesound.org/people/EverHeat/sounds/208748"
+  },
+  "slide whistle": {
+   "pick": 0,
+   "title": "Slide Whistle, Descending, B (H4n).wav",
+   "creator": "InspectorJ",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/InspectorJ/sounds/410803"
+  },
+  "slip": {
+   "pick": 0,
+   "title": "Slips air release v1",
+   "creator": "mcpable",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/mcpable/sounds/131934"
+  },
+  "slow motion": {
+   "pick": 0,
+   "title": "Slow motion sound.wav",
+   "creator": "karolist",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/karolist/sounds/370632"
+  },
+  "sneeze": {
+   "pick": 0,
+   "title": "Sneeze, Single, A.wav",
+   "creator": "InspectorJ",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/InspectorJ/sounds/352177"
+  },
+  "snore": {
+   "pick": 0,
+   "title": "Fast Snore .wav",
+   "creator": "bsmacbride",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/bsmacbride/sounds/108519"
+  },
+  "splash": {
+   "pick": 0,
+   "title": "Splash, Jumping, C.wav",
+   "creator": "InspectorJ",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/InspectorJ/sounds/352099"
+  },
+  "squish": {
+   "pick": 0,
+   "title": "Pumpmkin Guts Squish 1.aif",
+   "creator": "MWLANDI",
+   "license": "by 3.0",
+   "url": "https://freesound.org/people/MWLANDI/sounds/85862"
+  },
+  "stomp": {
+   "pick": 0,
+   "title": "Foot Stomp C.wav",
+   "creator": "patchen",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/patchen/sounds/20185"
+  },
+  "thud": {
+   "pick": 0,
+   "title": "thud bassy slam.aiff",
+   "creator": "kyles",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/kyles/sounds/51817"
+  },
+  "thunder": {
+   "pick": 0,
+   "title": "Thunder rumbling, underwater, outdoors_Thunder rumbling.aif",
+   "creator": "carroll27",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/carroll27/sounds/151854"
+  },
+  "tick tock": {
+   "pick": 0,
+   "title": "[FOLEY] clock tick tock sound (120 bpm)",
+   "creator": "waveplaySFX",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/waveplaySFX/sounds/234287"
+  },
+  "whistle": {
+   "pick": 0,
+   "title": "Bird Whistling, Robin, Single, 13.wav",
+   "creator": "InspectorJ",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/InspectorJ/sounds/456440"
+  },
+  "whoosh": {
+   "pick": 0,
+   "title": "Deep Whoosh #1",
+   "creator": "Kinoton",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/Kinoton/sounds/351256"
+  },
+  "wind": {
+   "pick": 0,
+   "title": "Wind Gust",
+   "creator": "crashoverride6",
+   "license": "cc0 1.0",
+   "url": "https://freesound.org/people/crashoverride6/sounds/146932"
+  },
+  "yawn": {
+   "pick": 0,
+   "title": "Yawning",
+   "creator": "ckvoiceover",
+   "license": "by 4.0",
+   "url": "https://freesound.org/people/ckvoiceover/sounds/401338"
+  }
+ }
+}

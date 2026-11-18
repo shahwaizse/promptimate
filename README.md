@@ -73,6 +73,17 @@ The server id is `kimodo-motion`.
 
 See [`mcp_server/README.md`](mcp_server/README.md) for environment variables and details.
 
+## Experimental: the shorts factory
+
+`demo/episodes/` turns a short story spec into a finished vertical animated short, with narration, music, captions,
+blocky characters acting with Promptimate motion, and an automatic camera. It renders headless, with no Roblox Studio
+needed. See [`demo/episodes/README.md`](demo/episodes/README.md). It has its own setup steps:
+`scripts\shorts.py setup`, then `scripts\shorts.py doctor`.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the repo layout, ground rules and how changes are measured.
+
 ## Limitations
 
 - **Body only.** The SOMA model outputs a 30-joint body skeleton: no finger or facial animation. Hands get a relaxed
@@ -93,6 +104,9 @@ See [`mcp_server/README.md`](mcp_server/README.md) for environment variables and
   makes local generation possible, plus the GGUF conversions on Hugging Face.
 - **Built with Meta Llama 3**: the LLM2Vec text encoder is based on Meta Llama 3 (Meta Llama 3 Community License).
 - **[ggml](https://github.com/ggml-org/ggml)**: the tensor library and Vulkan backend.
+- Shorts factory: the **[tiny-voca](https://github.com/n4ze3m/tiny-voca)** narrator (Apache-2.0), the
+  **[Montserrat](https://github.com/JulietaUla/Montserrat)** caption font (OFL), and music and sound effects from
+  **[Openverse](https://openverse.org)** (CC0/CC BY, credited per episode).
 
 ## License
 

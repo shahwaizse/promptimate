@@ -31,7 +31,8 @@ PROPS = {
 
 
 def candidates_for(key: str) -> list[int]:
-    p = Path(r"D:\tmp\props\candidates.json")
+    import os
+    p = Path(os.environ.get("PROMPTIMATE_PROPS_CANDIDATES", Path(__file__).resolve().parents[2] / ".cache" / "props" / "candidates.json"))
     if not p.exists():
         return []
     d = json.loads(p.read_text(encoding="utf-8"))

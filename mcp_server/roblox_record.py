@@ -758,7 +758,8 @@ def shot_sheet(cues, perf, size, t_end, out: Path) -> Path:
 
 # ---------------------------------------------------------------------------------------------------- rendering
 def _ffmpeg() -> str:
-    return shutil.which("ffmpeg") or r"D:\tools\ffmpeg\bin\ffmpeg.exe"
+    import local_config as LC
+    return LC.ffmpeg()
 
 
 _VENC = None
